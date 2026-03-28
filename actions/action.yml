@@ -1,0 +1,22 @@
+name: Cystatic Blast Radius
+description: Report blast radius and refactor risk for a pull request (calls Cystatic API).
+branding:
+  icon: activity
+  color: blue
+inputs:
+  api_url:
+    description: Base URL of the Cystatic API (e.g. https://cystatic.example.com)
+    required: true
+  ref:
+    description: Git ref to analyze
+    required: false
+    default: ${{ github.event.pull_request.head.sha || github.sha }}
+runs:
+  using: composite
+  steps:
+    - name: Run Cystatic
+      shell: bash
+      env:
+        CYSTATIC_API_URL: ${{ inputs.api_url }}
+        CYSTATIC_REF: ${{ inputs.ref }}
+      run: ${{ github.action_path }}/entrypoint.sh
