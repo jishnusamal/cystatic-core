@@ -1,6 +1,6 @@
 from __future__ import annotations
 from fastapi import FastAPI, APIRouter, Depends
-from api.schemas import AnalyzeRequest, BlastRadiusResponse, HealthResponse
+from .schemas import AnalyzeRequest, BlastRadiusResponse, HealthResponse
 from .utils import verify_api_key
 from .settings import get_settings
 # from core_engine.dependency_graph import DependencyGraph
