@@ -1,0 +1,8 @@
+README.md
+pyproject.toml
+setup.py
+cystatic_core.egg-info/PKG-INFO
+cystatic_core.egg-info/SOURCES.txt
+cystatic_core.egg-info/dependency_links.txt
+cystatic_core.egg-info/requires.txt
+cystatic_core.egg-info/top_level.txt

@@ -12,7 +12,10 @@ license = { text = "MIT" }
 authors = [
     { name = "Jishnu Samal" }
 ]
-dependencies = []
+dependencies = [
+    "fastapi[all]>=0.128.8",
+    "python-dotenv>=1.2.1",
+]
 
 [project.optional-dependencies]
 dev = [
