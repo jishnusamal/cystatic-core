@@ -1,5 +1,5 @@
 from __future__ import annotations
-from fastapi import FastAPI, APIRouter, Depends
+from fastapi import FastAPI, APIRouter, Depends, Body
 from .schemas import AnalyzeRequest, BlastRadiusResponse, HealthResponse
 from .utils import verify_api_key
 from .settings import get_settings
@@ -41,7 +41,7 @@ def health() -> HealthResponse:
     #     risk_level=r.risk_level,
     # )
 @router.post("/analyze-pr")
-def analyze_pr(body: str) -> str:
+def analyze_pr(body: dict = Body(...)):
     """
     Placeholder: builds a tiny graph from ``changed_paths`` and returns risk for the first path.
     """
