@@ -17,16 +17,16 @@ router = APIRouter(prefix="/v1")
 def health() -> HealthResponse:
     return HealthResponse()
 
-@router.post("/analyze-pr", response_model=BlastRadiusResponse, dependencies=[Depends(verify_api_key)])
-def analyze_pr(body: AnalyzeRequest) -> BlastRadiusResponse:
-    """
-    Placeholder: builds a tiny graph from ``changed_paths`` and returns risk for the first path.
-    """
-    return BlastRadiusResponse(
-        affected_files=[body.changed_paths[0] if body.changed_paths else "."],
-        impact_score=0.5,
-        risk_level="medium",
-    )
+# @router.post("/analyze-pr", response_model=BlastRadiusResponse, dependencies=[Depends(verify_api_key)])
+# def analyze_pr(body: AnalyzeRequest) -> BlastRadiusResponse:
+#     """
+#     Placeholder: builds a tiny graph from ``changed_paths`` and returns risk for the first path.
+#     """
+#     return BlastRadiusResponse(
+#         affected_files=[body.changed_paths[0] if body.changed_paths else "."],
+#         impact_score=0.5,
+#         risk_level="medium",
+#     )
     # g = DependencyGraph()
     # primary = body.changed_paths[0] if body.changed_paths else "."
     # for p in body.changed_paths[1:]:
@@ -40,5 +40,12 @@ def analyze_pr(body: AnalyzeRequest) -> BlastRadiusResponse:
     #     impact_score=r.impact_score,
     #     risk_level=r.risk_level,
     # )
+@router.post("/analyze-pr")
+def analyze_pr(body: str) -> str:
+    """
+    Placeholder: builds a tiny graph from ``changed_paths`` and returns risk for the first path.
+    """
+    print(body)
+    return body
 
 app.include_router(router)
