@@ -11,10 +11,11 @@ class HealthResponse(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     """Minimal payload to trigger an analysis run."""
+    repo: str = Field(..., description="Clone URL or web URL for the repository")
+    pr_number: int = Field(default=0, description="Pull request number")
+    diff_url: str = Field(..., description="URL for the diff of the PR")
+    diff: str = Field(..., description="The diff content")
 
-    repo_url: str = Field(..., description="Clone URL or web URL for the repository")
-    ref: str = Field(default="main", description="Branch, tag, or commit")
-    changed_paths: list[str] = Field(default_factory=list, description="Paths changed in the PR")
 
 
 class BlastRadiusResponse(BaseModel):

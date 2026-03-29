@@ -11,8 +11,6 @@ from .settings import get_settings
 app = FastAPI(title="Cystatic", version="0.1.0")
 router = APIRouter(prefix="/v1")
 
-
-
 @router.get("/health", response_model=HealthResponse, dependencies=[Depends(get_settings)])
 def health() -> HealthResponse:
     return HealthResponse()
@@ -40,11 +38,9 @@ def health() -> HealthResponse:
     #     impact_score=r.impact_score,
     #     risk_level=r.risk_level,
     # )
+
 @router.post("/analyze-pr")
-def analyze_pr(body: dict = Body(...)):
-    """
-    Placeholder: builds a tiny graph from ``changed_paths`` and returns risk for the first path.
-    """
+def analyze_pr(body: AnalyzeRequest):
     print(body)
     return body
 
