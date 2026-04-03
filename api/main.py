@@ -40,18 +40,8 @@ def health() -> HealthResponse:
     # )
 
 @router.post("/analyze-pr", dependencies=[Depends(verify_api_key)])
-def analyze_pr(body: AnalyzeRequest) -> AnalyzeRequest:
-    # github_source = GitHubSource(token=settings.github_access_token)
-    # archive = github_source.fetch_repo_archive(
-    #     repo=body.repo,
-    #     ref=body.ref
-    # )
-    # print(f"Fetched archive for {archive.repo} at ref {archive.ref}, size {len(archive.content)} bytes")
-    # unzipped_files = extract_zip(archive.content)
-    # print(f"Extracted {len(unzipped_files)} files from archive")
-    # for name, content in unzipped_files.items():
-    #     print(f"File: {name}, size: {len(content)} bytes")
-    
+# def analyze_pr(body: AnalyzeRequest) -> AnalyzeRequest:
+def analyze_pr(body):
     print(body)
     comment = f"Analyzed PR #{body.pr_number} with diff URL {body.diff_url}."
     github_publisher = GitHubPublisher(token=settings.github_access_token)

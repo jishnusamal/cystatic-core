@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field
 
 class HealthResponse(BaseModel):
     status: str = "ok"
+    
+
 class AnalyzeRequest(BaseModel):
     """Minimal payload to trigger an analysis run."""
     repo: str = Field(..., description="Clone URL or web URL for the repository")
