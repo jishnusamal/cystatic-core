@@ -1,5 +1,5 @@
 from __future__ import annotations
-from fastapi import FastAPI, APIRouter, Depends, Body
+from fastapi import FastAPI, APIRouter, Depends, Body, Request, Response, status
 from .schemas import AnalyzeRequest, BlastRadiusResponse, HealthResponse
 from .utils import verify_api_key
 from .settings import get_settings
@@ -11,9 +11,20 @@ router = APIRouter(prefix="/v1")
 settings = get_settings()
 
 
-@router.get("/health", response_model=HealthResponse, dependencies=[Depends(get_settings)])
-def health() -> HealthResponse:
-    return HealthResponse()
+# @router.get("/health", )
+# def health() -> HealthResponse:
+#     return HealthResponse()
+
+@app.api_route(
+    "/health",
+    methods=["GET", "HEAD"],
+    dependencies=[Depends(get_settings)],
+)
+async def health(request: Request):
+    if request.method == "HEAD":
+        return Response(status_code=status.HTTP_200_OK)
+    
+    return {"status": "ok"}
 
 # @router.post("/analyze-pr", response_model=BlastRadiusResponse, dependencies=[Depends(verify_api_key)])
 # def analyze_pr(body: AnalyzeRequest) -> BlastRadiusResponse:
