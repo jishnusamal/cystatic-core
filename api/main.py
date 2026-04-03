@@ -51,7 +51,8 @@ def analyze_pr(body: AnalyzeRequest) -> AnalyzeRequest:
     # print(f"Extracted {len(unzipped_files)} files from archive")
     # for name, content in unzipped_files.items():
     #     print(f"File: {name}, size: {len(content)} bytes")
-
+    
+    print(body)
     comment = f"Analyzed PR #{body.pr_number} with diff URL {body.diff_url}."
     github_publisher = GitHubPublisher(token=settings.github_access_token)
     github_publisher.post_comment(
