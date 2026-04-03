@@ -11,10 +11,6 @@ router = APIRouter(prefix="/v1")
 settings = get_settings()
 
 
-# @router.get("/health", )
-# def health() -> HealthResponse:
-#     return HealthResponse()
-
 @app.api_route(
     "/health",
     methods=["GET", "HEAD"],
@@ -26,41 +22,18 @@ async def health(request: Request):
     
     return {"status": "ok"}
 
-# @router.post("/analyze-pr", response_model=BlastRadiusResponse, dependencies=[Depends(verify_api_key)])
-# def analyze_pr(body: AnalyzeRequest) -> BlastRadiusResponse:
-#     """
-#     Placeholder: builds a tiny graph from ``changed_paths`` and returns risk for the first path.
-#     """
-#     return BlastRadiusResponse(
-#         affected_files=[body.changed_paths[0] if body.changed_paths else "."],
-#         impact_score=0.5,
-#         risk_level="medium",
-#     )
-    # g = DependencyGraph()
-    # primary = body.changed_paths[0] if body.changed_paths else "."
-    # for p in body.changed_paths[1:]:
-    #     g.add_edge(p, primary)
-    # est = RefactorRiskEstimator(g)
-    # r = est.estimate(primary)
-    # # blast_radius returns dependents; expose as affected "files"
-    # affected = sorted(g.blast_radius(primary))
-    # return BlastRadiusResponse(
-    #     affected_files=affected,
-    #     impact_score=r.impact_score,
-    #     risk_level=r.risk_level,
-    # )
 
 @router.post("/analyze-pr", dependencies=[Depends(verify_api_key)])
 # def analyze_pr(body: AnalyzeRequest) -> AnalyzeRequest:
-def analyze_pr(body):
+def analyze_pr(body: AnalyzeRequest = Body(...)):
     print(body)
-    comment = f"Analyzed PR #{body.pr_number} with diff URL {body.diff_url}."
-    github_publisher = GitHubPublisher(token=settings.github_access_token)
-    github_publisher.post_comment(
-        repo=body.repo,
-        pr_number=body.pr_number,
-        comment=comment
-    )
+    # comment = f"Analyzed PR #{body.pr_number} with diff URL {body.diff_url}."
+    # github_publisher = GitHubPublisher(token=settings.github_access_token)
+    # github_publisher.post_comment(
+    #     repo=body.repo,
+    #     pr_number=body.pr_number,
+    #     comment=comment
+    # )
     return body
 
 app.include_router(router)

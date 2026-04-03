@@ -9,7 +9,8 @@ from .settings import get_settings
     
 def verify_api_key(x_api_key: str = Header(...)):
     settings = get_settings()
-    keys = settings.CYSTATIC_KEYS.to_dict() if isinstance(settings.CYSTATIC_KEYS, dict) else json.loads(settings.CYSTATIC_KEYS)
+    # print(f"Received API Key: {x_api_key}")
+    keys = json.loads(settings.CYSTATIC_KEYS) if isinstance(settings.CYSTATIC_KEYS, str) else settings.CYSTATIC_KEYS
     # print(f"Received API Key: {x_api_key} \n{type(keys)} {keys}")
     
     if x_api_key not in keys.values():
