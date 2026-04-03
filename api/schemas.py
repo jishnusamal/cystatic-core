@@ -12,7 +12,6 @@ class AnalyzeRequest(BaseModel):
     repo: str = Field(..., description="Full repo name in owner/repo format")
     pr_number: int = Field(..., description="Pull request number")
     diff_url: str = Field(..., description="GitHub API diff URL")
-    diff: str = Field(..., description="Unified diff content as raw string")
     
     """
     repo='cystatichq/cystatic-demo-python-app' 

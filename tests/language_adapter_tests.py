@@ -3,7 +3,7 @@
 import tempfile
 from pathlib import Path
 
-from language_adapters.python_adapter import PythonAdapter
+from language_adapters.python.python_adapter import PythonAdapter
 from language_adapters.ts_adapter import TypeScriptAdapter
 
 

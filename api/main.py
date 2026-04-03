@@ -1,15 +1,15 @@
 from __future__ import annotations
 from fastapi import FastAPI, APIRouter, Depends, Body, Request, Response, status
-from .schemas import AnalyzeRequest, BlastRadiusResponse, HealthResponse
+from .schemas import AnalyzeRequest
 from .utils import verify_api_key
 from .settings import get_settings
 from source_adapters import GitHubSource, GitHubPublisher
-from utils.unzip import extract_zip
+from language_adapters import PythonAdapter
+from core_engine.orchestrator import run_pr_analysis
 
 app = FastAPI(title="Cystatic", version="0.1.0")
 router = APIRouter(prefix="/v1")
 settings = get_settings()
-
 
 @app.api_route(
     "/health",
@@ -24,16 +24,13 @@ async def health(request: Request):
 
 
 @router.post("/analyze-pr", dependencies=[Depends(verify_api_key)])
-def analyze_pr(body: AnalyzeRequest) -> AnalyzeRequest:
-# def analyze_pr(body = Body(...)):
-    # print(body)
-    comment = f"Analyzed PR #{body.pr_number} with diff URL {body.diff_url}."
-    github_publisher = GitHubPublisher(token=settings.github_access_token)
-    github_publisher.post_comment(
-        repo=body.repo,
-        pr_number=body.pr_number,
-        comment=comment
+def analyze_pr(body: AnalyzeRequest):
+    analysis = run_pr_analysis(
+        request=body,
+        source=GitHubSource(token=settings.github_access_token), 
+        lang=PythonAdapter(),
+        publisher=GitHubPublisher(token=settings.github_access_token)
     )
-    return body
+    return analysis
 
 app.include_router(router)
