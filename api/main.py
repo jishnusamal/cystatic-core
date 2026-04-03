@@ -1,35 +1,36 @@
 from __future__ import annotations
-
-from fastapi import FastAPI
-
-from api.schemas import AnalyzeRequest, BlastRadiusResponse, HealthResponse
-from core_engine.dependency_graph import DependencyGraph
-from core_engine.refactor_risk import RefactorRiskEstimator
+from fastapi import FastAPI, APIRouter, Depends, Body, Request, Response, status
+from .schemas import AnalyzeRequest
+from .utils import verify_api_key
+from .settings import get_settings
+from source_adapters import GitHubSource, GitHubPublisher
+from language_adapters import PythonAdapter
+from core_engine.orchestrator import run_pr_analysis
 
 app = FastAPI(title="Cystatic", version="0.1.0")
+router = APIRouter(prefix="/v1")
+settings = get_settings()
+
+@app.api_route(
+    "/health",
+    methods=["GET", "HEAD"],
+    dependencies=[Depends(get_settings)],
+)
+async def health(request: Request):
+    if request.method == "HEAD":
+        return Response(status_code=status.HTTP_200_OK)
+    
+    return {"status": "ok"}
 
 
-@app.get("/", response_model=HealthResponse)
-def health() -> HealthResponse:
-    return HealthResponse()
+@router.post("/analyze-pr", dependencies=[Depends(verify_api_key)])
+def analyze_pr(body: AnalyzeRequest):
+    analysis = run_pr_analysis(
+        request=body,
+        source=GitHubSource(token=settings.github_access_token), 
+        lang=PythonAdapter(),
+        publisher=GitHubPublisher(token=settings.github_access_token)
+    )
+    return analysis
 
-
-@app.post("/v1/blast-radius", response_model=BlastRadiusResponse)
-def blast_radius(body: AnalyzeRequest) -> BlastRadiusResponse:
-    """
-    Placeholder: builds a tiny graph from ``changed_paths`` and returns risk for the first path.
-    """
-    pass
-    # g = DependencyGraph()
-    # primary = body.changed_paths[0] if body.changed_paths else "."
-    # for p in body.changed_paths[1:]:
-    #     g.add_edge(p, primary)
-    # est = RefactorRiskEstimator(g)
-    # r = est.estimate(primary)
-    # # blast_radius returns dependents; expose as affected "files"
-    # affected = sorted(g.blast_radius(primary))
-    # return BlastRadiusResponse(
-    #     affected_files=affected,
-    #     impact_score=r.impact_score,
-    #     risk_level=r.risk_level,
-    # )
+app.include_router(router)

@@ -1,0 +1,21 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run API",
+      "type": "shell",
+      "command": "uv run uvicorn api.main:app --reload",
+      "group": "build"
+    },
+    {
+      "label": "Sync Dependencies",
+      "type": "shell",
+      "command": "uv sync"
+    },
+    {
+      "label": "Export Requirements",
+      "type": "shell",
+      "command": "uv export --no-hashes > requirements.txt"
+    }
+  ]
+}
