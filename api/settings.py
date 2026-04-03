@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     admin_email: str
     items_per_user: int = 50
     CYSTATIC_KEYS: str
+    github_access_token: str
     
     model_config = SettingsConfigDict(env_file=BASE_DIR / "api/.env.local")
 

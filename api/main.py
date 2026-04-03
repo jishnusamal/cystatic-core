@@ -3,11 +3,13 @@ from fastapi import FastAPI, APIRouter, Depends, Body
 from .schemas import AnalyzeRequest, BlastRadiusResponse, HealthResponse
 from .utils import verify_api_key
 from .settings import get_settings
-# from core_engine.dependency_graph import DependencyGraph
-# from core_engine.refactor_risk import RefactorRiskEstimator
+from source_adapters import GitHubSource, GitHubPublisher
+from utils.unzip import extract_zip
 
 app = FastAPI(title="Cystatic", version="0.1.0")
 router = APIRouter(prefix="/v1")
+settings = get_settings()
+
 
 @router.get("/health", response_model=HealthResponse, dependencies=[Depends(get_settings)])
 def health() -> HealthResponse:
@@ -37,9 +39,26 @@ def health() -> HealthResponse:
     #     risk_level=r.risk_level,
     # )
 
-@router.post("/analyze-pr")
-def analyze_pr(body: AnalyzeRequest):
-    print(body)
+@router.post("/analyze-pr", dependencies=[Depends(verify_api_key)])
+def analyze_pr(body: AnalyzeRequest) -> AnalyzeRequest:
+    # github_source = GitHubSource(token=settings.github_access_token)
+    # archive = github_source.fetch_repo_archive(
+    #     repo=body.repo,
+    #     ref=body.ref
+    # )
+    # print(f"Fetched archive for {archive.repo} at ref {archive.ref}, size {len(archive.content)} bytes")
+    # unzipped_files = extract_zip(archive.content)
+    # print(f"Extracted {len(unzipped_files)} files from archive")
+    # for name, content in unzipped_files.items():
+    #     print(f"File: {name}, size: {len(content)} bytes")
+
+    comment = f"Analyzed PR #{body.pr_number} with diff URL {body.diff_url}."
+    github_publisher = GitHubPublisher(token=settings.github_access_token)
+    github_publisher.post_comment(
+        repo=body.repo,
+        pr_number=body.pr_number,
+        comment=comment
+    )
     return body
 
 app.include_router(router)
