@@ -1,7 +1,7 @@
 
 def run_pr_analysis(request, source, lang, publisher):
 
-    diff = source.fetch_diff(request.diff_url)
+    diff = source.fetch_diff(request.repo, request.pr_number)
     sha = source.get_head_sha(request.repo, request.pr_number)
 
     files = lang.extract_changed_files(diff) or []

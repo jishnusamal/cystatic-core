@@ -126,7 +126,7 @@ class FastAPIEndpointParser:
         return endpoints
 
     # -----------------------------
-    # FastAPI detection (moved here)
+    # FastAPI detection
     # -----------------------------
     def _is_fastapi_file(self, content: str) -> bool:
         try:

@@ -105,11 +105,15 @@ class GitHubSource(GithubBase):
     # -----------------------------
     # Fetch diff → IR
     # -----------------------------
-    def fetch_diff(self, diff_url: str) -> DiffIR:
-        response = requests.get(diff_url)
-        response.raise_for_status()
+    def fetch_diff(self, repo: str, pr_number: int) -> DiffIR:
+        url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
 
-        return self._format_diff(response.text)
+        resp = requests.get(url, headers=self._headers())
+        resp.raise_for_status()
+
+        diff_text = resp.text
+        print(self._headers())
+        return self._format_diff(diff_text)
 
     # -----------------------------
     # Diff → IR conversion
@@ -177,7 +181,7 @@ class GitHubSource(GithubBase):
     def _headers(self) -> Dict[str, str]:
         return {
             "Authorization": f"Bearer {self.token}",
-            "Accept": "application/vnd.github.v3+json"
+            "Accept": "application/vnd.github.v3.diff"
         }
 
 
