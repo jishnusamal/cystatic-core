@@ -9,10 +9,10 @@ class HealthResponse(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     """Minimal payload to trigger an analysis run."""
-    repo: str = Field(..., description="Clone URL or web URL for the repository")
-    pr_number: int = Field(default=0, description="Pull request number")
-    diff_url: str = Field(..., description="URL for the diff of the PR")
-    diff: str = Field(..., description="The diff content")
+    repo: str = Field(..., description="Full repo name in owner/repo format")
+    pr_number: int = Field(..., description="Pull request number")
+    diff_url: str = Field(..., description="GitHub API diff URL")
+    diff: str = Field(..., description="Unified diff content as raw string")
     
     """
     repo='cystatichq/cystatic-demo-python-app' 

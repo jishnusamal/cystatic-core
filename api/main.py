@@ -24,16 +24,16 @@ async def health(request: Request):
 
 
 @router.post("/analyze-pr", dependencies=[Depends(verify_api_key)])
-# def analyze_pr(body: AnalyzeRequest) -> AnalyzeRequest:
-def analyze_pr(body = Body(...)):
-    print(body)
-    # comment = f"Analyzed PR #{body.pr_number} with diff URL {body.diff_url}."
-    # github_publisher = GitHubPublisher(token=settings.github_access_token)
-    # github_publisher.post_comment(
-    #     repo=body.repo,
-    #     pr_number=body.pr_number,
-    #     comment=comment
-    # )
+def analyze_pr(body: AnalyzeRequest) -> AnalyzeRequest:
+# def analyze_pr(body = Body(...)):
+    # print(body)
+    comment = f"Analyzed PR #{body.pr_number} with diff URL {body.diff_url}."
+    github_publisher = GitHubPublisher(token=settings.github_access_token)
+    github_publisher.post_comment(
+        repo=body.repo,
+        pr_number=body.pr_number,
+        comment=comment
+    )
     return body
 
 app.include_router(router)
