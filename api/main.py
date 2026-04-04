@@ -36,7 +36,7 @@ def analyze_pr(body: AnalyzeRequest = Body(...)):
         publisher=GitHubPublisher(token=settings.github_access_token)
     )
     result = orchestrator.run_pr_analysis()
-    # orchestrator.publish_comments(result)
+    orchestrator.publish_comments(result)
     return result
 
 app.include_router(router)

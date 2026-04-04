@@ -1,4 +1,5 @@
 from schemas import AnalyzeRequest
+from jinja2 import Environment, FileSystemLoader
 
 class Orchestrator:
     def __init__(self, request: AnalyzeRequest, source, language, publisher):
@@ -43,7 +44,7 @@ class Orchestrator:
                 ep for ep in endpoints
                 if ep["function"] in changed_functions
             ]
-            
+
             enriched_file = {
                 "file_path": file["file_path"],
                 "lines_changed": file["lines_changed"],
@@ -54,28 +55,39 @@ class Orchestrator:
             }
             
             enriched_file["risk_score"] = self._calculate_file_risk_score(enriched_file)
+            enriched_file["risk_level"] = self._classify_risk(enriched_file["risk_score"])
             enriched_files.append(enriched_file)
             
+        pr_risk_score = self._calculate_pr_risk_score(enriched_files)
+        pr_risk_level = self._classify_risk(pr_risk_score)
 
         result = {
             "repo": request.repo,
             "pr_number": request.pr_number,
             "files": enriched_files,
-            "pr_risk_score": self._calculate_pr_risk_score(enriched_files)
-            
+            "pr_risk_score": pr_risk_score,
+            "pr_risk_level": pr_risk_level,
+            "verdict": self._get_verdict(pr_risk_level)
         }
 
         return result
     
-    def publish_comments(self, result):
+    def publish_comments(self, result: dict):
         publisher, request = self.publisher, self.request
         
+        comment = self._render_pr_comment(result)
+
         publisher.post_comment(
             repo=request.repo,
             pr_number=request.pr_number,
-            comment=f"Analyzed PR #{request.pr_number}"
+            comment=comment
         )
         
+        
+        
+    #---------------------------------------------
+    # Risk Scoring Logic (Private methods)
+    #---------------------------------------------
     def _calculate_file_risk_score(self, file_data: dict) -> float:
         """
         Returns risk score as percentage (0-100)
@@ -99,8 +111,6 @@ class Orchestrator:
 
         # amplification
         risk_score *= (1 + 0.2 * num_endpoints)
-        
-        
 
         # clamp to 1.0
         risk_score = min(risk_score, 1.0)
@@ -119,3 +129,55 @@ class Orchestrator:
 
         # weighted blend
         return round(max_score * 0.6 + avg_score * 0.4, 2)
+    
+    def _classify_risk(self, score: float) -> str:
+        RISK_LABELS = {
+            "LOW": "🟢 LOW",
+            "MEDIUM": "⚠️ MEDIUM",
+            "HIGH": "🔥 HIGH"
+        }
+        if score < 20:
+            return RISK_LABELS["LOW"]
+        elif score < 50:
+            return RISK_LABELS["MEDIUM"]
+        else:
+            return RISK_LABELS["HIGH"]
+        
+    def _get_verdict(self, pr_risk_level: str) -> str:
+        if "HIGH" in pr_risk_level:
+            return "BLOCK_REVIEW"
+        elif "MEDIUM" in pr_risk_level:
+            return "REVIEW_REQUIRED"
+        else:
+            return "SAFE_TO_MERGE"
+        
+    def _render_pr_comment(self, result: dict) -> str:
+        env = Environment(loader=FileSystemLoader("templates"))
+        template = env.get_template("github/pr_comment.md.j2")
+        
+        def risk_priority(risk_level: str) -> int:
+            if "HIGH" in risk_level:
+                return 3
+            elif "MEDIUM" in risk_level:
+                return 2
+            return 1
+
+        files = result.get("files", [])
+
+        # sort: HIGH → MEDIUM → LOW, then by score
+        files = sorted(
+            files,
+            key=lambda f: (risk_priority(f["risk_level"]), f["risk_score"]),
+            reverse=True
+        )
+
+        # filter out LOW risk files
+        files = [f for f in files]
+        #  files = [f for f in files if "LOW" not in f["risk_level"]]
+
+        return template.render(
+            pr_risk_score=result.get("pr_risk_score", 0),
+            pr_risk_level=result.get("pr_risk_level", "UNKNOWN"),
+            verdict=result.get("verdict", "UNKNOWN"),
+            files=files
+        )
