@@ -8,10 +8,13 @@ class Settings(BaseSettings):
     app_name: str = "Cystatic API"
     admin_email: str = ""
     items_per_user: int = 50
-    CYSTATIC_KEYS: str = ""
+    cystatic_keys: str = ""
     github_access_token: str = ""
+    sentry_dsn: str = ""
+    app_env: str = ""
+    app_version: str = ""
     
-    model_config = SettingsConfigDict(env_file=BASE_DIR / "api/.env.local")
+    model_config = SettingsConfigDict(env_file=BASE_DIR / ".env.local")
 
 @lru_cache
 def get_settings():

@@ -8,7 +8,7 @@ import base64
 import requests
 from unidiff import PatchSet
 from github import Github, Auth, GithubException
-
+from instrumentation import sentry
 
 # -----------------------------
 # IR Layer (Diff)
@@ -105,11 +105,15 @@ class GitHubSource(GithubBase):
     # -----------------------------
     # Fetch diff → IR
     # -----------------------------
-    def fetch_diff(self, diff_url: str) -> DiffIR:
-        response = requests.get(diff_url)
-        response.raise_for_status()
+    def fetch_diff(self, repo: str, pr_number: int) -> DiffIR:
+        url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
 
-        return self._format_diff(response.text)
+        resp = requests.get(url, headers=self._headers())
+        resp.raise_for_status()
+
+        diff_text = resp.text
+        # print(self._headers())
+        return self._format_diff(diff_text)
 
     # -----------------------------
     # Diff → IR conversion
@@ -177,12 +181,12 @@ class GitHubSource(GithubBase):
     def _headers(self) -> Dict[str, str]:
         return {
             "Authorization": f"Bearer {self.token}",
-            "Accept": "application/vnd.github.v3+json"
+            "Accept": "application/vnd.github.v3.diff"
         }
 
 
 # -----------------------------
-# Output Adapter (unchanged)
+# Output Adapter
 # -----------------------------
 class GitHubPublisher(GithubBase):
     """Posts results back to GitHub."""
@@ -191,12 +195,17 @@ class GitHubPublisher(GithubBase):
         try:
             repository = self.client.get_repo(repo)
             pull_request = repository.get_pull(pr_number)
-
-            issue = pull_request.as_issue()
-            issue.create_comment(comment)
-
+            pull_request.create_issue_comment(comment)
+            
         except GithubException as e:
-            raise Exception(
-                f"[GitHubPublisher] Failed to post comment | "
-                f"Repo: {repo} | PR: {pr_number} | Error: {e.data}"
-            )
+            if sentry:
+                sentry.capture_exception(
+                    e,
+                    dependency="github",
+                    operation="post_comment",
+                    repo=repo,
+                    pr_number=pr_number,
+                    github_status=getattr(e, "status", None),
+                    github_data=getattr(e, "data", None)
+                )
+            raise
