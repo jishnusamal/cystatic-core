@@ -29,7 +29,7 @@ class PythonAdapter:
                 "removed_lines": f.removed_lines,
                 "has_additions": len(f.added_lines) > 0,
                 "has_deletions": len(f.removed_lines) > 0,
-                "change_intensity": len(f.added_lines) + len(f.removed_lines),
+                "lines_changed": len(f.added_lines) + len(f.removed_lines),
                 "is_python": f.file_path.endswith(".py"),
             }
             for f in files

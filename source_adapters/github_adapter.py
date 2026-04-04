@@ -9,7 +9,6 @@ import requests
 from unidiff import PatchSet
 from github import Github, Auth, GithubException
 
-
 # -----------------------------
 # IR Layer (Diff)
 # -----------------------------
@@ -112,7 +111,7 @@ class GitHubSource(GithubBase):
         resp.raise_for_status()
 
         diff_text = resp.text
-        print(self._headers())
+        # print(self._headers())
         return self._format_diff(diff_text)
 
     # -----------------------------
