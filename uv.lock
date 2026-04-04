@@ -8,6 +8,15 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "amplitude-analytics"
+version = "1.2.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6e/f7/b23d28b1c405c22a25375e2c638c8cdcd054cbc4b43b76cf77bd358a0540/amplitude_analytics-1.2.3.tar.gz", hash = "sha256:4c9525847c391c19675d6e026f4601c27204ffeec71cb92252770d84d4538404", size = 22413, upload-time = "2026-03-31T18:33:20.291Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3f/56/83af6ef6a8bac9fdf2059de0276008e9eab40a315b8b732eba466bf6cc74/amplitude_analytics-1.2.3-py3-none-any.whl", hash = "sha256:ba2092c1d37ce8a2e3f69d023da145f4e322d02429e20436a5227178b1e594e9", size = 24762, upload-time = "2026-03-31T18:33:19.032Z" },
+]
+
+[[package]]
 name = "annotated-doc"
 version = "0.0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -256,10 +265,12 @@ name = "cystatic"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "amplitude-analytics" },
     { name = "fastapi", extra = ["all"] },
     { name = "gunicorn" },
     { name = "pygithub" },
     { name = "python-dotenv" },
+    { name = "sentry-sdk" },
     { name = "unidiff" },
     { name = "uvicorn" },
 ]
@@ -273,6 +284,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "amplitude-analytics", specifier = ">=1.2.3" },
     { name = "fastapi", extras = ["all"], specifier = ">=0.135.2" },
     { name = "gunicorn", specifier = ">=25.3.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10.0" },
@@ -280,6 +292,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6.0" },
+    { name = "sentry-sdk", specifier = ">=2.56.0" },
     { name = "unidiff", specifier = ">=0.7.5" },
     { name = "uvicorn", specifier = ">=0.42.0" },
 ]

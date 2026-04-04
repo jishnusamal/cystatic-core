@@ -1,15 +1,18 @@
 from __future__ import annotations
-from fastapi import FastAPI, APIRouter, Depends, Body, Request, Response, status
+from fastapi import FastAPI, APIRouter, Depends, Body, Header, Request, Response, status
 from schemas import AnalyzeRequest
 from .utils import verify_api_key
 from .settings import get_settings
 from source_adapters import GitHubSource, GitHubPublisher
 from language_adapters import PythonAdapter
 from core_engine.orchestrator import Orchestrator
+from instrumentation import sentry
 
-app = FastAPI(title="Cystatic", version="0.1.0")
-router = APIRouter(prefix="/v1")
+
 settings = get_settings()
+app = FastAPI(title="Cystatic", version=settings.app_version)
+sentry.attach_middleware(app)
+router = APIRouter(prefix="/v1")
 
 @app.api_route(
     "/health",
@@ -24,7 +27,17 @@ async def health(request: Request):
 
 
 @router.post("/analyze-pr", dependencies=[Depends(verify_api_key)])
-def analyze_pr(body: AnalyzeRequest):
+def analyze_pr(body: AnalyzeRequest = Body(...), x_api_key: str = Header(...)):
+    print(x_api_key)
+    sentry.set_context(
+        org_id=sentry._hash_api_key(x_api_key) if x_api_key else None,
+        repo=body.repo,
+        pr_number=body.pr_number,
+        provider="github",
+    )
+    
+    # raise Exception("Test Sentry: analyze_pr failure")
+
     orchestrator = Orchestrator(
         request=body,
         source=GitHubSource(token=settings.github_access_token),
@@ -32,7 +45,7 @@ def analyze_pr(body: AnalyzeRequest):
         publisher=GitHubPublisher(token=settings.github_access_token)
     )
     analysis = orchestrator.run_pr_analysis()
-    # orchestrator.publish_comments(analysis)
+    orchestrator.publish_comments(analysis)
     return analysis
 
 app.include_router(router)

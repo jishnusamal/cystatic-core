@@ -8,6 +8,7 @@ import base64
 import requests
 from unidiff import PatchSet
 from github import Github, Auth, GithubException
+from instrumentation import sentry
 
 # -----------------------------
 # IR Layer (Diff)
@@ -199,7 +200,14 @@ class GitHubPublisher(GithubBase):
             issue.create_comment(comment)
 
         except GithubException as e:
-            raise Exception(
-                f"[GitHubPublisher] Failed to post comment | "
-                f"Repo: {repo} | PR: {pr_number} | Error: {e.data}"
-            )
+            if sentry:
+                sentry.capture_exception(
+                    e,
+                    dependency="github",
+                    operation="post_comment",
+                    repo=repo,
+                    pr_number=pr_number,
+                    github_status=getattr(e, "status", None),
+                    github_data=getattr(e, "data", None)
+                )
+            raise
