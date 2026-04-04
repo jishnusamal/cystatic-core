@@ -186,7 +186,7 @@ class GitHubSource(GithubBase):
 
 
 # -----------------------------
-# Output Adapter (unchanged)
+# Output Adapter
 # -----------------------------
 class GitHubPublisher(GithubBase):
     """Posts results back to GitHub."""
@@ -195,10 +195,8 @@ class GitHubPublisher(GithubBase):
         try:
             repository = self.client.get_repo(repo)
             pull_request = repository.get_pull(pr_number)
-
-            issue = pull_request.as_issue()
-            issue.create_comment(comment)
-
+            pull_request.create_issue_comment(comment)
+            
         except GithubException as e:
             if sentry:
                 sentry.capture_exception(

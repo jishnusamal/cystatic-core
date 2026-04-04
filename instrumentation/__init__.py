@@ -1,13 +1,6 @@
-# from .sentry import SentryInstrumentation
+from .sentry import sentry, sentry_pr_context
 
-# __all__ = ["SentryInstrumentation"]
+__all__ = ["sentry", "sentry_pr_context"]
 
 # instrumentation/__init__.py
 
-from .sentry import SentryInstrumentation
-from api.settings import get_settings
-
-settings = get_settings()
-
-sentry = SentryInstrumentation(settings)
-sentry.init()

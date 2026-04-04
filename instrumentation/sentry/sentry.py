@@ -19,9 +19,9 @@ class SentryInstrumentation:
             print("Sentry disabled: SENTRY_DSN is missing")
             return
         
-        # if self.app_env != "production":
-        #     print(f"Sentry disabled in {self.app_env} environment")
-        #     return 
+        if self.app_env != "production":
+            print(f"Sentry disabled in {self.app_env} environment")
+            return 
 
         sentry_sdk.init(
             dsn=self.dsn,
