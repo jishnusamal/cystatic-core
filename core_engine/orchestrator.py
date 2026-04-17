@@ -12,7 +12,7 @@ class Orchestrator:
         (request, source, lang) = (self.request, self.source, self.language)
         
         diff = source.fetch_diff(request.repo, request.pr_number)
-        sha = source.get_head_sha(request.repo, request.pr_number)
+        # sha = source.get_head_sha(request.repo, request.pr_number)
 
         files = lang.extract_changed_files(diff) or []
 
@@ -21,37 +21,37 @@ class Orchestrator:
         for file in files:
             # print(f"Processing file: {file['file_path']}")
 
-            snapshot = source.fetch_file_at_sha(
-                repo=request.repo,
-                file_path=file["file_path"],
-                sha=sha
-            )
+            # snapshot = source.fetch_file_at_sha(
+            #     repo=request.repo,
+            #     file_path=file["file_path"],
+            #     sha=sha
+            # )
 
-            # 1. changed functions
-            changed_functions = lang.extract_changed_functions(
-                file=file,
-                content=snapshot.content
-            )
+            # # 1. changed functions
+            # changed_functions = lang.extract_changed_functions(
+            #     file=file,
+            #     content=snapshot.content
+            # )
 
-            # 2. endpoints (FastAPI only)
-            endpoints = lang.extract_endpoints_if_fastapi(
-                file_path=file["file_path"],
-                content=snapshot.content
-            )
+            # # 2. endpoints (FastAPI only)
+            # endpoints = lang.extract_endpoints_if_fastapi(
+            #     file_path=file["file_path"],
+            #     content=snapshot.content
+            # )
 
-            # 3. filter endpoints impacted by changed functions
-            impacted_endpoints = [
-                ep for ep in endpoints
-                if ep["function"] in changed_functions
-            ]
+            # # 3. filter endpoints impacted by changed functions
+            # impacted_endpoints = [
+            #     ep for ep in endpoints
+            #     if ep["function"] in changed_functions
+            # ]
 
             enriched_file = {
                 "file_path": file["file_path"],
                 "lines_changed": file["lines_changed"],
-                "total_functions_changed": len(changed_functions),
-                "total_endpoints": len(impacted_endpoints),
-                "changed_functions": changed_functions,
-                "endpoints": impacted_endpoints
+                # "total_functions_changed": len(changed_functions),
+                # "total_endpoints": len(impacted_endpoints),
+                # "changed_functions": changed_functions,
+                # "endpoints": impacted_endpoints
             }
             
             enriched_file["risk_score"] = self._calculate_file_risk_score(enriched_file)
@@ -76,12 +76,14 @@ class Orchestrator:
         publisher, request = self.publisher, self.request
         
         comment = self._render_pr_comment(result)
+        
+        print(f"Publishing comment to {request.repo} PR #{request.pr_number}:\n{comment}")
 
-        publisher.post_comment(
-            repo=request.repo,
-            pr_number=request.pr_number,
-            comment=comment
-        )
+        # publisher.post_comment(
+        #     repo=request.repo,
+        #     pr_number=request.pr_number,
+        #     comment=comment
+        # )
         
         
         

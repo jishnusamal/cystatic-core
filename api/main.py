@@ -36,6 +36,7 @@ def analyze_pr(body: AnalyzeRequest = Body(...)):
         publisher=GitHubPublisher(token=settings.github_access_token)
     )
     result = orchestrator.run_pr_analysis()
+    # print(f"Analysis result for {body.repo} PR #{body.pr_number}: {result}")
     orchestrator.publish_comments(result)
     return result
 

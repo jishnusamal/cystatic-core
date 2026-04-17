@@ -1,0 +1,18 @@
+### 🛡️ PR Confidence Report
+
+**Risk:** **{{ pr_risk_score }} ({{ pr_risk_level }})**
+
+**Focus**
+{%- for file in files %}
+- `{{ file.file_path }}` — {{ file.risk_level }}  
+  Test: {% set ns = namespace(items=[]) -%}
+  {%- for fn in file.changed_functions -%}
+    {%- set ns.items = ns.items + ["`" ~ fn ~ "`"] -%}
+  {%- endfor -%}
+  {%- for ep in file.endpoints -%}
+    {%- set ns.items = ns.items + ["`" ~ ep.method ~ " " ~ ep.route ~ "`"] -%}
+  {%- endfor -%}
+  {{ ns.items | join(", ") }}
+{% endfor %}
+
+**Verdict:** **{{ verdict }}**
