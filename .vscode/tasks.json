@@ -16,6 +16,16 @@
       "label": "Export Requirements",
       "type": "shell",
       "command": "uv export --no-hashes > requirements.txt"
+    },
+    {
+      "label": "Make Migrations",
+      "type": "shell",
+      "command": "uv run tortoise -c api.db_migrations.TORTOISE_ORM_MIGRATIONS makemigrations"
+    },
+    {
+      "label": "Run Migrations",
+      "type": "shell",
+      "command": "uv run tortoise -c api.db_migrations.TORTOISE_ORM_MIGRATIONS migrate"
     }
   ]
 }

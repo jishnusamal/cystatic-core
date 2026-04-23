@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     app_env: str = ""
     app_version: str = ""
+    database_url: str
+    database_url_direct: str
     
     model_config = SettingsConfigDict(env_file=BASE_DIR / ".env.local")
 

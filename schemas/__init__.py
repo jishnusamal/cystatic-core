@@ -1,6 +1,5 @@
-from .api import AnalyzeRequest, AnalyzeDiff
+from .api import AnalyzeRequest
 
 __all__ = [
-    "AnalyzeRequest",
-    "AnalyzeDiff"
+    "AnalyzeRequest"
 ]
