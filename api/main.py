@@ -1,13 +1,11 @@
 from __future__ import annotations
 from fastapi import FastAPI, APIRouter, Depends, Body, Header, Request, Response, status
-from tortoise.contrib.fastapi import RegisterTortoise
 from tortoise.contrib.fastapi import register_tortoise
 
 # Internal imports
 from schemas import AnalyzeRequest
 from api.utils import verify_api_key
 from api.settings import get_settings
-from api.models import AnalysisRecord
 from source_adapters import GitHubSource, GitHubPublisher
 from language_adapters import PythonAdapter
 from core_engine.orchestrator import Orchestrator, DiffOrchestrator

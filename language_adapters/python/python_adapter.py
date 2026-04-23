@@ -2,7 +2,6 @@ import ast
 from typing import List, Tuple, Dict, Optional
 from source_adapters.github_adapter import DiffIR
 
-
 class PythonAdapter:
     """
     Lightweight semantic mapper:
