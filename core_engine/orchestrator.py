@@ -255,3 +255,11 @@ class DiffOrchestrator(BaseOrchestrator):
         comment = self._render_pr_comment("github/pr_comment.md.j2", result)
         # comment = self._render_pr_comment(result)
         return f"Publishing comment to {result['repo']} PR #{result['pr_number']}:\n{comment}"
+    
+    async def log_run(self, result):
+        record = await AnalysisRecord.create(
+            repo="example/repo",
+            pr_number=1,
+            analysis_result=result
+        )
+        print(f"Logged analysis record with ID: {record.id}")
