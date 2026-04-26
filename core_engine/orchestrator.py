@@ -2,6 +2,8 @@ from schemas import AnalyzeRequest
 from jinja2 import Environment, FileSystemLoader, Template  # pyright: ignore[reportMissingImports]
 from api.models import AnalysisRecord
 from language_adapters.python.python_adapter import AnalysisMode
+from core_engine.risk_pattern_detector import RiskPatternDetector
+from core_engine.failure_simulator import FailureSimulator
 
 
 class BaseOrchestrator:
@@ -78,13 +80,19 @@ class BaseOrchestrator:
         else:
             return RISK_LABELS["HIGH"]
         
-    def _get_verdict(self, pr_risk_level: str) -> str:
-        if "HIGH" in pr_risk_level:
-            return "BLOCK_REVIEW"
-        elif "MEDIUM" in pr_risk_level:
+    def _get_verdict(self, pr_risk_level: str, risk_patterns: list | None = None) -> str:
+        has_risk_patterns = bool(risk_patterns)
+
+        if has_risk_patterns:
+            if "HIGH" in pr_risk_level:
+                return "BLOCK_REVIEW"
             return "REVIEW_REQUIRED"
-        else:
-            return "SAFE_TO_MERGE"
+
+        if "HIGH" in pr_risk_level:
+            return "REVIEW_RECOMMENDED"
+        if "MEDIUM" in pr_risk_level:
+            return "REVIEW_REQUIRED"
+        return "SAFE_TO_MERGE"
         
     def _render_pr_comment(self, template_name: str, result: dict) -> str:
         env = Environment(loader=FileSystemLoader("templates"))
@@ -131,6 +139,7 @@ class BaseOrchestrator:
         enriched_file = {
             "file_path": file["file_path"],
             "lines_changed": file["lines_changed"],
+            "hunks": file.get("hunks", []),
             "total_functions_changed": len(changed_functions),
             "total_endpoints": len(endpoints),
             "total_keyword_signals": len(keyword_signals),
@@ -150,6 +159,8 @@ class BaseOrchestrator:
         pr_number: int,
         analysis_mode: AnalysisMode,
         enriched_files: list[dict],
+        risk_patterns: list | None = None,
+        failure_simulation: list[str] | None = None,
     ) -> dict:
         pr_risk_score = self._calculate_pr_risk_score(enriched_files)
         pr_risk_level = self._classify_risk(pr_risk_score)
@@ -165,9 +176,14 @@ class BaseOrchestrator:
             "analysis_mode": analysis_mode.value,
             "files": enriched_files,
             "keywords_detected": keywords_detected,
+            "risk_patterns": [
+                rp.model_dump() if hasattr(rp, "model_dump") else rp
+                for rp in (risk_patterns or [])
+            ],
+            "failure_simulation": failure_simulation or [],
             "pr_risk_score": pr_risk_score,
             "pr_risk_level": pr_risk_level,
-            "verdict": self._get_verdict(pr_risk_level),
+            "verdict": self._get_verdict(pr_risk_level, risk_patterns=risk_patterns),
         }
 
     # keep your existing scoring/render methods below
@@ -231,12 +247,18 @@ class Orchestrator(BaseOrchestrator):
                     keyword_signals=keyword_signals,
                 )
             )
+
+        risk_detector = RiskPatternDetector()
+        risk_patterns = risk_detector.detect(enriched_files)
+        failure_simulation = FailureSimulator().generate(risk_patterns, enriched_files)
             
         data = self._build_result(
             repo=request.repo,
             pr_number=request.pr_number,
             analysis_mode=AnalysisMode.FULL_FILE,
             enriched_files=enriched_files,
+            risk_patterns=risk_patterns,
+            failure_simulation=failure_simulation,
         )
         
         print(data)
@@ -313,12 +335,18 @@ class DiffOrchestrator(BaseOrchestrator):
                     keyword_signals=keyword_signals,
                 )
             )
+
+        risk_detector = RiskPatternDetector()
+        risk_patterns = risk_detector.detect(enriched_files)
+        failure_simulation = FailureSimulator().generate(risk_patterns, enriched_files)
             
         data = self._build_result(
             repo=request.get("repo", "example/repo"),
             pr_number=request.get("pr_number", 1),
             analysis_mode=AnalysisMode.DIFF_ONLY,
             enriched_files=enriched_files,
+            risk_patterns=risk_patterns,
+            failure_simulation=failure_simulation,
         )
             
         # print(data)
