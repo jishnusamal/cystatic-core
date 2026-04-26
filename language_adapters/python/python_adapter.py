@@ -302,7 +302,11 @@ class PythonAdapter:
                     preferred_change_type=current_change_type,
                 )
 
-                if next_line_no is not None and next_line_no >= current_start:
+                if (
+                    next_line_no is not None
+                    and current_start is not None
+                    and next_line_no >= current_start
+                ):
                     current_end = next_line_no
 
         flush_current()
