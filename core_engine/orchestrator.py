@@ -6,6 +6,7 @@ from core_engine.risk_pattern_detector import RiskPatternDetector, detect_flows
 from core_engine.failure_simulator import FailureSimulator
 from core_engine.entrypoint_resolver import EntryPointResolver
 from core_engine.file_exclusion import FileExclusionService
+from core_engine.rir_compressor import RIRCompressor
 
 
 class BaseOrchestrator:
@@ -167,6 +168,7 @@ class BaseOrchestrator:
         entry_points_affected: list | None = None,
         system_impact: list | None = None,
         excluded_files: list[dict] | None = None,
+        compressed_for_llm: dict | None = None,
     ) -> dict:
         pr_risk_score = self._calculate_pr_risk_score(enriched_files)
         pr_risk_level = self._classify_risk(pr_risk_score)
@@ -192,6 +194,7 @@ class BaseOrchestrator:
                 ep.model_dump() if hasattr(ep, "model_dump") else ep
                 for ep in (entry_points_affected or [])
             ],
+            "compressed_for_llm": compressed_for_llm or {},
             "system_impact": [
                 impact.model_dump() if hasattr(impact, "model_dump") else impact
                 for impact in (system_impact or [])
@@ -286,6 +289,11 @@ class Orchestrator(BaseOrchestrator):
         resolver = EntryPointResolver()
         entry_points_affected = resolver.resolve(enriched_files, risk_patterns)
         system_impact = resolver.resolve_system_impact(risk_patterns, entry_points_affected)
+        compressed_for_llm = RIRCompressor().compress(
+            enriched_files=enriched_files,
+            risk_patterns=risk_patterns,
+            entry_points_affected=entry_points_affected,
+        )
             
         data = self._build_result(
             repo=request.repo,
@@ -297,11 +305,12 @@ class Orchestrator(BaseOrchestrator):
             entry_points_affected=entry_points_affected,
             system_impact=system_impact,
             excluded_files=excluded_files,
+            compressed_for_llm=compressed_for_llm,
         )
         
-        print(data)
+        print(compressed_for_llm)
 
-        return data
+        return compressed_for_llm
 
     def publish_comments(self, result: dict):
         comment = self._render_pr_comment("github/pr_comment_1.md.j2", result)
@@ -396,6 +405,11 @@ class DiffOrchestrator(BaseOrchestrator):
         resolver = EntryPointResolver()
         entry_points_affected = resolver.resolve(enriched_files, risk_patterns)
         system_impact = resolver.resolve_system_impact(risk_patterns, entry_points_affected)
+        compressed_for_llm = RIRCompressor().compress(
+            enriched_files=enriched_files,
+            risk_patterns=risk_patterns,
+            entry_points_affected=entry_points_affected,
+        )
             
         data = self._build_result(
             repo=request.get("repo", "example/repo"),
@@ -407,11 +421,12 @@ class DiffOrchestrator(BaseOrchestrator):
             entry_points_affected=entry_points_affected,
             system_impact=system_impact,
             excluded_files=excluded_files,
+            compressed_for_llm=compressed_for_llm,
         )
             
         # print(data)
 
-        return data
+        return compressed_for_llm
 
     def publish_comments(self, result: dict):
         comment = self._render_pr_comment("github/pr_comment.md.j2", result)
