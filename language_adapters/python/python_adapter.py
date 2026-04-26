@@ -374,14 +374,25 @@ class PythonAdapter:
             return []
 
         functions: List[Tuple[str, int, int]] = []
+        self._collect_functions_from_nodes(tree.body, functions)
 
-        for node in tree.body:
+        return functions
+
+    def _collect_functions_from_nodes(
+        self,
+        nodes: List[ast.stmt],
+        out: List[Tuple[str, int, int]],
+    ) -> None:
+        for node in nodes:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 start = node.lineno
                 end = getattr(node, "end_lineno", node.lineno)
-                functions.append((node.name, start, end))
+                out.append((node.name, start, end))
+                continue
 
-        return functions
+            if isinstance(node, ast.ClassDef):
+                # Include methods (and nested class methods) for production codebases.
+                self._collect_functions_from_nodes(node.body, out)
 
     def _map_changed_lines_to_functions(
         self,

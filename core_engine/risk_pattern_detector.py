@@ -28,14 +28,12 @@ class RiskPatternDetector:
     def _detect_file(self, file_data: dict) -> list[RiskEvent]:
         events: list[RiskEvent] = []
 
-        file_path = file_data.get("file_path")
+        file_path = str(file_data.get("file_path", ""))
         keyword_signals = [self._as_dict(s) for s in file_data.get("keyword_signals", [])]
         signal_categories = {str(s.get("category")) for s in keyword_signals}
 
         changed_functions = [self._as_dict(f) for f in file_data.get("changed_functions", [])]
         function_names = {str(f.get("name")) for f in changed_functions if f.get("name")}
-
-        endpoints = [self._as_dict(e) for e in file_data.get("endpoints", [])]
 
         login_required_fn = next(
             (f for f in changed_functions if str(f.get("name")) == "login_required"),
@@ -91,6 +89,57 @@ class RiskPatternDetector:
             for line in lines
             if line.get("line_type") == "removed"
         ]
+        content_lines = [str(line.get("content", "")) for line in lines]
+
+        if self._is_schema_migration_file(file_path) and self._has_schema_migration_indicators(content_lines):
+            events.append(
+                RiskEvent(
+                    type=RiskEventType.SCHEMA_MIGRATION,
+                    file_path=file_path,
+                    reason="Database schema migration detected in changed file",
+                    confidence=0.8,
+                )
+            )
+
+        if self._is_schema_migration_file(file_path) and self._has_backfill_indicators(content_lines):
+            events.append(
+                RiskEvent(
+                    type=RiskEventType.DATA_BACKFILL,
+                    file_path=file_path,
+                    reason="Migration appears to rewrite existing persisted data",
+                    confidence=0.8,
+                )
+            )
+
+        if self._has_tax_calculation_change(file_path, content_lines):
+            events.append(
+                RiskEvent(
+                    type=RiskEventType.TAX_CALCULATION_CHANGE,
+                    file_path=file_path,
+                    reason="Tax calculation or tax breakdown logic changed",
+                    confidence=0.75,
+                )
+            )
+
+        if self._has_invoice_rendering_change(file_path, content_lines):
+            events.append(
+                RiskEvent(
+                    type=RiskEventType.INVOICE_RENDERING_CHANGE,
+                    file_path=file_path,
+                    reason="Invoice rendering/tax presentation logic changed",
+                    confidence=0.75,
+                )
+            )
+
+        if self._has_financial_data_model_change(file_path, content_lines):
+            events.append(
+                RiskEvent(
+                    type=RiskEventType.FINANCIAL_DATA_MODEL_CHANGE,
+                    file_path=file_path,
+                    reason="Financial data model fields changed",
+                    confidence=0.7,
+                )
+            )
 
         if login_required_fn:
             change_type = str(login_required_fn.get("change_type", "modified"))
@@ -268,3 +317,64 @@ class RiskPatternDetector:
         joined_removed = "\n".join(removed_lines)
         markers = ("session.get", "redirect", "return", "if")
         return all(marker in joined_removed for marker in markers)
+
+    def _is_schema_migration_file(self, file_path: str) -> bool:
+        lowered = file_path.lower()
+        return "migration" in lowered or "/versions/" in lowered
+
+    def _has_schema_migration_indicators(self, content_lines: list[str]) -> bool:
+        joined = "\n".join(content_lines).lower()
+        indicators = (
+            "op.add_column",
+            "op.alter_column",
+            "op.create_table",
+            "jsonb",
+            "tax_breakdown",
+        )
+        return any(ind in joined for ind in indicators)
+
+    def _has_backfill_indicators(self, content_lines: list[str]) -> bool:
+        joined = "\n".join(content_lines).lower()
+        indicators = (
+            "update(",
+            ".update(",
+            "execute(",
+            "backfill",
+            "for row in",
+        )
+        financial_terms = ("tax", "checkout", "order", "wallet", "invoice")
+        return any(ind in joined for ind in indicators) and any(term in joined for term in financial_terms)
+
+    def _has_tax_calculation_change(self, file_path: str, content_lines: list[str]) -> bool:
+        lowered_path = file_path.lower()
+        joined = "\n".join(content_lines).lower()
+        if "tax" not in joined and "tax" not in lowered_path:
+            return False
+        return any(
+            term in joined
+            for term in (
+                "tax_breakdown",
+                "tax_rate",
+                "calculate_tax",
+                "tax_amount",
+                "vat",
+            )
+        )
+
+    def _has_invoice_rendering_change(self, file_path: str, content_lines: list[str]) -> bool:
+        lowered_path = file_path.lower()
+        joined = "\n".join(content_lines).lower()
+        invoice_path_hit = "invoice" in lowered_path and any(
+            token in lowered_path for token in ("generator", "render", "template")
+        )
+        invoice_content_hit = "invoice" in joined and any(
+            token in joined for token in ("render", "template", "line item", "tax_breakdown")
+        )
+        return invoice_path_hit or invoice_content_hit
+
+    def _has_financial_data_model_change(self, file_path: str, content_lines: list[str]) -> bool:
+        lowered_path = file_path.lower()
+        joined = "\n".join(content_lines).lower()
+        modelish_path = any(token in lowered_path for token in ("model", "schema", "entity", "migration"))
+        model_tokens = ("tax_breakdown", "tax_amount", "checkout", "invoice", "wallet", "order")
+        return modelish_path and any(token in joined for token in model_tokens)
