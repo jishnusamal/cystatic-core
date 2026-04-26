@@ -23,12 +23,29 @@ FLOW_SIGNAL_MAP: dict[FlowType, set[SignalType]] = {
     },
 }
 
+EVENT_TO_SYSTEM_AREAS: dict[RiskEventType, list[str]] = {
+    RiskEventType.AUTH_BYPASS: ["authentication_flow", "session_handling"],
+    RiskEventType.PERMISSION_REMOVED: ["authentication_flow", "session_handling"],
+    RiskEventType.FINANCIAL_LOGIC_CHANGE: ["payment_processing"],
+    RiskEventType.FINANCIAL_DATA_MODEL_CHANGE: ["payment_processing", "data_model"],
+    RiskEventType.TAX_CALCULATION_CHANGE: ["payment_processing", "tax_pipeline"],
+    RiskEventType.SCHEMA_MIGRATION: ["data_model", "migration_pipeline"],
+    RiskEventType.DATA_BACKFILL: ["data_model", "migration_pipeline"],
+    RiskEventType.INVOICE_RENDERING_CHANGE: ["invoice_pipeline"],
+    RiskEventType.DATA_LEAK_RISK: ["all_entry_points"],
+    RiskEventType.STATE_INCONSISTENCY: ["state_management"],
+    RiskEventType.BACKDOOR_INTRODUCED: ["authentication_flow", "security_controls"],
+    RiskEventType.VALIDATION_REMOVED: ["all_entry_points"],
+    RiskEventType.CRITICAL_DEPENDENCY_CHANGED: ["runtime_dependencies"],
+}
+
 
 class RiskEvent(BaseModel):
     type: RiskEventType
     file_path: Optional[str] = None
     function: Optional[str] = None
     flows: list[FlowType] = Field(default_factory=list)
+    system_areas: list[str] = Field(default_factory=list)
     trigger: str
     reason: str
     confidence: float = 0.9
@@ -398,6 +415,9 @@ class RiskPatternDetector:
                 )
             )
 
+        for event in events:
+            self._attach_system_areas(event)
+
         return events
 
     def _dedupe(self, events: list[RiskEvent]) -> list[RiskEvent]:
@@ -572,3 +592,6 @@ class RiskPatternDetector:
         modelish_path = any(token in lowered_path for token in ("model", "schema", "entity", "migration"))
         model_tokens = ("tax_breakdown", "tax_amount", "checkout", "invoice", "wallet", "order")
         return modelish_path and any(token in joined for token in model_tokens)
+
+    def _attach_system_areas(self, event: RiskEvent) -> None:
+        event.system_areas = EVENT_TO_SYSTEM_AREAS.get(event.type, [])
