@@ -184,7 +184,7 @@ class RiskPatternDetector:
         if isinstance(value, dict):
             return value
         if is_dataclass(value):
-            return asdict(value)
+            return asdict(value) # pyright: ignore[reportArgumentType]
         if hasattr(value, "model_dump"):
             return value.model_dump()
         return {}
