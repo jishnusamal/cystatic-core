@@ -113,7 +113,7 @@ class PythonAdapter:
                     FunctionChanged(
                         name=name,
                         file_path=file["file_path"],
-                        change_type=change_type,
+                        change_type=change_type, # pyright: ignore[reportArgumentType]
                         start_line=start,
                         end_line=end,
                     )

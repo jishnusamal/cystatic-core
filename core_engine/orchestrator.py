@@ -1,5 +1,5 @@
 from schemas import AnalyzeRequest
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, Template  # pyright: ignore[reportMissingImports]
 from api.models import AnalysisRecord
 from language_adapters.python.python_adapter import AnalysisMode
 
@@ -86,9 +86,9 @@ class BaseOrchestrator:
         else:
             return "SAFE_TO_MERGE"
         
-    def _render_pr_comment(self, template: str, result: dict) -> str:
+    def _render_pr_comment(self, template_name: str, result: dict) -> str:
         env = Environment(loader=FileSystemLoader("templates"))
-        template = env.get_template(template)
+        jinja_template: Template = env.get_template(template_name)
         
         def risk_priority(risk_level: str) -> int:
             if "HIGH" in risk_level:
@@ -110,7 +110,7 @@ class BaseOrchestrator:
         files = [f for f in files]
         #  files = [f for f in files if "LOW" not in f["risk_level"]]
 
-        return template.render(
+        return jinja_template.render(
             pr_risk_score=result.get("pr_risk_score", 0),
             pr_risk_level=result.get("pr_risk_level", "UNKNOWN"),
             verdict=result.get("verdict", "UNKNOWN"),
