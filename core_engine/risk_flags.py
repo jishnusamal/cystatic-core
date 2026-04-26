@@ -23,3 +23,10 @@ class SignalType(str, Enum):
     VALIDATION_LOGIC = "VALIDATION_LOGIC"
     USER_INPUT = "USER_INPUT"
     CONFIG_CHANGE = "CONFIG_CHANGE"
+
+
+class FlowType(str, Enum):
+    AUTHENTICATION_FLOW = "authentication_flow"
+    PAYMENT_PROCESSING = "payment_processing"
+    USER_MANAGEMENT = "user_management"
+    SESSION_HANDLING = "session_handling"

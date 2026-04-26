@@ -2,7 +2,7 @@ from schemas import AnalyzeRequest
 from jinja2 import Environment, FileSystemLoader, Template  # pyright: ignore[reportMissingImports]
 from api.models import AnalysisRecord
 from language_adapters.python.python_adapter import AnalysisMode
-from core_engine.risk_pattern_detector import RiskPatternDetector
+from core_engine.risk_pattern_detector import RiskPatternDetector, detect_flows
 from core_engine.failure_simulator import FailureSimulator
 
 
@@ -147,6 +147,7 @@ class BaseOrchestrator:
             "endpoints": endpoints,
             "keyword_signals": keyword_signals,
         }
+        enriched_file["flows"] = detect_flows(enriched_file)
 
         enriched_file["risk_score"] = self._calculate_file_risk_score(enriched_file)
         enriched_file["risk_level"] = self._classify_risk(enriched_file["risk_score"])
