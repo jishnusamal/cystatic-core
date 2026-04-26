@@ -4,6 +4,8 @@ from api.models import AnalysisRecord
 from language_adapters.python.python_adapter import AnalysisMode
 from core_engine.risk_pattern_detector import RiskPatternDetector, detect_flows
 from core_engine.failure_simulator import FailureSimulator
+from core_engine.entrypoint_resolver import EntryPointResolver
+from core_engine.file_exclusion import FileExclusionService
 
 
 class BaseOrchestrator:
@@ -162,6 +164,9 @@ class BaseOrchestrator:
         enriched_files: list[dict],
         risk_patterns: list | None = None,
         failure_simulation: list[str] | None = None,
+        entry_points_affected: list | None = None,
+        system_impact: list | None = None,
+        excluded_files: list[dict] | None = None,
     ) -> dict:
         pr_risk_score = self._calculate_pr_risk_score(enriched_files)
         pr_risk_level = self._classify_risk(pr_risk_score)
@@ -176,12 +181,21 @@ class BaseOrchestrator:
             "pr_number": pr_number,
             "analysis_mode": analysis_mode.value,
             "files": enriched_files,
+            "excluded_files": excluded_files or [],
             "keywords_detected": keywords_detected,
             "risk_patterns": [
                 rp.model_dump() if hasattr(rp, "model_dump") else rp
                 for rp in (risk_patterns or [])
             ],
             "failure_simulation": failure_simulation or [],
+            "entry_points_affected": [
+                ep.model_dump() if hasattr(ep, "model_dump") else ep
+                for ep in (entry_points_affected or [])
+            ],
+            "system_impact": [
+                impact.model_dump() if hasattr(impact, "model_dump") else impact
+                for impact in (system_impact or [])
+            ],
             "pr_risk_score": pr_risk_score,
             "pr_risk_level": pr_risk_level,
             "verdict": self._get_verdict(pr_risk_level, risk_patterns=risk_patterns),
@@ -207,6 +221,23 @@ class Orchestrator(BaseOrchestrator):
         request, source, lang = self.request, self.source, self.language
 
         diff_ir = source.fetch_diff(request.repo, request.pr_number)
+        file_exclusion = FileExclusionService()
+        excluded_files = []
+        kept_files = []
+        for file in diff_ir.files:
+            file_path = getattr(file, "file_path", "")
+            matched = file_exclusion.get_exclusion_match(file_path)
+            if matched:
+                excluded_files.append(
+                    {
+                        "file_path": file_path,
+                        "reason": f"matched {matched}",
+                    }
+                )
+                continue
+            kept_files.append(file)
+        diff_ir.files = kept_files
+
         sha = source.get_head_sha(request.repo, request.pr_number)
 
         files = lang.extract_changed_files(diff_ir) or []
@@ -252,6 +283,9 @@ class Orchestrator(BaseOrchestrator):
         risk_detector = RiskPatternDetector()
         risk_patterns = risk_detector.detect(enriched_files)
         failure_simulation = FailureSimulator().generate(risk_patterns, enriched_files)
+        resolver = EntryPointResolver()
+        entry_points_affected = resolver.resolve(enriched_files, risk_patterns)
+        system_impact = resolver.resolve_system_impact(risk_patterns, entry_points_affected)
             
         data = self._build_result(
             repo=request.repo,
@@ -260,6 +294,9 @@ class Orchestrator(BaseOrchestrator):
             enriched_files=enriched_files,
             risk_patterns=risk_patterns,
             failure_simulation=failure_simulation,
+            entry_points_affected=entry_points_affected,
+            system_impact=system_impact,
+            excluded_files=excluded_files,
         )
         
         print(data)
@@ -308,6 +345,22 @@ class DiffOrchestrator(BaseOrchestrator):
 
         diff_text = request.get("diff") or ""
         diff_ir = source._format_diff(diff_text)
+        file_exclusion = FileExclusionService()
+        excluded_files = []
+        kept_files = []
+        for file in diff_ir.files:
+            file_path = getattr(file, "file_path", "")
+            matched = file_exclusion.get_exclusion_match(file_path)
+            if matched:
+                excluded_files.append(
+                    {
+                        "file_path": file_path,
+                        "reason": f"matched {matched}",
+                    }
+                )
+                continue
+            kept_files.append(file)
+        diff_ir.files = kept_files
 
         files = lang.extract_changed_files(diff_ir) or []
         enriched_files = []
@@ -340,6 +393,9 @@ class DiffOrchestrator(BaseOrchestrator):
         risk_detector = RiskPatternDetector()
         risk_patterns = risk_detector.detect(enriched_files)
         failure_simulation = FailureSimulator().generate(risk_patterns, enriched_files)
+        resolver = EntryPointResolver()
+        entry_points_affected = resolver.resolve(enriched_files, risk_patterns)
+        system_impact = resolver.resolve_system_impact(risk_patterns, entry_points_affected)
             
         data = self._build_result(
             repo=request.get("repo", "example/repo"),
@@ -348,6 +404,9 @@ class DiffOrchestrator(BaseOrchestrator):
             enriched_files=enriched_files,
             risk_patterns=risk_patterns,
             failure_simulation=failure_simulation,
+            entry_points_affected=entry_points_affected,
+            system_impact=system_impact,
+            excluded_files=excluded_files,
         )
             
         # print(data)

@@ -22,6 +22,7 @@ class FailureSimulator:
             reason = str(risk_dict.get("reason", "")).strip()
             file_path = str(risk_dict.get("file_path", "")).strip()
             function = str(risk_dict.get("function", "")).strip()
+            system_areas = risk_dict.get("system_areas", []) or []
 
             scenario = self._scenario_for(event_type)
             if not scenario:
@@ -38,6 +39,8 @@ class FailureSimulator:
                 summary = f"{summary} Trigger: {reason}."
             if location:
                 summary = f"{summary} Location: {location}."
+            if system_areas:
+                summary = f"{summary} Areas: {', '.join(str(a) for a in system_areas)}."
 
             lines.append(summary)
 
