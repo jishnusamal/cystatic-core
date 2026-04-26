@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     app_version: str = ""
     database_url: str
     database_url_direct: str
+    ai_api_key: str = ""
     
     model_config = SettingsConfigDict(env_file=BASE_DIR / ".env.local")
 

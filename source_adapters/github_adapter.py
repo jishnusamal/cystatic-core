@@ -9,21 +9,7 @@ import requests
 from unidiff import PatchSet
 from github import Github, Auth, GithubException
 from instrumentation import sentry
-
-# -----------------------------
-# IR Layer (Diff)
-# -----------------------------
-@dataclass
-class FileDiff:
-    file_path: str
-    added_lines: List[int]
-    removed_lines: List[int]
-
-
-@dataclass
-class DiffIR:
-    files: List[FileDiff]
-
+from schemas import DiffIR, FileDiff, DiffHunk, DiffLine
 
 # -----------------------------
 # Fetch Layer
@@ -126,31 +112,68 @@ class GitHubSource(GithubBase):
         for file in patch:
             if file.is_binary_file:
                 continue
+            
+            if not file.path or not file.path.endswith(".py"):
+                continue
 
-            added_lines: List[int] = []
-            removed_lines: List[int] = []
+            file_added_lines: List[int] = []
+            file_removed_lines: List[int] = []
+            hunks: List[DiffHunk] = []
 
             for hunk in file:
-                line_no = hunk.target_start
+                hunk_added_lines: List[int] = []
+                hunk_removed_lines: List[int] = []
+                hunk_lines: List[DiffLine] = []
 
                 for line in hunk:
+                    source_line_no = line.source_line_no or -1
+                    target_line_no = line.target_line_no or -1
 
                     if line.is_added:
-                        added_lines.append(line_no)
+                        hunk_added_lines.append(target_line_no)
+                        file_added_lines.append(target_line_no)
+                        line_type = "added"
 
-                    if line.is_removed:
-                        removed_lines.append(line_no)
+                    elif line.is_removed:
+                        hunk_removed_lines.append(source_line_no)
+                        file_removed_lines.append(source_line_no)
+                        line_type = "removed"
 
-                    if not line.is_removed:
-                        line_no += 1
+                    else:
+                        line_type = "context"
+
+                    hunk_lines.append(
+                        DiffLine(
+                            line_type=line_type,
+                            content=line.value.rstrip("\n"),
+                            source_line_no=source_line_no,
+                            target_line_no=target_line_no,
+                        )
+                    )
+
+                hunks.append(
+                    DiffHunk(
+                        file_path=file.path,
+                        source_start=hunk.source_start,
+                        source_length=hunk.source_length,
+                        target_start=hunk.target_start,
+                        target_length=hunk.target_length,
+                        added_lines=hunk_added_lines,
+                        removed_lines=hunk_removed_lines,
+                        lines=hunk_lines,
+                    )
+                )
 
             files.append(
                 FileDiff(
                     file_path=file.path,
-                    added_lines=added_lines,
-                    removed_lines=removed_lines,
+                    added_lines=file_added_lines,
+                    removed_lines=file_removed_lines,
+                    hunks=hunks,
                 )
             )
+            
+        # print(DiffIR(files=files))
 
         return DiffIR(files=files)
 

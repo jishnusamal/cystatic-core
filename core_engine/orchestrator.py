@@ -1,6 +1,8 @@
 from schemas import AnalyzeRequest
 from jinja2 import Environment, FileSystemLoader
 from api.models import AnalysisRecord
+from language_adapters.python.python_adapter import AnalysisMode
+
 
 class BaseOrchestrator:
     def __init__(self, request, source, language, publisher=None):
@@ -8,17 +10,16 @@ class BaseOrchestrator:
         self.source = source
         self.language = language
         self.publisher = publisher
-    
+
     def run_pr_analysis(self):
         raise NotImplementedError("Must implement run_pr_analysis in subclass")
-    
+
     def publish_comments(self, result: dict):
         raise NotImplementedError("Must implement publish_comments in subclass")
-    
+
     def log_run(self, result: dict):
         raise NotImplementedError("Must implement log_run in subclass")
-
-
+    
     #---------------------------------------------
     # Risk Scoring Logic (Private methods)
     #---------------------------------------------
@@ -116,150 +117,229 @@ class BaseOrchestrator:
             files=files
         )
 
+
+    def _enrich_file(
+        self,
+        file: dict,
+        changed_functions: list,
+        endpoints: list | None = None,
+        keyword_signals: list | None = None,
+    ) -> dict:
+        endpoints = endpoints or []
+        keyword_signals = keyword_signals or []
+
+        enriched_file = {
+            "file_path": file["file_path"],
+            "lines_changed": file["lines_changed"],
+            "total_functions_changed": len(changed_functions),
+            "total_endpoints": len(endpoints),
+            "total_keyword_signals": len(keyword_signals),
+            "changed_functions": changed_functions,
+            "endpoints": endpoints,
+            "keyword_signals": keyword_signals,
+        }
+
+        enriched_file["risk_score"] = self._calculate_file_risk_score(enriched_file)
+        enriched_file["risk_level"] = self._classify_risk(enriched_file["risk_score"])
+
+        return enriched_file
+
+    def _build_result(
+        self,
+        repo: str,
+        pr_number: int,
+        analysis_mode: AnalysisMode,
+        enriched_files: list[dict],
+    ) -> dict:
+        pr_risk_score = self._calculate_pr_risk_score(enriched_files)
+        pr_risk_level = self._classify_risk(pr_risk_score)
+        keywords_detected = [
+            signal
+            for file in enriched_files
+            for signal in file.get("keyword_signals", [])
+        ]
+
+        return {
+            "repo": repo,
+            "pr_number": pr_number,
+            "analysis_mode": analysis_mode.value,
+            "files": enriched_files,
+            "keywords_detected": keywords_detected,
+            "pr_risk_score": pr_risk_score,
+            "pr_risk_level": pr_risk_level,
+            "verdict": self._get_verdict(pr_risk_level),
+        }
+
+    # keep your existing scoring/render methods below
+
 class Orchestrator(BaseOrchestrator):
-    def __init__(self, request: AnalyzeRequest, source, language, publisher):
+    """
+    Repo-aware orchestrator.
+
+    Uses:
+    - GitHub PR diff
+    - PR head SHA
+    - full file snapshots
+    - AST-based function mapping
+    """
+
+    def __init__(self, request: AnalyzeRequest, source, language, publisher=None):
         super().__init__(request, source, language, publisher)
-    
+
     def run_pr_analysis(self):
-        (request, source, lang) = (self.request, self.source, self.language)
-        
-        diff = source.fetch_diff(request.repo, request.pr_number)
+        request, source, lang = self.request, self.source, self.language
+
+        diff_ir = source.fetch_diff(request.repo, request.pr_number)
         sha = source.get_head_sha(request.repo, request.pr_number)
 
-        files = lang.extract_changed_files(diff) or []
-
+        files = lang.extract_changed_files(diff_ir) or []
         enriched_files = []
 
         for file in files:
-            print(f"Processing file: {file['file_path']}")
+            print(f"Processing file in FULL_FILE mode: {file['file_path']}")
 
             snapshot = source.fetch_file_at_sha(
                 repo=request.repo,
                 file_path=file["file_path"],
-                sha=sha
+                sha=sha,
             )
 
-            # 1. changed functions
             changed_functions = lang.extract_changed_functions(
                 file=file,
-                content=snapshot.content
+                mode=AnalysisMode.FULL_FILE,
+                content=snapshot.content,
             )
+            keyword_signals = lang.extract_keyword_signals_from_diff(file=file)
 
-            # 2. endpoints (FastAPI only)
-            endpoints = lang.extract_endpoints_if_fastapi(
+            endpoints = lang.extract_endpoints(
                 file_path=file["file_path"],
-                content=snapshot.content
+                content=snapshot.content,
             )
 
-            # 3. filter endpoints impacted by changed functions
+            changed_function_names = {fn.name for fn in changed_functions}
+
             impacted_endpoints = [
                 ep for ep in endpoints
-                if ep["function"] in changed_functions
+                if ep["function"] in changed_function_names
             ]
 
-            enriched_file = {
-                "file_path": file["file_path"],
-                "lines_changed": file["lines_changed"],
-                "total_functions_changed": len(changed_functions),
-                "total_endpoints": len(impacted_endpoints),
-                "changed_functions": changed_functions,
-                "endpoints": impacted_endpoints
-            }
+            enriched_files.append(
+                self._enrich_file(
+                    file=file,
+                    changed_functions=changed_functions,
+                    endpoints=impacted_endpoints,
+                    keyword_signals=keyword_signals,
+                )
+            )
             
-            enriched_file["risk_score"] = self._calculate_file_risk_score(enriched_file)
-            enriched_file["risk_level"] = self._classify_risk(enriched_file["risk_score"])
-            enriched_files.append(enriched_file)
-            
-        pr_risk_score = self._calculate_pr_risk_score(enriched_files)
-        pr_risk_level = self._classify_risk(pr_risk_score)
+        data = self._build_result(
+            repo=request.repo,
+            pr_number=request.pr_number,
+            analysis_mode=AnalysisMode.FULL_FILE,
+            enriched_files=enriched_files,
+        )
+        
+        print(data)
 
-        result = {
-            "repo": request.repo,
-            "pr_number": request.pr_number,
-            "files": enriched_files,
-            "pr_risk_score": pr_risk_score,
-            "pr_risk_level": pr_risk_level,
-            "verdict": self._get_verdict(pr_risk_level)
-        }
+        return data
 
-        return result
-    
     def publish_comments(self, result: dict):
-        publisher, request = self.publisher, self.request
-        
         comment = self._render_pr_comment("github/pr_comment_1.md.j2", result)
-        
-        print(f"Publishing comment to {request.repo} PR #{request.pr_number}:\n{comment}")
 
-        # publisher.post_comment(
-        #     repo=request.repo,
-        #     pr_number=request.pr_number,
-        #     comment=comment
+        print(
+            f"Publishing comment to {self.request.repo} "
+            f"PR #{self.request.pr_number}:\n{comment}"
+        )
+
+        # self.publisher.post_comment(
+        #     repo=self.request.repo,
+        #     pr_number=self.request.pr_number,
+        #     comment=comment,
         # )
-        
+
     async def log_run(self, result: dict):
         record = await AnalysisRecord.create(
             repo=self.request.repo,
             pr_number=self.request.pr_number,
-            analysis_result=result
+            analysis_result=result,
         )
         print(f"Logged analysis record with ID: {record}")
         
-        
-class DiffOrchestrator(BaseOrchestrator):
-    def __init__(self, request, source, language):
-        super().__init__(request, source, language)
-        self.language = language
-        self.request = request
-        self.source = source
-
     
+class DiffOrchestrator(BaseOrchestrator):
+    """
+    Demo-safe orchestrator.
+
+    Uses:
+    - raw pasted/uploaded diff text
+    - no repo access
+    - no file fetching
+    - regex-based hunk function mapping
+    """
+
+    def __init__(self, request: dict, source, language, publisher=None):
+        super().__init__(request, source, language, publisher)
+
     def run_pr_analysis(self):
-        (request, source, lang) = (self.request, self.source, self.language)
-        
-        diff = request.get("diff") or ""
-        diff = source._format_diff(diff)
+        request, source, lang = self.request, self.source, self.language
 
-        files = lang.extract_changed_files(diff) or []
+        diff_text = request.get("diff") or ""
+        diff_ir = source._format_diff(diff_text)
 
+        files = lang.extract_changed_files(diff_ir) or []
         enriched_files = []
 
         for file in files:
-            enriched_file = {
-                "file_path": file["file_path"],
-                "lines_changed": file["lines_changed"],
-            }
-            
-            enriched_file["risk_score"] = self._calculate_file_risk_score(enriched_file)
-            enriched_file["risk_level"] = self._classify_risk(enriched_file["risk_score"])
-            enriched_files.append(enriched_file)
-            
-        pr_risk_score = self._calculate_pr_risk_score(enriched_files)
-        pr_risk_level = self._classify_risk(pr_risk_score)
+            print(f"Processing file in DIFF_ONLY mode: {file['file_path']}")
 
-        result = {
-            "repo": "example/repo", # dummy
-            "pr_number": 1, # dummy
-            "files": enriched_files,
-            "pr_risk_score": pr_risk_score,
-            "pr_risk_level": pr_risk_level,
-            "verdict": self._get_verdict(pr_risk_level)
-        }
+            changed_functions = lang.extract_changed_functions(
+                file=file,
+                mode=AnalysisMode.DIFF_ONLY,
+            )
+            keyword_signals = lang.extract_keyword_signals_from_diff(file=file)
 
-        return result
-    
+            endpoints = lang.extract_endpoints_from_diff_only(file=file)
+            changed_function_names = {fn.name for fn in changed_functions}
+            impacted_endpoints = [
+                ep for ep in endpoints
+                if ep["function"] in changed_function_names
+            ]
+
+            enriched_files.append(
+                self._enrich_file(
+                    file=file,
+                    changed_functions=changed_functions,
+                    endpoints=impacted_endpoints,
+                    keyword_signals=keyword_signals,
+                )
+            )
+            
+        data = self._build_result(
+            repo=request.get("repo", "example/repo"),
+            pr_number=request.get("pr_number", 1),
+            analysis_mode=AnalysisMode.DIFF_ONLY,
+            enriched_files=enriched_files,
+        )
+            
+        # print(data)
+
+        return data
+
     def publish_comments(self, result: dict):
-        request =  self.request
-        
-
         comment = self._render_pr_comment("github/pr_comment.md.j2", result)
-        # comment = self._render_pr_comment(result)
-        return f"Publishing comment to {result['repo']} PR #{result['pr_number']}:\n{comment}"
-    
-    async def log_run(self, result):
+        # print(comment)
+        return result
+
+
+        # return (
+        #     f"Publishing comment to {result['repo']} "
+        #     f"PR #{result['pr_number']}:\n{comment}"
+        # )
+
+    async def log_run(self, result: dict):
         record = await AnalysisRecord.create(
-            repo="example/repo",
-            pr_number=1,
-            analysis_result=result
+            repo=result.get("repo", "example/repo"),
+            pr_number=result.get("pr_number", 1),
+            analysis_result=result,
         )
         print(f"Logged analysis record with ID: {record.id}")
