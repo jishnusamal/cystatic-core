@@ -3,6 +3,7 @@ from jinja2 import Environment, FileSystemLoader, Template  # pyright: ignore[re
 from api.models import AnalysisRecord
 from language_adapters.python.python_adapter import AnalysisMode
 from core_engine.risk_pattern_detector import RiskPatternDetector
+from core_engine.failure_simulator import FailureSimulator
 
 
 class BaseOrchestrator:
@@ -159,6 +160,7 @@ class BaseOrchestrator:
         analysis_mode: AnalysisMode,
         enriched_files: list[dict],
         risk_patterns: list | None = None,
+        failure_simulation: list[str] | None = None,
     ) -> dict:
         pr_risk_score = self._calculate_pr_risk_score(enriched_files)
         pr_risk_level = self._classify_risk(pr_risk_score)
@@ -178,6 +180,7 @@ class BaseOrchestrator:
                 rp.model_dump() if hasattr(rp, "model_dump") else rp
                 for rp in (risk_patterns or [])
             ],
+            "failure_simulation": failure_simulation or [],
             "pr_risk_score": pr_risk_score,
             "pr_risk_level": pr_risk_level,
             "verdict": self._get_verdict(pr_risk_level, risk_patterns=risk_patterns),
@@ -247,6 +250,7 @@ class Orchestrator(BaseOrchestrator):
 
         risk_detector = RiskPatternDetector()
         risk_patterns = risk_detector.detect(enriched_files)
+        failure_simulation = FailureSimulator().generate(risk_patterns, enriched_files)
             
         data = self._build_result(
             repo=request.repo,
@@ -254,6 +258,7 @@ class Orchestrator(BaseOrchestrator):
             analysis_mode=AnalysisMode.FULL_FILE,
             enriched_files=enriched_files,
             risk_patterns=risk_patterns,
+            failure_simulation=failure_simulation,
         )
         
         print(data)
@@ -333,6 +338,7 @@ class DiffOrchestrator(BaseOrchestrator):
 
         risk_detector = RiskPatternDetector()
         risk_patterns = risk_detector.detect(enriched_files)
+        failure_simulation = FailureSimulator().generate(risk_patterns, enriched_files)
             
         data = self._build_result(
             repo=request.get("repo", "example/repo"),
@@ -340,6 +346,7 @@ class DiffOrchestrator(BaseOrchestrator):
             analysis_mode=AnalysisMode.DIFF_ONLY,
             enriched_files=enriched_files,
             risk_patterns=risk_patterns,
+            failure_simulation=failure_simulation,
         )
             
         # print(data)

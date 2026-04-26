@@ -12,7 +12,8 @@ class RiskEvent(BaseModel):
     type: RiskEventType
     file_path: Optional[str] = None
     function: Optional[str] = None
-    reason: str
+    trigger: str
+    reason: Optional[str] = None
     confidence: float = 0.9
 
 
@@ -46,6 +47,7 @@ class RiskPatternDetector:
                     RiskEvent(
                         type=RiskEventType.FINANCIAL_LOGIC_CHANGE,
                         file_path=file_path,
+                        trigger="payment surface signal matched changed payment function names",
                         reason="Payment-related function modified",
                         confidence=0.7,
                     )
@@ -63,6 +65,7 @@ class RiskPatternDetector:
                 RiskEvent(
                     type=RiskEventType.VALIDATION_REMOVED,
                     file_path=file_path,
+                    trigger="validation_removal signal emitted from removed validation lines",
                     reason="Validation logic removed",
                     confidence=0.8,
                 )
@@ -77,6 +80,7 @@ class RiskPatternDetector:
                 RiskEvent(
                     type=RiskEventType.BACKDOOR_INTRODUCED,
                     file_path=file_path,
+                    trigger="hardcoded credential keyword signal detected",
                     reason="Potential hardcoded credential detected",
                     confidence=0.8,
                 )
@@ -96,6 +100,7 @@ class RiskPatternDetector:
                 RiskEvent(
                     type=RiskEventType.SCHEMA_MIGRATION,
                     file_path=file_path,
+                    trigger="migration file includes schema-altering operations",
                     reason="Database schema migration detected in changed file",
                     confidence=0.8,
                 )
@@ -106,6 +111,7 @@ class RiskPatternDetector:
                 RiskEvent(
                     type=RiskEventType.DATA_BACKFILL,
                     file_path=file_path,
+                    trigger="migration contains update/execute backfill-style data rewrite",
                     reason="Migration appears to rewrite existing persisted data",
                     confidence=0.8,
                 )
@@ -116,6 +122,7 @@ class RiskPatternDetector:
                 RiskEvent(
                     type=RiskEventType.TAX_CALCULATION_CHANGE,
                     file_path=file_path,
+                    trigger="tax-related calculation tokens changed in file or path context",
                     reason="Tax calculation or tax breakdown logic changed",
                     confidence=0.75,
                 )
@@ -126,6 +133,7 @@ class RiskPatternDetector:
                 RiskEvent(
                     type=RiskEventType.INVOICE_RENDERING_CHANGE,
                     file_path=file_path,
+                    trigger="invoice rendering/template tax presentation markers changed",
                     reason="Invoice rendering/tax presentation logic changed",
                     confidence=0.75,
                 )
@@ -136,6 +144,7 @@ class RiskPatternDetector:
                 RiskEvent(
                     type=RiskEventType.FINANCIAL_DATA_MODEL_CHANGE,
                     file_path=file_path,
+                    trigger="financial model/schema tokens changed in modelish file",
                     reason="Financial data model fields changed",
                     confidence=0.7,
                 )
@@ -149,6 +158,7 @@ class RiskPatternDetector:
                         type=RiskEventType.AUTH_BYPASS,
                         file_path=file_path,
                         function="login_required",
+                        trigger="login_required function was deleted",
                         reason="Authorization guard was removed",
                         confidence=0.9,
                     )
@@ -159,6 +169,7 @@ class RiskPatternDetector:
                         type=RiskEventType.PERMISSION_REMOVED,
                         file_path=file_path,
                         function="login_required",
+                        trigger="login_required modified and guard lines removed (session/redirect/if/return)",
                         reason="Authorization guard logic weakened",
                         confidence=0.75,
                     )
@@ -169,6 +180,7 @@ class RiskPatternDetector:
                 RiskEvent(
                     type=RiskEventType.AUTH_BYPASS,
                     file_path=file_path,
+                    trigger="removed auth guard/authenticate/Unauthorized lines in changed hunks",
                     reason="Authentication checks removed from protected flow",
                     confidence=0.95,
                 )
@@ -179,16 +191,18 @@ class RiskPatternDetector:
                 RiskEvent(
                     type=RiskEventType.BACKDOOR_INTRODUCED,
                     file_path=file_path,
+                    trigger="added static user credential mapping pattern in diff line",
                     reason="Static credential-like user mapping added",
                     confidence=0.85,
                 )
             )
 
-        if self._has_return_status_flip(lines):
+        if self._is_payment_context(file_path, function_names) and self._has_return_status_flip(lines):
             events.append(
                 RiskEvent(
                     type=RiskEventType.FINANCIAL_LOGIC_CHANGE,
                     file_path=file_path,
+                    trigger="payment-context return status lines changed between removed/added",
                     reason="Return status behavior changed",
                     confidence=0.8,
                 )
@@ -199,6 +213,7 @@ class RiskPatternDetector:
                 RiskEvent(
                     type=RiskEventType.STATE_INCONSISTENCY,
                     file_path=file_path,
+                    trigger='removed `"plan":"pro"` with added `"plan":"free"` in changed lines',
                     reason="User plan downgraded in changed logic",
                     confidence=0.8,
                 )
@@ -209,6 +224,7 @@ class RiskPatternDetector:
                 RiskEvent(
                     type=RiskEventType.VALIDATION_REMOVED,
                     file_path=file_path,
+                    trigger="removed validation guard markers (`if not`, `raise`, or `authenticate`)",
                     reason="Validation/guard checks removed",
                     confidence=0.85,
                 )
@@ -317,6 +333,16 @@ class RiskPatternDetector:
         joined_removed = "\n".join(removed_lines)
         markers = ("session.get", "redirect", "return", "if")
         return all(marker in joined_removed for marker in markers)
+
+    def _is_payment_context(self, file_path: str, function_names: set[str]) -> bool:
+        lowered_path = file_path.lower()
+        path_markers = ("payment", "checkout", "billing", "invoice")
+        if any(marker in lowered_path for marker in path_markers):
+            return True
+
+        fn_markers = ("pay", "payment", "checkout", "charge")
+        lowered_fn_names = {name.lower() for name in function_names}
+        return any(any(marker in fn for marker in fn_markers) for fn in lowered_fn_names)
 
     def _is_schema_migration_file(self, file_path: str) -> bool:
         lowered = file_path.lower()
