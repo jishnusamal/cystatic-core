@@ -20,17 +20,21 @@ router = APIRouter(prefix="/v1")
 
 
 def build_failure_simulation_llm() -> FailureSimulationLLM | None:
-    api_key = settings.llm_api_key or settings.ai_api_key or settings.openrouter_api_key
+    api_key = settings.llm_api_key or settings.ai_api_key
+    
+    print("LLM api key exists:", bool(api_key))
+    print("LLM model:", settings.llm_model)
+    print("LLM base url:", settings.llm_base_url)
+
     if not api_key:
         return None
 
     return FailureSimulationLLM(
         api_key=api_key,
-        model=settings.llm_model or settings.openrouter_model,
-        base_url=settings.llm_base_url or settings.openrouter_base_url,
-        site_url=settings.openrouter_site_url or None,
-        site_name=settings.openrouter_site_name or None,
-        reasoning_enabled=settings.openrouter_reasoning_enabled,
+        model=settings.llm_model,
+        base_url=settings.llm_base_url,
+        site_url=settings.llm_base_url,
+        site_name=settings.llm_base_url,
     )
 
 @app.api_route(
