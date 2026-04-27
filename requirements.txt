@@ -17,6 +17,7 @@ anyio==4.13.0
     # via
     #   cystatic
     #   httpx
+    #   openai
     #   starlette
     #   tortoise-orm
     #   watchfiles
@@ -48,11 +49,14 @@ colorama==0.4.6 ; sys_platform == 'win32'
     # via
     #   click
     #   cystatic
+    #   tqdm
     #   uvicorn
 cryptography==46.0.6
     # via
     #   cystatic
     #   pyjwt
+distro==1.9.0
+    # via openai
 dnspython==2.8.0
     # via
     #   cystatic
@@ -96,6 +100,7 @@ httpx==0.28.1
     #   cystatic
     #   fastapi
     #   fastapi-cloud-cli
+    #   openai
 idna==3.11
     # via
     #   anyio
@@ -113,6 +118,8 @@ jinja2==3.1.6
     # via
     #   cystatic
     #   fastapi
+jiter==0.14.0
+    # via openai
 markdown-it-py==4.0.0
     # via
     #   cystatic
@@ -125,6 +132,8 @@ mdurl==0.1.2
     # via
     #   cystatic
     #   markdown-it-py
+openai==2.32.0
+    # via cystatic
 packaging==26.0
     # via
     #   cystatic
@@ -138,6 +147,7 @@ pydantic==2.12.5
     #   cystatic
     #   fastapi
     #   fastapi-cloud-cli
+    #   openai
     #   pydantic-extra-types
     #   pydantic-settings
 pydantic-core==2.41.5
@@ -208,12 +218,16 @@ shellingham==1.5.4
     # via
     #   cystatic
     #   typer
+sniffio==1.3.1
+    # via openai
 starlette==1.0.0
     # via
     #   cystatic
     #   fastapi
 tortoise-orm==1.1.7
     # via cystatic
+tqdm==4.67.3
+    # via openai
 typer==0.24.1
     # via
     #   cystatic
@@ -224,6 +238,7 @@ typing-extensions==4.15.0
     #   anyio
     #   cystatic
     #   fastapi
+    #   openai
     #   pydantic
     #   pydantic-core
     #   pydantic-extra-types

@@ -30,6 +30,7 @@ class RIRCompressor:
                 risk_events=risk_events,
                 changed_functions=changed_functions,
             ),
+            "change_summaries": self._build_change_summaries(enriched_files),
         }
 
     def _collect_flows(self, enriched_files: list[dict]) -> list[str]:
@@ -162,3 +163,74 @@ class RIRCompressor:
             add("core business flow")
 
         return steps
+
+    def _build_change_summaries(self, enriched_files: list[dict]) -> list[dict[str, str]]:
+        summaries: list[dict[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+
+        for file_data in enriched_files:
+            file_path = str(file_data.get("file_path", "")).strip()
+            changed_functions = file_data.get("changed_functions", []) or []
+
+            for fn in changed_functions:
+                fn_data = self._as_dict(fn)
+                function_name = str(fn_data.get("name", "")).strip()
+                if not function_name or not self._is_execution_critical_function(function_name):
+                    continue
+
+                key = (file_path, function_name)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                summary, risk_relevance = self._summarize_change(file_path, function_name)
+                summaries.append(
+                    {
+                        "file": file_path,
+                        "function": function_name,
+                        "summary": summary,
+                        "risk_relevance": risk_relevance,
+                    }
+                )
+
+        return summaries
+
+    def _summarize_change(self, file_path: str, function_name: str) -> tuple[str, str]:
+        lowered_file = file_path.lower()
+        lowered_fn = function_name.lower()
+        domain_text = f"{lowered_file} {lowered_fn}"
+
+        if "checkout" in domain_text and "tax" in domain_text:
+            return (
+                "Checkout tax handling logic changed and likely relies on updated tax breakdown fields.",
+                "Incorrect breakdown mapping can produce wrong checkout tax totals.",
+            )
+
+        if "invoice" in domain_text and ("total" in domain_text or "render" in domain_text or "item" in domain_text):
+            return (
+                "Invoice totals/rendering logic changed to use revised tax item composition.",
+                "Invoices may show incorrect or duplicated tax lines.",
+            )
+
+        if "order" in domain_text and ("create" in domain_text or "from_checkout" in domain_text):
+            return (
+                "Order creation path changed and now persists updated checkout tax-related fields.",
+                "Order tax data can drift from checkout tax data if field mapping is inconsistent.",
+            )
+
+        if "payment" in domain_text or "charge" in domain_text:
+            return (
+                "Payment processing logic changed in a business-critical execution path.",
+                "Payment status or amount handling can diverge from expected outcomes.",
+            )
+
+        if "tax" in domain_text:
+            return (
+                "Tax computation or propagation logic changed in this function.",
+                "Tax totals can become inaccurate across checkout/order/invoice flows.",
+            )
+
+        return (
+            "Business-critical function changed in the current execution path.",
+            "Behavioral regressions in this function can impact downstream workflows.",
+        )

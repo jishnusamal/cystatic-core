@@ -7,22 +7,24 @@ from core_engine.failure_simulator import FailureSimulator
 from core_engine.entrypoint_resolver import EntryPointResolver
 from core_engine.file_exclusion import FileExclusionService
 from core_engine.rir_compressor import RIRCompressor
+from typing import Any
 
 
 class BaseOrchestrator:
-    def __init__(self, request, source, language, publisher=None):
+    def __init__(self, request, source, language, publisher=None, failure_simulation_llm=None):
         self.request = request
         self.source = source
         self.language = language
         self.publisher = publisher
+        self.failure_simulation_llm = failure_simulation_llm
 
-    def run_pr_analysis(self):
+    def run_pr_analysis(self) -> dict[str, Any]:
         raise NotImplementedError("Must implement run_pr_analysis in subclass")
 
-    def publish_comments(self, result: dict):
+    def publish_comments(self, result: dict[str, Any]) -> dict[str, Any] | None:
         raise NotImplementedError("Must implement publish_comments in subclass")
 
-    def log_run(self, result: dict):
+    async def log_run(self, result: dict[str, Any]) -> None:
         raise NotImplementedError("Must implement log_run in subclass")
     
     #---------------------------------------------
@@ -164,7 +166,7 @@ class BaseOrchestrator:
         analysis_mode: AnalysisMode,
         enriched_files: list[dict],
         risk_patterns: list | None = None,
-        failure_simulation: list[str] | None = None,
+        failure_simulation: dict | list | None = None,
         entry_points_affected: list | None = None,
         system_impact: list | None = None,
         excluded_files: list[dict] | None = None,
@@ -217,10 +219,10 @@ class Orchestrator(BaseOrchestrator):
     - AST-based function mapping
     """
 
-    def __init__(self, request: AnalyzeRequest, source, language, publisher=None):
-        super().__init__(request, source, language, publisher)
+    def __init__(self, request: AnalyzeRequest, source, language, publisher=None, failure_simulation_llm=None):
+        super().__init__(request, source, language, publisher, failure_simulation_llm)
 
-    def run_pr_analysis(self):
+    def run_pr_analysis(self) -> dict[str, Any]:
         request, source, lang = self.request, self.source, self.language
 
         diff_ir = source.fetch_diff(request.repo, request.pr_number)
@@ -285,7 +287,6 @@ class Orchestrator(BaseOrchestrator):
 
         risk_detector = RiskPatternDetector()
         risk_patterns = risk_detector.detect(enriched_files)
-        failure_simulation = FailureSimulator().generate(risk_patterns, enriched_files)
         resolver = EntryPointResolver()
         entry_points_affected = resolver.resolve(enriched_files, risk_patterns)
         system_impact = resolver.resolve_system_impact(risk_patterns, entry_points_affected)
@@ -294,6 +295,10 @@ class Orchestrator(BaseOrchestrator):
             risk_patterns=risk_patterns,
             entry_points_affected=entry_points_affected,
         )
+        if self.failure_simulation_llm:
+            failure_simulation = self.failure_simulation_llm.generate(compressed_for_llm).model_dump()
+        else:
+            failure_simulation = FailureSimulator().generate(risk_patterns, enriched_files)
             
         data = self._build_result(
             repo=request.repo,
@@ -308,17 +313,15 @@ class Orchestrator(BaseOrchestrator):
             compressed_for_llm=compressed_for_llm,
         )
         
-        print(compressed_for_llm)
+        return data
 
-        return compressed_for_llm
-
-    def publish_comments(self, result: dict):
-        comment = self._render_pr_comment("github/pr_comment_1.md.j2", result)
-
-        print(
-            f"Publishing comment to {self.request.repo} "
-            f"PR #{self.request.pr_number}:\n{comment}"
-        )
+    def publish_comments(self, result: dict[str, Any]) -> None:
+        # comment = self._render_pr_comment("github/pr_comment_1.md.j2", result)
+        pass
+        # print(
+        #     f"Publishing comment to {self.request.repo} "
+        #     f"PR #{self.request.pr_number}:\n{comment}"
+        # )
 
         # self.publisher.post_comment(
         #     repo=self.request.repo,
@@ -326,7 +329,7 @@ class Orchestrator(BaseOrchestrator):
         #     comment=comment,
         # )
 
-    async def log_run(self, result: dict):
+    async def log_run(self, result: dict[str, Any]) -> None:
         record = await AnalysisRecord.create(
             repo=self.request.repo,
             pr_number=self.request.pr_number,
@@ -346,10 +349,10 @@ class DiffOrchestrator(BaseOrchestrator):
     - regex-based hunk function mapping
     """
 
-    def __init__(self, request: dict, source, language, publisher=None):
-        super().__init__(request, source, language, publisher)
+    def __init__(self, request: dict, source, language, publisher=None, failure_simulation_llm=None):
+        super().__init__(request, source, language, publisher, failure_simulation_llm)
 
-    def run_pr_analysis(self):
+    def run_pr_analysis(self) -> dict[str, Any]:
         request, source, lang = self.request, self.source, self.language
 
         diff_text = request.get("diff") or ""
@@ -401,7 +404,6 @@ class DiffOrchestrator(BaseOrchestrator):
 
         risk_detector = RiskPatternDetector()
         risk_patterns = risk_detector.detect(enriched_files)
-        failure_simulation = FailureSimulator().generate(risk_patterns, enriched_files)
         resolver = EntryPointResolver()
         entry_points_affected = resolver.resolve(enriched_files, risk_patterns)
         system_impact = resolver.resolve_system_impact(risk_patterns, entry_points_affected)
@@ -410,6 +412,10 @@ class DiffOrchestrator(BaseOrchestrator):
             risk_patterns=risk_patterns,
             entry_points_affected=entry_points_affected,
         )
+        if self.failure_simulation_llm:
+            failure_simulation = self.failure_simulation_llm.generate(compressed_for_llm).model_dump()
+        else:
+            failure_simulation = FailureSimulator().generate(risk_patterns, enriched_files)
             
         data = self._build_result(
             repo=request.get("repo", "example/repo"),
@@ -426,10 +432,10 @@ class DiffOrchestrator(BaseOrchestrator):
             
         # print(data)
 
-        return compressed_for_llm
+        return data
 
-    def publish_comments(self, result: dict):
-        comment = self._render_pr_comment("github/pr_comment.md.j2", result)
+    def publish_comments(self, result: dict[str, Any]) -> dict[str, Any]:
+        # comment = self._render_pr_comment("github/pr_comment.md.j2", result)
         # print(comment)
         return result
 
@@ -439,7 +445,7 @@ class DiffOrchestrator(BaseOrchestrator):
         #     f"PR #{result['pr_number']}:\n{comment}"
         # )
 
-    async def log_run(self, result: dict):
+    async def log_run(self, result: dict[str, Any]) -> None:
         record = await AnalysisRecord.create(
             repo=result.get("repo", "example/repo"),
             pr_number=result.get("pr_number", 1),
