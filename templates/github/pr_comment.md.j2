@@ -1,9 +1,9 @@
-## ⚠️ Factor Review — What could break?
+## Factor Review — What could break?
 
 **Verdict: {{ verdict }}**
 
 {% if failure_simulation.final_question %}
-### 🚫 Merge blocker
+### Merge blocker
 
 > {{ failure_simulation.final_question }}
 {% endif %}
@@ -33,7 +33,7 @@ No high-confidence failure scenarios detected.
 ---
 
 {% if failure_simulation.hidden_impact_chain %}
-### 🧠 Hidden impact
+### Hidden impact
 
 {% for chain in failure_simulation.hidden_impact_chain %}
 - {{ chain }}
@@ -41,7 +41,7 @@ No high-confidence failure scenarios detected.
 {% endif %}
 
 {% if failure_simulation.missing_critical_tests %}
-### 🧪 Missing tests
+### Missing tests
 
 {% for test in failure_simulation.missing_critical_tests %}
 - {{ test }}
@@ -49,7 +49,7 @@ No high-confidence failure scenarios detected.
 {% endif %}
 
 {% if failure_simulation.broken_assumptions %}
-### ⚠️ Risky assumptions
+### Risky assumptions
 
 {% for assumption in failure_simulation.broken_assumptions %}
 - {{ assumption }}

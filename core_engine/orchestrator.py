@@ -201,8 +201,8 @@ class BaseOrchestrator:
             #     impact.model_dump() if hasattr(impact, "model_dump") else impact
             #     for impact in (system_impact or [])
             # ],
-            # "pr_risk_score": pr_risk_score,
-            # "pr_risk_level": pr_risk_level,
+            "pr_risk_score": pr_risk_score,
+            "pr_risk_level": pr_risk_level,
             "verdict": final_verdict,
         }
 
@@ -490,7 +490,7 @@ class DiffOrchestrator(BaseOrchestrator):
         data = self._build_result(
             repo=request.get("repo", "example/repo"),
             pr_number=request.get("pr_number", 1),
-            analysis_mode=AnalysisMode.FULL_FILE,
+            analysis_mode=AnalysisMode.DIFF_ONLY,
             failure_simulation=failure_simulation,
             enriched_files=enriched_files,
             risk_patterns=risk_patterns,
