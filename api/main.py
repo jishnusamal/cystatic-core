@@ -63,8 +63,8 @@ async def analyze_pr(body: AnalyzeRequest = Body(...)):
     result = orchestrator.run_pr_analysis()
     orchestrator.publish_comments(result)
 
-    if settings.app_env == "production":
-        await orchestrator.log_run(result)
+    # if settings.app_env == "production":
+    await orchestrator.log_run(result)
     return result
 
 @router.post("/analyze-diff")
