@@ -31,6 +31,61 @@ class BaseOrchestrator:
     #---------------------------------------------
     # Risk Scoring Logic (Private methods)
     #---------------------------------------------
+    def _default_failure_simulation(self) -> dict:
+        return {
+            "failure_scenarios": [],
+            "hidden_impact_chain": [],
+            "checked_risk_areas": [],
+            "missing_critical_tests": [],
+            "broken_assumptions": [],
+            "silent_failure_summary": "",
+            "merge_risk_statement": "",
+            "verdict_rationale": "",
+            "verdict": "SAFE",
+            "final_question": "",
+        }
+
+    def _normalize_failure_scenario(self, scenario: dict) -> dict:
+        normalized_scenario = dict(scenario)
+        normalized_scenario.setdefault("evidence_type", "inferred")
+        normalized_scenario.setdefault("first_observable_signal", "unknown")
+        normalized_scenario.setdefault("silent_failure", True)
+        normalized_scenario.setdefault("ci_would_catch", False)
+        normalized_scenario.setdefault("merge_risk_level", "MEDIUM")
+        return normalized_scenario
+
+    def _normalize_failure_simulation(self, failure_simulation: dict | list | None) -> dict:
+        normalized = self._default_failure_simulation()
+
+        if isinstance(failure_simulation, list):
+            normalized["hidden_impact_chain"] = [str(item) for item in failure_simulation if str(item).strip()]
+            return normalized
+
+        if not isinstance(failure_simulation, dict):
+            return normalized
+
+        normalized.update(failure_simulation)
+
+        normalized["failure_scenarios"] = [
+            self._normalize_failure_scenario(scenario)
+            for scenario in normalized.get("failure_scenarios", [])
+            if isinstance(scenario, dict)
+        ]
+        normalized["hidden_impact_chain"] = [
+            str(item) for item in normalized.get("hidden_impact_chain", []) if str(item).strip()
+        ]
+        normalized["checked_risk_areas"] = [
+            str(item) for item in normalized.get("checked_risk_areas", []) if str(item).strip()
+        ]
+        normalized["missing_critical_tests"] = [
+            str(item) for item in normalized.get("missing_critical_tests", []) if str(item).strip()
+        ]
+        normalized["broken_assumptions"] = [
+            str(item) for item in normalized.get("broken_assumptions", []) if str(item).strip()
+        ]
+
+        return normalized
+
     def _calculate_file_risk_score(self, file_data: dict) -> float:
         """
         Returns risk score as percentage (0-100)
@@ -104,14 +159,9 @@ class BaseOrchestrator:
         env = Environment(loader=FileSystemLoader("templates"))
         jinja_template: Template = env.get_template(template_name)
 
-        failure_simulation = result.get("failure_simulation") or {}
-
-        # Normalize shape to avoid Jinja crashes
-        failure_simulation.setdefault("failure_scenarios", [])
-        failure_simulation.setdefault("hidden_impact_chain", [])
-        failure_simulation.setdefault("missing_critical_tests", [])
-        failure_simulation.setdefault("broken_assumptions", [])
-        failure_simulation.setdefault("final_question", None)
+        failure_simulation = self._normalize_failure_simulation(
+            result.get("failure_simulation")
+        )
 
         return jinja_template.render(
             verdict=result.get("verdict", "UNKNOWN"),
@@ -159,6 +209,8 @@ class BaseOrchestrator:
         excluded_files: list[dict] | None = None,
         compressed_for_llm: dict | None = None,
     ) -> dict:
+        failure_simulation = self._normalize_failure_simulation(failure_simulation)
+
         pr_risk_score = self._calculate_pr_risk_score(enriched_files)
         pr_risk_level = self._classify_risk(pr_risk_score)
 
@@ -191,7 +243,7 @@ class BaseOrchestrator:
             #     rp.model_dump() if hasattr(rp, "model_dump") else rp
             #     for rp in (risk_patterns or [])
             # ],
-            "failure_simulation": failure_simulation or [],
+            "failure_simulation": failure_simulation,
             # "entry_points_affected": [
             #     ep.model_dump() if hasattr(ep, "model_dump") else ep
             #     for ep in (entry_points_affected or [])
@@ -217,7 +269,7 @@ class BaseOrchestrator:
         """
 
         if not isinstance(failure_simulation, dict):
-            return {}
+            return self._default_failure_simulation()
 
         ir_text = json.dumps(compressed_for_llm).lower()
 
@@ -247,7 +299,7 @@ class BaseOrchestrator:
                 "No grounded failure scenario could be validated against the PR analysis input."
             )
 
-        return failure_simulation
+        return self._normalize_failure_simulation(failure_simulation)
 
 
 
