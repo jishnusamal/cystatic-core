@@ -52,6 +52,9 @@ class BaseOrchestrator:
         normalized_scenario.setdefault("silent_failure", True)
         normalized_scenario.setdefault("ci_would_catch", False)
         normalized_scenario.setdefault("merge_risk_level", "MEDIUM")
+        normalized_scenario.setdefault("false_confidence_reason", "")
+        normalized_scenario.setdefault("why_it_slips_through", "")
+        normalized_scenario.setdefault("merge_confidence_trap", "")
         return normalized_scenario
 
     def _normalize_failure_simulation(self, failure_simulation: dict | list | None) -> dict:

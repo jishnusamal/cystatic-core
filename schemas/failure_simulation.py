@@ -13,6 +13,9 @@ class FailureScenario(BaseModel):
     silent_failure: bool = True
     ci_would_catch: bool = False
     merge_risk_level: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"] = "MEDIUM"
+    false_confidence_reason: str = ""
+    why_it_slips_through: str = ""
+    merge_confidence_trap: str = ""
 
 
 class FailureSimulationOutput(BaseModel):

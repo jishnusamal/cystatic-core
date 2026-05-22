@@ -29,6 +29,11 @@
 - CI would catch: {{ "yes" if scenario.ci_would_catch else "no" }}
 - Merge risk: {{ scenario.merge_risk_level }}
 
+**Confidence trap**
+- False confidence reason: {{ scenario.false_confidence_reason }}
+- Why it slips through: {{ scenario.why_it_slips_through }}
+- Merge confidence trap: {{ scenario.merge_confidence_trap }}
+
 **Confidence**
 {{ scenario.confidence }}
 
