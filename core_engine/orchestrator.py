@@ -6,27 +6,89 @@ from core_engine.risk_pattern_detector import RiskPatternDetector, detect_flows
 from core_engine.failure_simulator import FailureSimulator
 from core_engine.entrypoint_resolver import EntryPointResolver
 from core_engine.file_exclusion import FileExclusionService
+from core_engine.rir_compressor import RIRCompressor
+from typing import Any
+import json
 
 
 class BaseOrchestrator:
-    def __init__(self, request, source, language, publisher=None):
+    def __init__(self, request, source, language, publisher=None, failure_simulation_llm=None):
         self.request = request
         self.source = source
         self.language = language
         self.publisher = publisher
+        self.failure_simulation_llm = failure_simulation_llm
 
-    def run_pr_analysis(self):
+    def run_pr_analysis(self) -> dict[str, Any]:
         raise NotImplementedError("Must implement run_pr_analysis in subclass")
 
-    def publish_comments(self, result: dict):
+    def publish_comments(self, result: dict[str, Any]) -> dict[str, Any] | None:
         raise NotImplementedError("Must implement publish_comments in subclass")
 
-    def log_run(self, result: dict):
+    async def log_run(self, result: dict[str, Any]) -> None:
         raise NotImplementedError("Must implement log_run in subclass")
     
     #---------------------------------------------
     # Risk Scoring Logic (Private methods)
     #---------------------------------------------
+    def _default_failure_simulation(self) -> dict:
+        return {
+            "failure_scenarios": [],
+            "hidden_impact_chain": [],
+            "checked_risk_areas": [],
+            "missing_critical_tests": [],
+            "broken_assumptions": [],
+            "silent_failure_summary": "",
+            "merge_risk_statement": "",
+            "verdict_rationale": "",
+            "verdict": "SAFE",
+            "final_question": "",
+        }
+
+    def _normalize_failure_scenario(self, scenario: dict) -> dict:
+        normalized_scenario = dict(scenario)
+        normalized_scenario.setdefault("evidence_type", "inferred")
+        normalized_scenario.setdefault("first_observable_signal", "unknown")
+        normalized_scenario.setdefault("silent_failure", True)
+        normalized_scenario.setdefault("ci_would_catch", False)
+        normalized_scenario.setdefault("merge_risk_level", "MEDIUM")
+        normalized_scenario.setdefault("false_confidence_reason", "")
+        normalized_scenario.setdefault("why_it_slips_through", "")
+        normalized_scenario.setdefault("merge_confidence_trap", "")
+        return normalized_scenario
+
+    def _normalize_failure_simulation(self, failure_simulation: dict | list | None) -> dict:
+        normalized = self._default_failure_simulation()
+
+        if isinstance(failure_simulation, list):
+            normalized["hidden_impact_chain"] = [str(item) for item in failure_simulation if str(item).strip()]
+            return normalized
+
+        if not isinstance(failure_simulation, dict):
+            return normalized
+
+        normalized.update(failure_simulation)
+
+        normalized["failure_scenarios"] = [
+            self._normalize_failure_scenario(scenario)
+            for scenario in normalized.get("failure_scenarios", [])
+            if isinstance(scenario, dict)
+        ]
+        normalized["hidden_impact_chain"] = [
+            str(item) for item in normalized.get("hidden_impact_chain", []) if str(item).strip()
+        ]
+        normalized["checked_risk_areas"] = [
+            str(item) for item in normalized.get("checked_risk_areas", []) if str(item).strip()
+        ]
+        normalized["missing_critical_tests"] = [
+            str(item) for item in normalized.get("missing_critical_tests", []) if str(item).strip()
+        ]
+        normalized["broken_assumptions"] = [
+            str(item) for item in normalized.get("broken_assumptions", []) if str(item).strip()
+        ]
+
+        return normalized
+
     def _calculate_file_risk_score(self, file_data: dict) -> float:
         """
         Returns risk score as percentage (0-100)
@@ -99,34 +161,15 @@ class BaseOrchestrator:
     def _render_pr_comment(self, template_name: str, result: dict) -> str:
         env = Environment(loader=FileSystemLoader("templates"))
         jinja_template: Template = env.get_template(template_name)
-        
-        def risk_priority(risk_level: str) -> int:
-            if "HIGH" in risk_level:
-                return 3
-            elif "MEDIUM" in risk_level:
-                return 2
-            return 1
 
-        files = result.get("files", [])
-
-        # sort: HIGH → MEDIUM → LOW, then by score
-        files = sorted(
-            files,
-            key=lambda f: (risk_priority(f["risk_level"]), f["risk_score"]),
-            reverse=True
+        failure_simulation = self._normalize_failure_simulation(
+            result.get("failure_simulation")
         )
-
-        # filter out LOW risk files
-        files = [f for f in files]
-        #  files = [f for f in files if "LOW" not in f["risk_level"]]
 
         return jinja_template.render(
-            pr_risk_score=result.get("pr_risk_score", 0),
-            pr_risk_level=result.get("pr_risk_level", "UNKNOWN"),
             verdict=result.get("verdict", "UNKNOWN"),
-            files=files
+            failure_simulation=failure_simulation,
         )
-
 
     def _enrich_file(
         self,
@@ -163,45 +206,105 @@ class BaseOrchestrator:
         analysis_mode: AnalysisMode,
         enriched_files: list[dict],
         risk_patterns: list | None = None,
-        failure_simulation: list[str] | None = None,
+        failure_simulation: dict | list | None = None,
         entry_points_affected: list | None = None,
         system_impact: list | None = None,
         excluded_files: list[dict] | None = None,
+        compressed_for_llm: dict | None = None,
     ) -> dict:
+        failure_simulation = self._normalize_failure_simulation(failure_simulation)
+
         pr_risk_score = self._calculate_pr_risk_score(enriched_files)
         pr_risk_level = self._classify_risk(pr_risk_score)
+
         keywords_detected = [
             signal
             for file in enriched_files
             for signal in file.get("keyword_signals", [])
         ]
 
+        allowed_llm_verdicts = {"SAFE", "REVIEW_REQUIRED", "BLOCK_REVIEW"}
+
+        llm_verdict = None
+        if isinstance(failure_simulation, dict):
+            llm_verdict = failure_simulation.get("verdict")
+
+        final_verdict = (
+            llm_verdict
+            if llm_verdict in allowed_llm_verdicts
+            else self._get_verdict(pr_risk_level, risk_patterns=risk_patterns)
+        )
+
         return {
             "repo": repo,
             "pr_number": pr_number,
             "analysis_mode": analysis_mode.value,
-            "files": enriched_files,
-            "excluded_files": excluded_files or [],
-            "keywords_detected": keywords_detected,
-            "risk_patterns": [
-                rp.model_dump() if hasattr(rp, "model_dump") else rp
-                for rp in (risk_patterns or [])
-            ],
-            "failure_simulation": failure_simulation or [],
-            "entry_points_affected": [
-                ep.model_dump() if hasattr(ep, "model_dump") else ep
-                for ep in (entry_points_affected or [])
-            ],
-            "system_impact": [
-                impact.model_dump() if hasattr(impact, "model_dump") else impact
-                for impact in (system_impact or [])
-            ],
+            # "files": enriched_files,
+            # "excluded_files": excluded_files or [],
+            # "keywords_detected": keywords_detected,
+            # "risk_patterns": [
+            #     rp.model_dump() if hasattr(rp, "model_dump") else rp
+            #     for rp in (risk_patterns or [])
+            # ],
+            "failure_simulation": failure_simulation,
+            # "entry_points_affected": [
+            #     ep.model_dump() if hasattr(ep, "model_dump") else ep
+            #     for ep in (entry_points_affected or [])
+            # ],
+            # "compressed_for_llm": compressed_for_llm or {},
+            # "system_impact": [
+            #     impact.model_dump() if hasattr(impact, "model_dump") else impact
+            #     for impact in (system_impact or [])
+            # ],
             "pr_risk_score": pr_risk_score,
             "pr_risk_level": pr_risk_level,
-            "verdict": self._get_verdict(pr_risk_level, risk_patterns=risk_patterns),
+            "verdict": final_verdict,
         }
 
-    # keep your existing scoring/render methods below
+    def _validate_failure_simulation(
+        self,
+        failure_simulation: dict,
+        compressed_for_llm: dict,
+    ) -> dict:
+        """
+        Ensures LLM output is grounded in real PR data.
+        Drops hallucinated scenarios.
+        """
+
+        if not isinstance(failure_simulation, dict):
+            return self._default_failure_simulation()
+
+        ir_text = json.dumps(compressed_for_llm).lower()
+
+        valid_scenarios = []
+
+        for scenario in failure_simulation.get("failure_scenarios", []):
+            combined_text = " ".join([
+                scenario.get("title", ""),
+                scenario.get("trigger", ""),
+                scenario.get("execution_path", ""),
+                scenario.get("production_impact", ""),
+            ]).lower()
+
+            # Require at least one meaningful token to exist in IR
+            tokens = [t for t in combined_text.split() if len(t) > 6]
+
+            if any(token in ir_text for token in tokens):
+                valid_scenarios.append(scenario)
+
+        # overwrite with validated scenarios
+        failure_simulation["failure_scenarios"] = valid_scenarios
+
+        # If everything got filtered → downgrade
+        if not valid_scenarios:
+            failure_simulation["verdict"] = "REVIEW_REQUIRED"
+            failure_simulation["final_question"] = (
+                "No grounded failure scenario could be validated against the PR analysis input."
+            )
+
+        return self._normalize_failure_simulation(failure_simulation)
+
+
 
 class Orchestrator(BaseOrchestrator):
     """
@@ -214,10 +317,10 @@ class Orchestrator(BaseOrchestrator):
     - AST-based function mapping
     """
 
-    def __init__(self, request: AnalyzeRequest, source, language, publisher=None):
-        super().__init__(request, source, language, publisher)
+    def __init__(self, request: AnalyzeRequest, source, language, publisher=None, failure_simulation_llm=None):
+        super().__init__(request, source, language, publisher, failure_simulation_llm)
 
-    def run_pr_analysis(self):
+    def run_pr_analysis(self) -> dict[str, Any]:
         request, source, lang = self.request, self.source, self.language
 
         diff_ir = source.fetch_diff(request.repo, request.pr_number)
@@ -282,30 +385,51 @@ class Orchestrator(BaseOrchestrator):
 
         risk_detector = RiskPatternDetector()
         risk_patterns = risk_detector.detect(enriched_files)
-        failure_simulation = FailureSimulator().generate(risk_patterns, enriched_files)
         resolver = EntryPointResolver()
         entry_points_affected = resolver.resolve(enriched_files, risk_patterns)
         system_impact = resolver.resolve_system_impact(risk_patterns, entry_points_affected)
+        compressed_for_llm = RIRCompressor().compress(
+            enriched_files=enriched_files,
+            risk_patterns=risk_patterns,
+            entry_points_affected=entry_points_affected,
+        )
             
+        try:
+            if self.failure_simulation_llm:
+                print("Calling LLM...")
+                output = self.failure_simulation_llm.generate(compressed_for_llm)
+                failure_simulation = output.model_dump()
+
+                failure_simulation = self._validate_failure_simulation(
+                    failure_simulation=failure_simulation,
+                    compressed_for_llm=compressed_for_llm,
+                )
+
+            else:
+                failure_simulation = FailureSimulator().generate(risk_patterns, enriched_files)
+
+        except Exception as e:
+            print(f"LLM failure simulation failed, falling back to rules: {repr(e)}")
+            failure_simulation = FailureSimulator().generate(risk_patterns, enriched_files)
+
         data = self._build_result(
             repo=request.repo,
             pr_number=request.pr_number,
             analysis_mode=AnalysisMode.FULL_FILE,
+            failure_simulation=failure_simulation,
             enriched_files=enriched_files,
             risk_patterns=risk_patterns,
-            failure_simulation=failure_simulation,
             entry_points_affected=entry_points_affected,
             system_impact=system_impact,
             excluded_files=excluded_files,
+            compressed_for_llm=compressed_for_llm,
         )
         
-        print(data)
-
         return data
 
-    def publish_comments(self, result: dict):
-        comment = self._render_pr_comment("github/pr_comment_1.md.j2", result)
-
+    def publish_comments(self, result: dict[str, Any]) -> None:
+        comment = self._render_pr_comment("github/pr_comment.md.j2", result)
+        # pass
         print(
             f"Publishing comment to {self.request.repo} "
             f"PR #{self.request.pr_number}:\n{comment}"
@@ -317,7 +441,7 @@ class Orchestrator(BaseOrchestrator):
         #     comment=comment,
         # )
 
-    async def log_run(self, result: dict):
+    async def log_run(self, result: dict[str, Any]) -> None:
         record = await AnalysisRecord.create(
             repo=self.request.repo,
             pr_number=self.request.pr_number,
@@ -337,10 +461,10 @@ class DiffOrchestrator(BaseOrchestrator):
     - regex-based hunk function mapping
     """
 
-    def __init__(self, request: dict, source, language, publisher=None):
-        super().__init__(request, source, language, publisher)
+    def __init__(self, request: dict, source, language, publisher=None, failure_simulation_llm=None):
+        super().__init__(request, source, language, publisher, failure_simulation_llm)
 
-    def run_pr_analysis(self):
+    def run_pr_analysis(self) -> dict[str, Any]:
         request, source, lang = self.request, self.source, self.language
 
         diff_text = request.get("diff") or ""
@@ -392,30 +516,52 @@ class DiffOrchestrator(BaseOrchestrator):
 
         risk_detector = RiskPatternDetector()
         risk_patterns = risk_detector.detect(enriched_files)
-        failure_simulation = FailureSimulator().generate(risk_patterns, enriched_files)
         resolver = EntryPointResolver()
         entry_points_affected = resolver.resolve(enriched_files, risk_patterns)
         system_impact = resolver.resolve_system_impact(risk_patterns, entry_points_affected)
+        compressed_for_llm = RIRCompressor().compress(
+            enriched_files=enriched_files,
+            risk_patterns=risk_patterns,
+            entry_points_affected=entry_points_affected,
+        )
+        try:
+            if self.failure_simulation_llm:
+                print("Calling LLM...")
+                output = self.failure_simulation_llm.generate(compressed_for_llm)
+                failure_simulation = output.model_dump()
+
+                failure_simulation = self._validate_failure_simulation(
+                    failure_simulation=failure_simulation,
+                    compressed_for_llm=compressed_for_llm,
+                )
+
+            else:
+                failure_simulation = FailureSimulator().generate(risk_patterns, enriched_files)
+
+        except Exception as e:
+            print(f"LLM failure simulation failed, falling back to rules: {repr(e)}")
+            failure_simulation = FailureSimulator().generate(risk_patterns, enriched_files)
             
         data = self._build_result(
             repo=request.get("repo", "example/repo"),
             pr_number=request.get("pr_number", 1),
             analysis_mode=AnalysisMode.DIFF_ONLY,
+            failure_simulation=failure_simulation,
             enriched_files=enriched_files,
             risk_patterns=risk_patterns,
-            failure_simulation=failure_simulation,
             entry_points_affected=entry_points_affected,
             system_impact=system_impact,
             excluded_files=excluded_files,
+            compressed_for_llm=compressed_for_llm,
         )
             
         # print(data)
 
         return data
 
-    def publish_comments(self, result: dict):
+    def publish_comments(self, result: dict[str, Any]) -> dict[str, Any]:
         comment = self._render_pr_comment("github/pr_comment.md.j2", result)
-        # print(comment)
+        print(comment)
         return result
 
 
@@ -424,7 +570,7 @@ class DiffOrchestrator(BaseOrchestrator):
         #     f"PR #{result['pr_number']}:\n{comment}"
         # )
 
-    async def log_run(self, result: dict):
+    async def log_run(self, result: dict[str, Any]) -> None:
         record = await AnalysisRecord.create(
             repo=result.get("repo", "example/repo"),
             pr_number=result.get("pr_number", 1),

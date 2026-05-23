@@ -13,10 +13,15 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     app_env: str = ""
     app_version: str = ""
-    database_url: str
-    database_url_direct: str
+    database_url: str = ""
+    database_url_direct: str = ""
     ai_api_key: str = ""
-    
+    llm_api_key: str = ""
+    # llm_model: str = "qwen-3-235b-a22b-instruct-2507"
+    # llm_base_url: str = "https://api.cerebras.ai/v1"
+    llm_model: str = "openai/gpt-oss-120b"
+    llm_base_url: str = "https://api.groq.com/openai/v1"
+
     model_config = SettingsConfigDict(env_file=BASE_DIR / ".env.local")
 
 @lru_cache
