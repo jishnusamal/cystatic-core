@@ -8,7 +8,7 @@ from typing import Any
 from api.settings import get_settings
 from core_engine.failure_simulation_llm import FailureSimulationLLM
 from core_engine.orchestrator import Orchestrator
-from source_adapters.github.auth import GitHubAppCredentials, resolve_github_token
+from source_adapters.github.auth import get_installation_token
 from source_adapters.github.comment_formatter import render_pull_request_comment
 from source_adapters.github.event_handler import PullRequestAnalysisJob
 from source_adapters.github.github_client import build_github_clients
@@ -34,13 +34,15 @@ def build_failure_simulation_llm() -> FailureSimulationLLM | None:
 
 def process_pull_request_job(job: PullRequestAnalysisJob) -> dict[str, Any]:
     settings = get_settings()
-    credentials = GitHubAppCredentials(
+    
+    if not job.installation_id:
+        raise ValueError("Installation ID is required for GitHub App webhook analysis")
+    
+    token = get_installation_token(
         app_id=settings.github_app_id,
         private_key=settings.github_private_key,
-        access_token=settings.github_access_token,
-        client_secret=settings.github_client_secret,
+        installation_id=job.installation_id,
     )
-    token = resolve_github_token(credentials, installation_id=job.installation_id)
     source, publisher = build_github_clients(token)
 
     orchestrator = Orchestrator(

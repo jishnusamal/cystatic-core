@@ -66,10 +66,37 @@ def exchange_installation_token(
     return str(token)
 
 
+def get_installation_token(
+    app_id: str,
+    private_key: str,
+    installation_id: int,
+) -> str:
+    """Get GitHub App installation token. This is the ONLY path for GitHub App webhook operations.
+    
+    Never uses personal access tokens—only installation-scoped tokens.
+    """
+    if not app_id:
+        raise ValueError("GitHub App ID is required for GitHub App installation token flow")
+    if not private_key:
+        raise ValueError("GitHub App private key is required for GitHub App installation token flow")
+    if not installation_id:
+        raise ValueError("Installation ID is required for GitHub App installation token flow")
+
+    return exchange_installation_token(
+        app_id=app_id,
+        private_key=private_key,
+        installation_id=installation_id,
+    )
+
+
 def resolve_github_token(
     credentials: GitHubAppCredentials,
     installation_id: int | None = None,
 ) -> str:
+    """Legacy token resolution for backwards compatibility.
+    
+    DO NOT USE for GitHub App webhook operations. Use get_installation_token() instead.
+    """
     if credentials.access_token:
         return credentials.access_token
 

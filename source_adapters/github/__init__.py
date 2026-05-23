@@ -1,6 +1,6 @@
 """GitHub source adapter package."""
 
-from source_adapters.github.auth import GitHubAppCredentials, resolve_github_token
+from source_adapters.github.auth import GitHubAppCredentials, get_installation_token, resolve_github_token
 from source_adapters.github.bot import (
     GitHubAdapter,
     GitHubBot,
@@ -32,6 +32,7 @@ __all__ = [
     "PullRequestAnalysisJob",
     "build_github_clients",
     "build_pull_request_analysis_job",
+    "get_installation_token",
     "render_pull_request_comment",
     "resolve_github_token",
     "schedule_pull_request_analysis",

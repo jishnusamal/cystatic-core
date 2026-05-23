@@ -27,9 +27,8 @@ def test_process_pull_request_job_posts_comment(monkeypatch) -> None:
         analyze_pr,
         "get_settings",
         lambda: SimpleNamespace(
-            github_app_id="",
-            github_private_key="",
-            github_access_token="token",
+            github_app_id="app-123",
+            github_private_key="-----BEGIN RSA PRIVATE KEY-----\nkey\n-----END RSA PRIVATE KEY-----",
             github_client_secret="",
             llm_api_key="",
             ai_api_key="",
@@ -38,7 +37,7 @@ def test_process_pull_request_job_posts_comment(monkeypatch) -> None:
             app_env="",
         ),
     )
-    monkeypatch.setattr(analyze_pr, "resolve_github_token", lambda credentials, installation_id=None: "token")
+    monkeypatch.setattr(analyze_pr, "get_installation_token", lambda app_id, private_key, installation_id: "installation_token")
     monkeypatch.setattr(analyze_pr, "build_github_clients", lambda token: (object(), FakePublisher()))
     monkeypatch.setattr(analyze_pr, "Orchestrator", FakeOrchestrator)
     monkeypatch.setattr(analyze_pr, "render_pull_request_comment", lambda result: "comment body")

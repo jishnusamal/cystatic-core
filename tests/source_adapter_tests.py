@@ -6,9 +6,10 @@ from source_adapters.github_adapter import GitHubAdapter
 from source_adapters.gitlab_adapter import GitLabAdapter
 
 
-def test_github_adapter_fetch_not_implemented() -> None:
+def test_github_adapter_requires_token() -> None:
+    """GitHubAdapter requires a valid token."""
     a = GitHubAdapter()
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ValueError, match="GitHub token is required"):
         a.fetch_repo_archive("o", "r")
 
 
