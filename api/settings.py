@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     cystatic_keys: str = ""
     github_access_token: str = ""
     github_app_id: str = ""
+    github_app_client_id: str = ""
     github_client_secret: str = ""
     github_private_key: str = ""
     github_webhook_secret: str = ""

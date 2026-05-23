@@ -38,8 +38,13 @@ def process_pull_request_job(job: PullRequestAnalysisJob) -> dict[str, Any]:
     if not job.installation_id:
         raise ValueError("Installation ID is required for GitHub App webhook analysis")
     
+    # Prefer numeric GitHub App ID, but allow client id as a fallback (GITHUB_APP_CLIENT_ID)
+    chosen_app_id = settings.github_app_id or getattr(settings, "github_app_client_id", "")
+    if not chosen_app_id:
+        raise ValueError("GitHub App ID or Client ID is required for installation token exchange")
+
     token = get_installation_token(
-        app_id=settings.github_app_id,
+        app_id=chosen_app_id,
         private_key=settings.github_private_key,
         installation_id=job.installation_id,
     )
