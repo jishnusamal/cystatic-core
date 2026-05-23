@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     items_per_user: int = 50
     cystatic_keys: str = ""
     github_access_token: str = ""
+    github_app_id: str = ""
+    github_client_secret: str = ""
+    github_private_key: str = ""
+    github_webhook_secret: str = ""
     sentry_dsn: str = ""
     app_env: str = ""
     app_version: str = ""

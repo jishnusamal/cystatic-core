@@ -1,12 +1,20 @@
 from __future__ import annotations
-from fastapi import FastAPI, APIRouter, Depends, Body, Header, Request, Response, status
+
+from fastapi import BackgroundTasks, FastAPI, APIRouter, Depends, Body, Header, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from tortoise.contrib.fastapi import register_tortoise
 
 # Internal imports
 from schemas import AnalyzeRequest
 from api.utils import verify_api_key
 from api.settings import get_settings
-from source_adapters import GitHubSource, GitHubPublisher
+from source_adapters.github.event_handler import (
+    build_pull_request_analysis_job,
+    schedule_pull_request_analysis,
+    should_process_pull_request_event,
+)
+from source_adapters.github.webhook import verify_github_webhook_signature
+from source_adapters.github import GitHubSource, GitHubPublisher
 from language_adapters import PythonAdapter
 from core_engine.orchestrator import Orchestrator, DiffOrchestrator
 from core_engine.failure_simulation_llm import FailureSimulationLLM
@@ -14,7 +22,7 @@ from api.db import TORTOISE_ORM
 from instrumentation import sentry, sentry_pr_context
 
 settings = get_settings()
-app = FastAPI(title="Cystatic", version=settings.app_version)
+app = FastAPI(title="Cystatic", version=settings.app_version or "0.1.0")
 sentry.attach_middleware(app) 
 router = APIRouter(prefix="/v1")
 
@@ -88,6 +96,61 @@ async def analyze_diff(body: str = Body(..., media_type="text/plain")):
         await orchestrator.log_run(result)
     
     return orchestrator.publish_comments(result)
+
+
+@app.post("/github/webhook")
+async def github_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    x_github_event: str | None = Header(default=None, alias="X-GitHub-Event"),
+    x_github_delivery: str | None = Header(default=None, alias="X-GitHub-Delivery"),
+    x_hub_signature_256: str | None = Header(default=None, alias="X-Hub-Signature-256"),
+):
+    payload_bytes = await request.body()
+
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON payload") from exc
+
+    if not verify_github_webhook_signature(
+        payload=payload_bytes,
+        signature=x_hub_signature_256,
+        secret=settings.github_webhook_secret,
+    ):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid GitHub signature")
+
+    action = payload.get("action") if isinstance(payload, dict) else None
+    if not should_process_pull_request_event(x_github_event, action):
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "status": "ignored",
+                "event": x_github_event,
+                "action": action,
+                "delivery_id": x_github_delivery,
+            },
+        )
+
+    try:
+        job = build_pull_request_analysis_job(payload, delivery_id=x_github_delivery)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    schedule_pull_request_analysis(background_tasks, job)
+
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={
+            "status": "accepted",
+            "installation_id": job.installation_id,
+            "owner": job.owner,
+            "repo": job.repo,
+            "pr_number": job.pr_number,
+            "action": job.action,
+            "delivery_id": x_github_delivery,
+        },
+    )
 
 app.include_router(router)
 
