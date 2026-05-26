@@ -12,7 +12,6 @@ class Settings(BaseSettings):
     github_app_client_id: str = ""
     github_client_secret: str = ""
     github_private_key: str = ""
-    # GitHub webhook secret (env var: GITHUB_APP_WEBHOOK_SECRET)
     github_app_webhook_secret: str = ""
     sentry_dsn: str = ""
     app_env: str = ""
