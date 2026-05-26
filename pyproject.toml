@@ -69,6 +69,7 @@ dependencies = [
     "tortoise-orm[cli]>=1.1.7",
     "asyncpg>=0.31.0",
     "openai>=2.32.0",
+    "pytest-asyncio>=1.4.0",
 ]
 
 [project.optional-dependencies]

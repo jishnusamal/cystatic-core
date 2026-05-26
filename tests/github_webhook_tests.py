@@ -50,8 +50,7 @@ def test_github_webhook_endpoint_dispatches_analysis(monkeypatch) -> None:
     async def fake_persist_analysis_job(**kwargs):
         return type("JobRecord", (), {"job_id": 101})(), True
 
-    monkeypatch.setattr(main.settings, "github_access_token", "token")
-    monkeypatch.setattr(main.settings, "github_webhook_secret", "")
+    monkeypatch.setattr(main.settings, "github_app_webhook_secret", "")
     monkeypatch.setattr(main, "persist_analysis_job", fake_persist_analysis_job)
     monkeypatch.setattr(main, "schedule_pull_request_analysis", lambda background_tasks, job: captured_jobs.append(job))
 
@@ -88,8 +87,7 @@ def test_github_webhook_endpoint_dispatches_analysis(monkeypatch) -> None:
 
 
 def test_github_webhook_endpoint_ignores_non_pull_request_events(monkeypatch) -> None:
-    monkeypatch.setattr(main.settings, "github_access_token", "token")
-    monkeypatch.setattr(main.settings, "github_webhook_secret", "")
+    monkeypatch.setattr(main.settings, "github_app_webhook_secret", "")
 
     client = TestClient(main.app)
     response = client.post(

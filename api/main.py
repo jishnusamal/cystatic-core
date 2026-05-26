@@ -15,11 +15,13 @@ from source_adapters.github.event_handler import (
 )
 from source_adapters.github.webhook import verify_github_webhook_signature
 from source_adapters.github import GitHubSource, GitHubPublisher
+from source_adapters.github.auth import get_installation_token
+from source_adapters.github.github_client import build_github_clients
+from api.models import persist_analysis_job
 from language_adapters import PythonAdapter
 from core_engine.orchestrator import Orchestrator, DiffOrchestrator
 from core_engine.failure_simulation_llm import FailureSimulationLLM
 from api.db import TORTOISE_ORM
-from api.models import persist_analysis_job
 from instrumentation import sentry, sentry_pr_context
 
 settings = get_settings()
@@ -61,12 +63,32 @@ async def health(request: Request):
         Depends(sentry_pr_context),
     ])
 async def analyze_pr(body: AnalyzeRequest = Body(...)):
+    if not body.installation_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="installation_id is required for GitHub App authentication"
+        )
+    
+    if not settings.github_app_client_id or not settings.github_private_key:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="GitHub App is not configured"
+        )
+    
+    token = get_installation_token(
+        app_id=settings.github_app_client_id,
+        private_key=settings.github_private_key,
+        installation_id=body.installation_id,
+    )
+    
+    source, publisher = build_github_clients(token)
+    
     failure_simulation_llm = build_failure_simulation_llm()
     orchestrator = Orchestrator(
         request=body,
-        source=GitHubSource(token=settings.github_access_token),
+        source=source,
         language=PythonAdapter(),
-        publisher=GitHubPublisher(token=settings.github_access_token),
+        publisher=publisher,
         failure_simulation_llm=failure_simulation_llm,
     )
     result = orchestrator.run_pr_analysis()
@@ -82,11 +104,12 @@ async def analyze_diff(body: str = Body(..., media_type="text/plain")):
     # print(f"Received diff for analysis:\n{diff_text[:500]}...")  # Log the first 500 chars of the diff
 
     failure_simulation_llm = build_failure_simulation_llm()
+    # For diff analysis, we don't need GitHub API access, just diff parsing
     orchestrator = DiffOrchestrator(
         request={
             "diff": diff_text
         },  
-        source=GitHubSource(token=settings.github_access_token),  # if needed for parsing
+        source=GitHubSource(token=None),  # No GitHub API needed for pure diff analysis
         language=PythonAdapter(),
         failure_simulation_llm=failure_simulation_llm,
     )
@@ -117,7 +140,7 @@ async def github_webhook(
     if not verify_github_webhook_signature(
         payload=payload_bytes,
         signature=x_hub_signature_256,
-        secret=settings.github_webhook_secret,
+        secret=settings.github_app_webhook_secret,
     ):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid GitHub signature")
 
@@ -138,36 +161,29 @@ async def github_webhook(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    job_record, created = await persist_analysis_job(
-        repo_full_name=job.full_name,
-        pr_number=job.pr_number,
-        action=job.action,
-        installation_id=job.installation_id,
-        delivery_id=job.delivery_id,
-        head_sha=job.head_sha,
-        base_sha=job.base_sha,
-        owner_login=job.owner,
-        repo_name=job.repo,
-        payload_json=payload,
-        result_summary={"status": "queued", "event": x_github_event},
-    )
-
-    if not created:
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={
-                "status": "duplicate",
-                "installation_id": job.installation_id,
-                "owner": job.owner,
-                "repo": job.repo,
-                "pr_number": job.pr_number,
-                "action": job.action,
-                "delivery_id": x_github_delivery,
-                "job_id": job_record.job_id,
-            },
+    # Persist job record for tracking and idempotency
+    try:
+        job_record, created = await persist_analysis_job(
+            repo_full_name=job.full_name,
+            pr_number=job.pr_number,
+            action=job.action,
+            installation_id=job.installation_id,
+            delivery_id=job.delivery_id,
+            head_sha=job.head_sha,
+            base_sha=job.base_sha,
+            owner_login=job.owner,
+            repo_name=job.repo,
+            payload_json=payload,
         )
+    except Exception:
+        job_record = None
 
     schedule_pull_request_analysis(background_tasks, job)
+
+    # Include persisted job id in the response when available
+    job_id_value = None
+    if job_record is not None:
+        job_id_value = getattr(job_record, "job_id", None) or getattr(job_record, "id", None)
 
     return JSONResponse(
         status_code=status.HTTP_202_ACCEPTED,
@@ -179,7 +195,7 @@ async def github_webhook(
             "pr_number": job.pr_number,
             "action": job.action,
             "delivery_id": x_github_delivery,
-            "job_id": job_record.job_id,
+            "job_id": job_id_value,
         },
     )
 

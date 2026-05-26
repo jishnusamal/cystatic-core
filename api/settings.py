@@ -9,12 +9,11 @@ class Settings(BaseSettings):
     admin_email: str = ""
     items_per_user: int = 50
     cystatic_keys: str = ""
-    github_access_token: str = ""
-    github_app_id: str = ""
     github_app_client_id: str = ""
     github_client_secret: str = ""
     github_private_key: str = ""
-    github_webhook_secret: str = ""
+    # GitHub webhook secret (env var: GITHUB_APP_WEBHOOK_SECRET)
+    github_app_webhook_secret: str = ""
     sentry_dsn: str = ""
     app_env: str = ""
     app_version: str = ""
@@ -24,6 +23,8 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "openai/gpt-oss-120b"
     llm_base_url: str = "https://api.groq.com/openai/v1"
+    upstash_redis_rest_token: str = ""
+    upstash_redis_rest_url: str = ""
 
     model_config = SettingsConfigDict(env_file=BASE_DIR / ".env.local")
 
