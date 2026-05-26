@@ -47,8 +47,12 @@ def test_github_webhook_signature_validation() -> None:
 def test_github_webhook_endpoint_dispatches_analysis(monkeypatch) -> None:
     captured_jobs: list[object] = []
 
+    async def fake_persist_analysis_job(**kwargs):
+        return type("JobRecord", (), {"job_id": 101})(), True
+
     monkeypatch.setattr(main.settings, "github_access_token", "token")
     monkeypatch.setattr(main.settings, "github_webhook_secret", "")
+    monkeypatch.setattr(main, "persist_analysis_job", fake_persist_analysis_job)
     monkeypatch.setattr(main, "schedule_pull_request_analysis", lambda background_tasks, job: captured_jobs.append(job))
 
     client = TestClient(main.app)
@@ -76,6 +80,7 @@ def test_github_webhook_endpoint_dispatches_analysis(monkeypatch) -> None:
         "pr_number": 42,
         "action": "opened",
         "delivery_id": None,
+        "job_id": 101,
     }
     assert len(captured_jobs) == 1
     assert captured_jobs[0].full_name == "octo/example"

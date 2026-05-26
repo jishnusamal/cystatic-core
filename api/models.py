@@ -93,23 +93,44 @@ class PullRequestSnapshot(TimestampedFields, models.Model):
 class AnalysisRun(TimestampedFields, models.Model):
     analysis_run_id = fields.IntField(pk=True)
     pull_request = fields.ForeignKeyField("models.PullRequest", related_name="analysis_runs", on_delete=fields.CASCADE)
+    # Head SHA captured at run time for idempotency and traceability
+    head_sha = fields.CharField(max_length=128, default="")
     analyzer_version = fields.CharField(max_length=64)
     reasoning_model_version = fields.CharField(max_length=128)
     execution_duration_ms = fields.IntField(null=True)
+    # Lifecycle status: queued, cloning, graph_building, deterministic_analysis,
+    # reasoning, comment_generation, posting, completed, failed, partially_failed
     status = fields.CharField(max_length=32, default="completed")
     triggered_by = fields.CharField(max_length=64, default="pull_request")
     webhook_action = fields.CharField(max_length=32, null=True)
-    delivery_id = fields.CharField(max_length=128, null=True)
+    # Delivery ID from webhook — used for deduplication. Should be unique when present.
+    delivery_id = fields.CharField(max_length=128, null=True, unique=True)
+    # Failure and retry metadata
+    failure_stage = fields.CharField(max_length=64, null=True)
+    failure_trace = fields.TextField(null=True)
+    retry_count = fields.IntField(default=0)
+    partial_artifacts = fields.JSONField(default=list)
     risk_score = fields.FloatField(null=True)
     risk_category = fields.CharField(max_length=64, default="")
     verdict = fields.CharField(max_length=64, default="")
-    generated_comment = fields.TextField(null=True)
+     # Canonical comment should live in AnalysisComment — this field stores a short
+    # summary or reference to the canonical comment for quick searching.
+    generated_comment_summary = fields.TextField(null=True)
+    # Reference to the canonical comment (AnalysisComment) when posted.
+    canonical_comment = fields.ForeignKeyField("models.AnalysisComment", related_name="canonical_for_run", null=True, on_delete=fields.SET_NULL)
     analysis_mode = fields.CharField(max_length=32, default="")
     analysis_snapshot = fields.JSONField(default=dict)
     internal_reasoning_artifacts = fields.JSONField(default=dict)
+    # Schema / format versioning to support replayability across analyzer changes
+    graph_schema_version = fields.CharField(max_length=64, null=True)
+    finding_schema_version = fields.CharField(max_length=64, null=True)
+    reasoning_prompt_version = fields.CharField(max_length=128, null=True)
+    risk_taxonomy_version = fields.CharField(max_length=64, null=True)
 
     class Meta(models.Model.Meta):
         table = "analysis_runs"
+        # Prevent duplicate runs for the same PR/head/trigger combination
+        unique_together = (("pull_request", "head_sha", "triggered_by"),)
 
 
 class DeterministicAnalyzerOutput(TimestampedFields, models.Model):
@@ -122,6 +143,12 @@ class DeterministicAnalyzerOutput(TimestampedFields, models.Model):
     excluded_files = fields.JSONField(default=list)
     compressed_for_llm = fields.JSONField(default=dict)
     dependency_graph = fields.JSONField(default=dict)
+    # Indexed metadata extracted from dependency_graph / execution paths for queryability
+    node_count = fields.IntField(null=True)
+    edge_count = fields.IntField(null=True)
+    impacted_auth_nodes_count = fields.IntField(null=True)
+    service_boundary_count = fields.IntField(null=True)
+    changed_execution_path_count = fields.IntField(null=True)
     impacted_services = fields.JSONField(default=list)
     execution_paths = fields.JSONField(default=list)
     auth_boundary_changes = fields.JSONField(default=list)
@@ -133,6 +160,37 @@ class DeterministicAnalyzerOutput(TimestampedFields, models.Model):
 
     class Meta(models.Model.Meta):
         table = "deterministic_analyzer_outputs"
+
+
+class AnalysisJob(TimestampedFields, models.Model):
+    """Queue/job entity separate from AnalysisRun for leasing, retries, and scheduling."""
+    job_id = fields.IntField(pk=True)
+    repo_full_name = fields.CharField(max_length=255)
+    owner_login = fields.CharField(max_length=255, null=True)
+    repo_name = fields.CharField(max_length=255, null=True)
+    pr_number = fields.IntField()
+    head_sha = fields.CharField(max_length=128, null=True)
+    base_sha = fields.CharField(max_length=128, null=True)
+    action = fields.CharField(max_length=64)
+    installation_id = fields.BigIntField(null=True)
+    payload_json = fields.JSONField(default=dict)
+    result_summary = fields.JSONField(default=dict)
+    error_stage = fields.CharField(max_length=64, null=True)
+    error_trace = fields.TextField(null=True)
+    pull_request = fields.ForeignKeyField("models.PullRequest", related_name="jobs", null=True, on_delete=fields.SET_NULL)
+    analysis_run = fields.ForeignKeyField("models.AnalysisRun", related_name="job_record", null=True, on_delete=fields.SET_NULL)
+    status = fields.CharField(max_length=32, default="queued")
+    attempts = fields.IntField(default=0)
+    max_attempts = fields.IntField(default=5)
+    priority = fields.IntField(default=50)
+    lease_owner = fields.CharField(max_length=255, null=True)
+    lease_expires_at = fields.DatetimeField(null=True)
+    next_retry_at = fields.DatetimeField(null=True)
+    idempotency_key = fields.CharField(max_length=128, null=True, unique=True)
+    delivery_id = fields.CharField(max_length=128, null=True)
+
+    class Meta(models.Model.Meta):
+        table = "analysis_jobs"
 
 
 class RiskFinding(TimestampedFields, models.Model):
@@ -212,15 +270,7 @@ class EvaluationCase(TimestampedFields, models.Model):
         table = "evaluation_cases"
 
 
-class AnalysisRecord(models.Model):
-    id = fields.IntField(pk=True)
-    repo = fields.CharField(max_length=255)
-    pr_number = fields.IntField()
-    analysis_result = fields.JSONField()
-    created_at = fields.DatetimeField(auto_now_add=True)
-
-    class Meta(models.Model.Meta):
-        table = "analysis_records"
+# Legacy AnalysisRecord removed — use AnalysisRun, AnalysisArtifact, DeterministicAnalyzerOutput, and RiskFinding instead.
 
 
 def _jsonable(value: Any) -> Any:
@@ -404,8 +454,7 @@ async def persist_analysis_result(result: dict[str, Any]) -> None:
         "excluded_files": _jsonable(result.get("excluded_files", [])) or [],
     }
 
-    analysis_run = await AnalysisRun.create(
-        pull_request=pull_request,
+    analysis_run_defaults = dict(
         analyzer_version=settings.app_version or "0.1.0",
         reasoning_model_version=settings.llm_model,
         execution_duration_ms=_to_int(context.get("execution_duration_ms")),
@@ -413,14 +462,25 @@ async def persist_analysis_result(result: dict[str, Any]) -> None:
         triggered_by=str(context.get("triggered_by") or "pull_request"),
         webhook_action=context.get("webhook_action"),
         delivery_id=context.get("delivery_id"),
+        head_sha=str(context.get("head_sha") or pull_request.head_sha or ""),
         risk_score=_to_float(result.get("pr_risk_score")),
         risk_category=str(result.get("pr_risk_level") or ""),
         verdict=str(result.get("verdict") or ""),
-        generated_comment=result.get("generated_comment"),
+        generated_comment_summary=(result.get("generated_comment_summary") or (result.get("generated_comment") and (str(result.get("generated_comment"))[:1024]))) ,
         analysis_mode=str(result.get("analysis_mode") or ""),
         analysis_snapshot=analysis_snapshot,
         internal_reasoning_artifacts=internal_reasoning_artifacts,
     )
+
+    analysis_run, created = await AnalysisRun.get_or_create(
+        defaults=analysis_run_defaults,
+        pull_request=pull_request,
+        head_sha=str(context.get("head_sha") or pull_request.head_sha or ""),
+        triggered_by=str(context.get("triggered_by") or "pull_request"),
+    )
+
+    if not created:
+        return
 
     await PullRequestSnapshot.create(
         analysis_run=analysis_run,
@@ -458,6 +518,39 @@ async def persist_analysis_result(result: dict[str, Any]) -> None:
             if area:
                 impacted_services.append(str(area))
 
+    # Extract indexed metadata from compressed_for_llm.dependency_graph where possible
+    dep_graph = compressed_for_llm.get("dependency_graph", {}) or {}
+    nodes = []
+    edges = []
+    try:
+        if isinstance(dep_graph, dict):
+            nodes = dep_graph.get("nodes") or dep_graph.get("node_list") or []
+            edges = dep_graph.get("edges") or dep_graph.get("links") or []
+        elif isinstance(dep_graph, list):
+            nodes = dep_graph
+            edges = []
+    except Exception:
+        nodes = []
+        edges = []
+
+    node_count = len(nodes) if nodes is not None else None
+    edge_count = len(edges) if edges is not None else None
+
+    # Best-effort counts for auth/service boundaries
+    impacted_auth_nodes_count = 0
+    service_boundary_count = 0
+    if nodes:
+        for n in nodes:
+            if isinstance(n, dict):
+                tags = n.get("tags") or []
+                ntype = n.get("type") or n.get("node_type")
+                if n.get("auth") or "auth" in tags or (isinstance(ntype, str) and "auth" in ntype.lower()):
+                    impacted_auth_nodes_count += 1
+                if isinstance(ntype, str) and "service" in ntype.lower():
+                    service_boundary_count += 1
+
+    changed_execution_path_count = len(compressed_for_llm.get("execution_paths", [])) if compressed_for_llm.get("execution_paths") is not None else 0
+
     await DeterministicAnalyzerOutput.create(
         analysis_run=analysis_run,
         files=changed_files,
@@ -466,7 +559,12 @@ async def persist_analysis_result(result: dict[str, Any]) -> None:
         system_impact=system_impact,
         excluded_files=_jsonable(result.get("excluded_files", [])) or [],
         compressed_for_llm=compressed_for_llm,
-        dependency_graph=compressed_for_llm.get("dependency_graph", {}) or {},
+        dependency_graph=dep_graph,
+        node_count=node_count,
+        edge_count=edge_count,
+        impacted_auth_nodes_count=impacted_auth_nodes_count,
+        service_boundary_count=service_boundary_count,
+        changed_execution_path_count=changed_execution_path_count,
         impacted_services=impacted_services,
         execution_paths=compressed_for_llm.get("execution_paths", []) or [],
         auth_boundary_changes=compressed_for_llm.get("auth_boundary_changes", []) or [],
@@ -510,13 +608,82 @@ async def persist_analysis_result(result: dict[str, Any]) -> None:
             summary=str(risk.get("reason") or risk.get("trigger") or category),
         )
 
-    if analysis_run.generated_comment:
-        await AnalysisComment.create(
+    # Create canonical AnalysisComment if analyzer produced a comment body.
+    generated_body = None
+    if isinstance(result.get("generated_comment"), (str,)) and result.get("generated_comment"):
+        generated_body = result.get("generated_comment")
+    elif isinstance(analysis_snapshot.get("generated_comment"), (str,)) and analysis_snapshot.get("generated_comment"):
+        generated_body = analysis_snapshot.get("generated_comment")
+
+    if generated_body:
+        comment = await AnalysisComment.create(
             analysis_run=analysis_run,
-            body=analysis_run.generated_comment,
+            body=generated_body,
             comment_type="initial",
             suppressed=False,
             human_overridden=False,
             reactions={},
             posted_at=datetime.now(timezone.utc),
         )
+        # Link canonical comment back to the run and persist summary
+        analysis_run.canonical_comment = comment
+        analysis_run.generated_comment_summary = str(generated_body[:1024])
+        await analysis_run.save()
+
+
+async def persist_analysis_job(
+    *,
+    repo_full_name: str,
+    pr_number: int,
+    action: str,
+    installation_id: int | None = None,
+    delivery_id: str | None = None,
+    head_sha: str | None = None,
+    base_sha: str | None = None,
+    owner_login: str | None = None,
+    repo_name: str | None = None,
+    payload_json: dict[str, Any] | None = None,
+    status: str = "queued",
+    attempts: int = 0,
+    max_attempts: int = 5,
+    priority: int = 50,
+    result_summary: dict[str, Any] | None = None,
+    error_stage: str | None = None,
+    error_trace: str | None = None,
+    lease_owner: str | None = None,
+    lease_expires_at: datetime | None = None,
+    next_retry_at: datetime | None = None,
+) -> tuple[AnalysisJob, bool]:
+    if not owner_login or not repo_name:
+        owner_login, repo_name = _split_repo_full_name(repo_full_name)
+
+    idempotency_key = delivery_id or f"{repo_full_name}:{pr_number}:{head_sha or ''}:{action}"
+
+    defaults: dict[str, Any] = {
+        "repo_full_name": repo_full_name,
+        "owner_login": owner_login,
+        "repo_name": repo_name,
+        "pr_number": pr_number,
+        "head_sha": head_sha,
+        "base_sha": base_sha,
+        "action": action,
+        "installation_id": installation_id,
+        "payload_json": payload_json or {},
+        "result_summary": result_summary or {},
+        "error_stage": error_stage,
+        "error_trace": error_trace,
+        "status": status,
+        "attempts": attempts,
+        "max_attempts": max_attempts,
+        "priority": priority,
+        "lease_owner": lease_owner,
+        "lease_expires_at": lease_expires_at,
+        "next_retry_at": next_retry_at,
+        "delivery_id": delivery_id,
+    }
+
+    job, created = await AnalysisJob.update_or_create(
+        idempotency_key=idempotency_key,
+        defaults=defaults,
+    )
+    return job, created

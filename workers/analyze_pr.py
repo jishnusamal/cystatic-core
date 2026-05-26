@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import traceback
 from time import perf_counter
 from typing import Any
 
 from api.settings import get_settings
+from api.models import persist_analysis_job
 from core_engine.failure_simulation_llm import FailureSimulationLLM
 from core_engine.orchestrator import Orchestrator
 from source_adapters.github.auth import get_installation_token
@@ -49,39 +51,105 @@ def process_pull_request_job(job: PullRequestAnalysisJob) -> dict[str, Any]:
     )
     source, publisher = build_github_clients(token)
 
-    started_at = perf_counter()
-    orchestrator = Orchestrator(
-        request=AnalyzeRequest(repo=job.full_name, pr_number=job.pr_number),
-        source=source,
-        language=PythonAdapter(),
-        publisher=publisher,
-        failure_simulation_llm=build_failure_simulation_llm(),
+    asyncio.run(
+        persist_analysis_job(
+            repo_full_name=job.full_name,
+            pr_number=job.pr_number,
+            action=job.action,
+            installation_id=job.installation_id,
+            delivery_id=job.delivery_id,
+            head_sha=job.head_sha,
+            base_sha=job.base_sha,
+            owner_login=job.owner,
+            repo_name=job.repo,
+            payload_json={
+                "phase": "started",
+                "installation_id": job.installation_id,
+            },
+            status="running",
+            attempts=1,
+            result_summary={"phase": "running"},
+        )
     )
 
-    result = orchestrator.run_pr_analysis()
-    comment = render_pull_request_comment(result)
-    result["generated_comment"] = comment
-    result["analysis_context"] = {
-        "installation_id": job.installation_id,
-        "delivery_id": job.delivery_id,
-        "triggered_by": job.action,
-        "webhook_action": job.action,
-        "head_sha": job.head_sha,
-        "base_sha": job.base_sha,
-        "title": job.title,
-        "author_login": job.author_login,
-        "merge_sha": job.merge_sha,
-        "state": job.state,
-        "merged": job.merged,
-        "changed_files_count": job.changed_files_count,
-        "repository_id": job.repository_id,
-        "pr_id": job.github_pr_id,
-        "default_branch": job.default_branch,
-        "execution_duration_ms": int((perf_counter() - started_at) * 1000),
-    }
-    publisher.post_comment(job.full_name, job.pr_number, comment)
+    started_at = perf_counter()
+    try:
+        orchestrator = Orchestrator(
+            request=AnalyzeRequest(repo=job.full_name, pr_number=job.pr_number),
+            source=source,
+            language=PythonAdapter(),
+            publisher=publisher,
+            failure_simulation_llm=build_failure_simulation_llm(),
+        )
 
-    if settings.app_env == "production":
-        asyncio.run(orchestrator.log_run(result))
+        result = orchestrator.run_pr_analysis()
+        comment = render_pull_request_comment(result)
+        result["generated_comment"] = comment
+        result["analysis_context"] = {
+            "installation_id": job.installation_id,
+            "delivery_id": job.delivery_id,
+            "triggered_by": job.action,
+            "webhook_action": job.action,
+            "head_sha": job.head_sha,
+            "base_sha": job.base_sha,
+            "title": job.title,
+            "author_login": job.author_login,
+            "merge_sha": job.merge_sha,
+            "state": job.state,
+            "merged": job.merged,
+            "changed_files_count": job.changed_files_count,
+            "repository_id": job.repository_id,
+            "pr_id": job.github_pr_id,
+            "default_branch": job.default_branch,
+            "execution_duration_ms": int((perf_counter() - started_at) * 1000),
+            "status": "completed",
+        }
+        publisher.post_comment(job.full_name, job.pr_number, comment)
 
-    return result
+        asyncio.run(
+            persist_analysis_job(
+                repo_full_name=job.full_name,
+                pr_number=job.pr_number,
+                action=job.action,
+                installation_id=job.installation_id,
+                delivery_id=job.delivery_id,
+                head_sha=job.head_sha,
+                base_sha=job.base_sha,
+                owner_login=job.owner,
+                repo_name=job.repo,
+                payload_json={"phase": "completed"},
+                status="completed",
+                attempts=1,
+                result_summary={
+                    "phase": "completed",
+                    "verdict": result.get("verdict"),
+                    "risk_level": result.get("pr_risk_level"),
+                },
+            )
+        )
+
+        if settings.app_env == "production":
+            asyncio.run(orchestrator.log_run(result))
+
+        return result
+    except Exception as exc:
+        asyncio.run(
+            persist_analysis_job(
+                repo_full_name=job.full_name,
+                pr_number=job.pr_number,
+                action=job.action,
+                installation_id=job.installation_id,
+                delivery_id=job.delivery_id,
+                head_sha=job.head_sha,
+                base_sha=job.base_sha,
+                owner_login=job.owner,
+                repo_name=job.repo,
+                payload_json={"phase": "failed"},
+                status="failed",
+                attempts=1,
+                error_stage="worker",
+                error_trace=traceback.format_exc(),
+                result_summary={"phase": "failed", "error": repr(exc)},
+            )
+        )
+        raise

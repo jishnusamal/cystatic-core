@@ -1,6 +1,6 @@
 from schemas import AnalyzeRequest
 from jinja2 import Environment, FileSystemLoader, Template  # pyright: ignore[reportMissingImports]
-from api.models import AnalysisRecord, persist_analysis_result
+from api.models import persist_analysis_result
 from language_adapters.python.python_adapter import AnalysisMode
 from core_engine.risk_pattern_detector import RiskPatternDetector, detect_flows
 from core_engine.failure_simulator import FailureSimulator
@@ -442,13 +442,9 @@ class Orchestrator(BaseOrchestrator):
         # )
 
     async def log_run(self, result: dict[str, Any]) -> None:
-        record = await AnalysisRecord.create(
-            repo=self.request.repo,
-            pr_number=self.request.pr_number,
-            analysis_result=result,
-        )
+        # Persist normalized analysis artifacts for replayability and observability
         await persist_analysis_result(result)
-        print(f"Logged analysis record with ID: {record}")
+        print(f"Logged analysis run for {self.request.repo} PR #{self.request.pr_number}")
         
     
 class DiffOrchestrator(BaseOrchestrator):
@@ -572,10 +568,5 @@ class DiffOrchestrator(BaseOrchestrator):
         # )
 
     async def log_run(self, result: dict[str, Any]) -> None:
-        record = await AnalysisRecord.create(
-            repo=result.get("repo", "example/repo"),
-            pr_number=result.get("pr_number", 1),
-            analysis_result=result,
-        )
         await persist_analysis_result(result)
-        print(f"Logged analysis record with ID: {record.id}")
+        print(f"Logged analysis run for {result.get('repo', 'example/repo')} PR #{result.get('pr_number', 1)}")

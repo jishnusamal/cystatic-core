@@ -19,6 +19,7 @@ from language_adapters import PythonAdapter
 from core_engine.orchestrator import Orchestrator, DiffOrchestrator
 from core_engine.failure_simulation_llm import FailureSimulationLLM
 from api.db import TORTOISE_ORM
+from api.models import persist_analysis_job
 from instrumentation import sentry, sentry_pr_context
 
 settings = get_settings()
@@ -137,6 +138,35 @@ async def github_webhook(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
+    job_record, created = await persist_analysis_job(
+        repo_full_name=job.full_name,
+        pr_number=job.pr_number,
+        action=job.action,
+        installation_id=job.installation_id,
+        delivery_id=job.delivery_id,
+        head_sha=job.head_sha,
+        base_sha=job.base_sha,
+        owner_login=job.owner,
+        repo_name=job.repo,
+        payload_json=payload,
+        result_summary={"status": "queued", "event": x_github_event},
+    )
+
+    if not created:
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "status": "duplicate",
+                "installation_id": job.installation_id,
+                "owner": job.owner,
+                "repo": job.repo,
+                "pr_number": job.pr_number,
+                "action": job.action,
+                "delivery_id": x_github_delivery,
+                "job_id": job_record.job_id,
+            },
+        )
+
     schedule_pull_request_analysis(background_tasks, job)
 
     return JSONResponse(
@@ -149,6 +179,7 @@ async def github_webhook(
             "pr_number": job.pr_number,
             "action": job.action,
             "delivery_id": x_github_delivery,
+            "job_id": job_record.job_id,
         },
     )
 

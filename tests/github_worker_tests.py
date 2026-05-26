@@ -9,6 +9,9 @@ from workers import analyze_pr
 def test_process_pull_request_job_posts_comment(monkeypatch) -> None:
     published: list[tuple[str, int, str]] = []
 
+    async def fake_persist_analysis_job(**kwargs):
+        return type("JobRecord", (), {"job_id": 101})(), True
+
     class FakePublisher:
         def post_comment(self, repo: str, pr_number: int, comment: str) -> None:
             published.append((repo, pr_number, comment))
@@ -37,6 +40,7 @@ def test_process_pull_request_job_posts_comment(monkeypatch) -> None:
             app_env="",
         ),
     )
+    monkeypatch.setattr(analyze_pr, "persist_analysis_job", fake_persist_analysis_job)
     monkeypatch.setattr(analyze_pr, "get_installation_token", lambda app_id, private_key, installation_id: "installation_token")
     monkeypatch.setattr(analyze_pr, "build_github_clients", lambda token: (object(), FakePublisher()))
     monkeypatch.setattr(analyze_pr, "Orchestrator", FakeOrchestrator)
