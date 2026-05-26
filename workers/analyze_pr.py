@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from time import perf_counter
 from typing import Any
 
 from api.settings import get_settings
@@ -34,22 +35,21 @@ def build_failure_simulation_llm() -> FailureSimulationLLM | None:
 
 def process_pull_request_job(job: PullRequestAnalysisJob) -> dict[str, Any]:
     settings = get_settings()
-    
+
     if not job.installation_id:
         raise ValueError("Installation ID is required for GitHub App webhook analysis")
-    
-    # Prefer numeric GitHub App ID, but allow client id as a fallback (GITHUB_APP_CLIENT_ID)
-    chosen_app_id = settings.github_app_id or getattr(settings, "github_app_client_id", "")
-    if not chosen_app_id:
-        raise ValueError("GitHub App ID or Client ID is required for installation token exchange")
+
+    if not settings.github_app_client_id:
+        raise ValueError("GITHUB_APP_CLIENT_ID is required for installation token exchange")
 
     token = get_installation_token(
-        app_id=chosen_app_id,
+        app_id=settings.github_app_client_id,
         private_key=settings.github_private_key,
         installation_id=job.installation_id,
     )
     source, publisher = build_github_clients(token)
 
+    started_at = perf_counter()
     orchestrator = Orchestrator(
         request=AnalyzeRequest(repo=job.full_name, pr_number=job.pr_number),
         source=source,
@@ -60,6 +60,25 @@ def process_pull_request_job(job: PullRequestAnalysisJob) -> dict[str, Any]:
 
     result = orchestrator.run_pr_analysis()
     comment = render_pull_request_comment(result)
+    result["generated_comment"] = comment
+    result["analysis_context"] = {
+        "installation_id": job.installation_id,
+        "delivery_id": job.delivery_id,
+        "triggered_by": job.action,
+        "webhook_action": job.action,
+        "head_sha": job.head_sha,
+        "base_sha": job.base_sha,
+        "title": job.title,
+        "author_login": job.author_login,
+        "merge_sha": job.merge_sha,
+        "state": job.state,
+        "merged": job.merged,
+        "changed_files_count": job.changed_files_count,
+        "repository_id": job.repository_id,
+        "pr_id": job.github_pr_id,
+        "default_branch": job.default_branch,
+        "execution_duration_ms": int((perf_counter() - started_at) * 1000),
+    }
     publisher.post_comment(job.full_name, job.pr_number, comment)
 
     if settings.app_env == "production":

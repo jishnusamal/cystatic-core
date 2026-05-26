@@ -20,6 +20,16 @@ class PullRequestAnalysisJob:
     action: str
     delivery_id: str | None = None
     head_sha: str | None = None
+    base_sha: str | None = None
+    title: str | None = None
+    author_login: str | None = None
+    merge_sha: str | None = None
+    state: str | None = None
+    merged: bool = False
+    changed_files_count: int | None = None
+    repository_id: int | None = None
+    github_pr_id: int | None = None
+    default_branch: str | None = None
 
     @property
     def full_name(self) -> str:
@@ -48,6 +58,7 @@ def build_pull_request_analysis_job(
     pr_number = pull_request.get("number")
     action = payload.get("action")
     head = pull_request.get("head") or {}
+    base = pull_request.get("base") or {}
     installation_id = installation.get("id")
 
     if not owner or not repo or pr_number is None or not action:
@@ -61,6 +72,16 @@ def build_pull_request_analysis_job(
         action=str(action),
         delivery_id=delivery_id,
         head_sha=head.get("sha"),
+        base_sha=base.get("sha"),
+        title=pull_request.get("title"),
+        author_login=(pull_request.get("user") or {}).get("login"),
+        merge_sha=pull_request.get("merge_commit_sha"),
+        state=pull_request.get("state"),
+        merged=bool(pull_request.get("merged", False)),
+        changed_files_count=pull_request.get("changed_files"),
+        repository_id=repository.get("id"),
+        github_pr_id=pull_request.get("id"),
+        default_branch=repository.get("default_branch"),
     )
 
 

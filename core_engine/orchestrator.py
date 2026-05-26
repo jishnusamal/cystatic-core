@@ -1,6 +1,6 @@
 from schemas import AnalyzeRequest
 from jinja2 import Environment, FileSystemLoader, Template  # pyright: ignore[reportMissingImports]
-from api.models import AnalysisRecord
+from api.models import AnalysisRecord, persist_analysis_result
 from language_adapters.python.python_adapter import AnalysisMode
 from core_engine.risk_pattern_detector import RiskPatternDetector, detect_flows
 from core_engine.failure_simulator import FailureSimulator
@@ -239,23 +239,23 @@ class BaseOrchestrator:
             "repo": repo,
             "pr_number": pr_number,
             "analysis_mode": analysis_mode.value,
-            # "files": enriched_files,
-            # "excluded_files": excluded_files or [],
-            # "keywords_detected": keywords_detected,
-            # "risk_patterns": [
-            #     rp.model_dump() if hasattr(rp, "model_dump") else rp
-            #     for rp in (risk_patterns or [])
-            # ],
+            "files": enriched_files,
+            "excluded_files": excluded_files or [],
+            "keywords_detected": keywords_detected,
+            "risk_patterns": [
+                rp.model_dump() if hasattr(rp, "model_dump") else rp
+                for rp in (risk_patterns or [])
+            ],
             "failure_simulation": failure_simulation,
-            # "entry_points_affected": [
-            #     ep.model_dump() if hasattr(ep, "model_dump") else ep
-            #     for ep in (entry_points_affected or [])
-            # ],
-            # "compressed_for_llm": compressed_for_llm or {},
-            # "system_impact": [
-            #     impact.model_dump() if hasattr(impact, "model_dump") else impact
-            #     for impact in (system_impact or [])
-            # ],
+            "entry_points_affected": [
+                ep.model_dump() if hasattr(ep, "model_dump") else ep
+                for ep in (entry_points_affected or [])
+            ],
+            "compressed_for_llm": compressed_for_llm or {},
+            "system_impact": [
+                impact.model_dump() if hasattr(impact, "model_dump") else impact
+                for impact in (system_impact or [])
+            ],
             "pr_risk_score": pr_risk_score,
             "pr_risk_level": pr_risk_level,
             "verdict": final_verdict,
@@ -429,7 +429,7 @@ class Orchestrator(BaseOrchestrator):
 
     def publish_comments(self, result: dict[str, Any]) -> None:
         comment = self._render_pr_comment("github/pr_comment.md.j2", result)
-        # pass
+        result["generated_comment"] = comment
         print(
             f"Publishing comment to {self.request.repo} "
             f"PR #{self.request.pr_number}:\n{comment}"
@@ -447,6 +447,7 @@ class Orchestrator(BaseOrchestrator):
             pr_number=self.request.pr_number,
             analysis_result=result,
         )
+        await persist_analysis_result(result)
         print(f"Logged analysis record with ID: {record}")
         
     
@@ -561,12 +562,12 @@ class DiffOrchestrator(BaseOrchestrator):
 
     def publish_comments(self, result: dict[str, Any]) -> dict[str, Any]:
         comment = self._render_pr_comment("github/pr_comment.md.j2", result)
+        result["generated_comment"] = comment
         print(comment)
         return result
 
-
         # return (
-        #     f"Publishing comment to {result['repo']} "
+        #     f"Publishing comment to {result['repo']}"
         #     f"PR #{result['pr_number']}:\n{comment}"
         # )
 
@@ -576,4 +577,5 @@ class DiffOrchestrator(BaseOrchestrator):
             pr_number=result.get("pr_number", 1),
             analysis_result=result,
         )
+        await persist_analysis_result(result)
         print(f"Logged analysis record with ID: {record.id}")

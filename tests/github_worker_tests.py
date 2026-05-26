@@ -27,7 +27,7 @@ def test_process_pull_request_job_posts_comment(monkeypatch) -> None:
         analyze_pr,
         "get_settings",
         lambda: SimpleNamespace(
-            github_app_id="app-123",
+            github_app_client_id="client-123",
             github_private_key="-----BEGIN RSA PRIVATE KEY-----\nkey\n-----END RSA PRIVATE KEY-----",
             github_client_secret="",
             llm_api_key="",
