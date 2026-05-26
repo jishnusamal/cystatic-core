@@ -94,8 +94,10 @@ async def analyze_pr(body: AnalyzeRequest = Body(...)):
     result = orchestrator.run_pr_analysis()
     orchestrator.publish_comments(result)
 
-    if settings.app_env == "production":
+    try:
         await orchestrator.log_run(result)
+    except Exception as exc:  # Persist failures should not block the API response
+        print(f"Failed to persist analysis run: {repr(exc)}")
     return result
 
 @router.post("/analyze-diff")
@@ -116,8 +118,10 @@ async def analyze_diff(body: str = Body(..., media_type="text/plain")):
 
     result = orchestrator.run_pr_analysis()
 
-    if settings.app_env == "production":
+    try:
         await orchestrator.log_run(result)
+    except Exception as exc:  # Persist failures should not block the API response
+        print(f"Failed to persist analysis run: {repr(exc)}")
     
     return orchestrator.publish_comments(result)
 

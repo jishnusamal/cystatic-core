@@ -128,8 +128,11 @@ def process_pull_request_job(job: PullRequestAnalysisJob) -> dict[str, Any]:
             )
         )
 
-        if settings.app_env == "production":
+        try:
+            # Persist analysis run for traceability; do not fail the worker if persistence errors occur
             asyncio.run(orchestrator.log_run(result))
+        except Exception as exc:
+            print(f"Failed to persist analysis run from worker: {repr(exc)}")
 
         return result
     except Exception as exc:
