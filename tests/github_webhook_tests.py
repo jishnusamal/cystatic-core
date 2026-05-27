@@ -6,6 +6,7 @@ import hmac
 from fastapi.testclient import TestClient
 
 from api import main
+from api.user import urls as user_urls
 from source_adapters.github.event_handler import build_pull_request_analysis_job, should_process_pull_request_event
 from source_adapters.github.webhook import verify_github_webhook_signature
 
@@ -50,9 +51,9 @@ def test_github_webhook_endpoint_dispatches_analysis(monkeypatch) -> None:
     async def fake_persist_analysis_job(**kwargs):
         return type("JobRecord", (), {"job_id": 101})(), True
 
-    monkeypatch.setattr(main.settings, "github_app_webhook_secret", "")
-    monkeypatch.setattr(main, "persist_analysis_job", fake_persist_analysis_job)
-    monkeypatch.setattr(main, "schedule_pull_request_analysis", lambda background_tasks, job: captured_jobs.append(job))
+    monkeypatch.setattr(user_urls.settings, "github_app_webhook_secret", "")
+    monkeypatch.setattr(user_urls, "persist_analysis_job", fake_persist_analysis_job)
+    monkeypatch.setattr(user_urls, "schedule_pull_request_analysis", lambda background_tasks, job: captured_jobs.append(job))
 
     client = TestClient(main.app)
     response = client.post(
@@ -87,7 +88,7 @@ def test_github_webhook_endpoint_dispatches_analysis(monkeypatch) -> None:
 
 
 def test_github_webhook_endpoint_ignores_non_pull_request_events(monkeypatch) -> None:
-    monkeypatch.setattr(main.settings, "github_app_webhook_secret", "")
+    monkeypatch.setattr(user_urls.settings, "github_app_webhook_secret", "")
 
     client = TestClient(main.app)
     response = client.post(

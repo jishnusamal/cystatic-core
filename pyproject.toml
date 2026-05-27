@@ -70,6 +70,8 @@ dependencies = [
     "asyncpg>=0.31.0",
     "openai>=2.32.0",
     "pytest-asyncio>=1.4.0",
+    "dramatiq>=2.1.0",
+    "redis>=7.4.0",
 ]
 
 [project.optional-dependencies]

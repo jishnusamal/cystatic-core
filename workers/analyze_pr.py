@@ -17,6 +17,25 @@ from source_adapters.github.event_handler import PullRequestAnalysisJob
 from source_adapters.github.github_client import build_github_clients
 from language_adapters import PythonAdapter
 from schemas import AnalyzeRequest
+import dramatiq
+
+try:
+    from workers.queue import broker
+
+    dramatiq.set_broker(broker)
+except Exception:
+    broker = None
+
+actor = dramatiq.actor
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def build_failure_simulation_llm() -> FailureSimulationLLM | None:
@@ -155,4 +174,38 @@ def process_pull_request_job(job: PullRequestAnalysisJob) -> dict[str, Any]:
                 result_summary={"phase": "failed", "error": repr(exc)},
             )
         )
+        raise
+
+
+# Dramatiq actor wrapper so jobs can be enqueued to Redis
+@actor(queue_name="analysis_jobs", max_retries=0)
+def process_pull_request_job_actor(job_dict: dict) -> None:
+    """Actor entrypoint. Accepts a serializable job dict and executes the analysis.
+
+    This function reconstructs the PullRequestAnalysisJob dataclass and delegates
+    to the synchronous `process_pull_request_job` function.
+    """
+    try:
+        pj = PullRequestAnalysisJob(
+            installation_id=_optional_int(job_dict.get("installation_id")),
+            owner=str(job_dict.get("owner") or ""),
+            repo=str(job_dict.get("repo") or ""),
+            pr_number=int(job_dict.get("pr_number") or 0),
+            action=str(job_dict.get("action") or ""),
+            delivery_id=job_dict.get("delivery_id"),
+            head_sha=job_dict.get("head_sha"),
+            base_sha=job_dict.get("base_sha"),
+            title=job_dict.get("title"),
+            author_login=job_dict.get("author_login"),
+            merge_sha=job_dict.get("merge_sha"),
+            state=job_dict.get("state"),
+            merged=bool(job_dict.get("merged", False)),
+            changed_files_count=_optional_int(job_dict.get("changed_files_count")),
+            repository_id=job_dict.get("repository_id"),
+            github_pr_id=job_dict.get("github_pr_id"),
+            default_branch=job_dict.get("default_branch"),
+        )
+        process_pull_request_job(pj)
+    except Exception:
+        # Let dramatiq handle retries/logging if configured
         raise

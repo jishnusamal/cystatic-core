@@ -89,6 +89,22 @@ def schedule_pull_request_analysis(
     background_tasks: BackgroundTasks,
     job: PullRequestAnalysisJob,
 ) -> None:
+    # Try to enqueue via dramatiq actor if available, otherwise fall back to BackgroundTasks
+    try:
+        from workers.analyze_pr import process_pull_request_job_actor
+
+        # Actor expects a serializable dict. Use getattr so Pylance does not
+        # require the imported symbol to expose a statically known `.send`.
+        send_job = getattr(process_pull_request_job_actor, "send", None)
+        if callable(send_job):
+            send_job(job.__dict__)
+            return
+    except Exception:
+        from workers.analyze_pr import process_pull_request_job
+
+        background_tasks.add_task(process_pull_request_job, job)
+        return
+
     from workers.analyze_pr import process_pull_request_job
 
     background_tasks.add_task(process_pull_request_job, job)
