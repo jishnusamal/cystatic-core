@@ -46,7 +46,7 @@ def build_failure_simulation_llm() -> FailureSimulationLLM | None:
 
 @router.post(
     "/v1/analyze-pr",
-    dependencies=[Depends(verify_api_key), Depends(sentry_pr_context)],
+    dependencies=[Depends(sentry_pr_context)],
 )
 async def analyze_pr(body: AnalyzeRequest = Body(...)):
     if not body.installation_id:
@@ -109,8 +109,7 @@ async def analyze_diff(body: str = Body(..., media_type="text/plain")):
     return orchestrator.publish_comments(result)
 
 
-@router.post("/github/webhook")
-async def github_webhook(
+async def _github_webhook_handler(
     request: Request,
     background_tasks: BackgroundTasks,
     x_github_event: str | None = Header(default=None, alias="X-GitHub-Event"),
@@ -118,6 +117,15 @@ async def github_webhook(
     x_hub_signature_256: str | None = Header(default=None, alias="X-Hub-Signature-256"),
 ):
     payload_bytes = await request.body()
+
+    print(
+        "GitHub webhook received:",
+        {
+            "event": x_github_event,
+            "delivery": x_github_delivery,
+            "content_length": request.headers.get("content-length"),
+        },
+    )
 
     try:
         payload = await request.json()
@@ -182,4 +190,38 @@ async def github_webhook(
             "delivery_id": x_github_delivery,
             "job_id": job_id_value,
         },
+    )
+
+
+@router.post("/github/webhook")
+async def github_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    x_github_event: str | None = Header(default=None, alias="X-GitHub-Event"),
+    x_github_delivery: str | None = Header(default=None, alias="X-GitHub-Delivery"),
+    x_hub_signature_256: str | None = Header(default=None, alias="X-Hub-Signature-256"),
+):
+    return await _github_webhook_handler(
+        request=request,
+        background_tasks=background_tasks,
+        x_github_event=x_github_event,
+        x_github_delivery=x_github_delivery,
+        x_hub_signature_256=x_hub_signature_256,
+    )
+
+
+@router.post("/v1/github/webhook", include_in_schema=False)
+async def github_webhook_v1(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    x_github_event: str | None = Header(default=None, alias="X-GitHub-Event"),
+    x_github_delivery: str | None = Header(default=None, alias="X-GitHub-Delivery"),
+    x_hub_signature_256: str | None = Header(default=None, alias="X-Hub-Signature-256"),
+):
+    return await _github_webhook_handler(
+        request=request,
+        background_tasks=background_tasks,
+        x_github_event=x_github_event,
+        x_github_delivery=x_github_delivery,
+        x_hub_signature_256=x_hub_signature_256,
     )

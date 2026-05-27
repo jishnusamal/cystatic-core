@@ -7,17 +7,19 @@ import traceback
 from time import perf_counter
 from typing import Any
 
-from api.settings import get_settings
+import dramatiq
+from api.db import TORTOISE_ORM
 from api.models import persist_analysis_job
+from api.settings import get_settings
 from core_engine.failure_simulation_llm import FailureSimulationLLM
 from core_engine.orchestrator import Orchestrator
+from language_adapters import PythonAdapter
+from schemas import AnalyzeRequest
 from source_adapters.github.auth import get_installation_token
 from source_adapters.github.comment_formatter import render_pull_request_comment
 from source_adapters.github.event_handler import PullRequestAnalysisJob
 from source_adapters.github.github_client import build_github_clients
-from language_adapters import PythonAdapter
-from schemas import AnalyzeRequest
-import dramatiq
+from tortoise import Tortoise
 
 try:
     from workers.queue import broker
@@ -38,6 +40,11 @@ def _optional_int(value: Any) -> int | None:
         return None
 
 
+async def _ensure_tortoise_initialized() -> None:
+    if not Tortoise.is_inited():
+        await Tortoise.init(config=TORTOISE_ORM)
+
+
 def build_failure_simulation_llm() -> FailureSimulationLLM | None:
     settings = get_settings()
     api_key = settings.llm_api_key or settings.ai_api_key
@@ -54,8 +61,9 @@ def build_failure_simulation_llm() -> FailureSimulationLLM | None:
     )
 
 
-def process_pull_request_job(job: PullRequestAnalysisJob) -> dict[str, Any]:
+async def _process_pull_request_job_async(job: PullRequestAnalysisJob) -> dict[str, Any]:
     settings = get_settings()
+    await _ensure_tortoise_initialized()
 
     if not job.installation_id:
         raise ValueError("Installation ID is required for GitHub App webhook analysis")
@@ -70,25 +78,23 @@ def process_pull_request_job(job: PullRequestAnalysisJob) -> dict[str, Any]:
     )
     source, publisher = build_github_clients(token)
 
-    asyncio.run(
-        persist_analysis_job(
-            repo_full_name=job.full_name,
-            pr_number=job.pr_number,
-            action=job.action,
-            installation_id=job.installation_id,
-            delivery_id=job.delivery_id,
-            head_sha=job.head_sha,
-            base_sha=job.base_sha,
-            owner_login=job.owner,
-            repo_name=job.repo,
-            payload_json={
-                "phase": "started",
-                "installation_id": job.installation_id,
-            },
-            status="running",
-            attempts=1,
-            result_summary={"phase": "running"},
-        )
+    await persist_analysis_job(
+        repo_full_name=job.full_name,
+        pr_number=job.pr_number,
+        action=job.action,
+        installation_id=job.installation_id,
+        delivery_id=job.delivery_id,
+        head_sha=job.head_sha,
+        base_sha=job.base_sha,
+        owner_login=job.owner,
+        repo_name=job.repo,
+        payload_json={
+            "phase": "started",
+            "installation_id": job.installation_id,
+        },
+        status="running",
+        attempts=1,
+        result_summary={"phase": "running"},
     )
 
     started_at = perf_counter()
@@ -125,87 +131,76 @@ def process_pull_request_job(job: PullRequestAnalysisJob) -> dict[str, Any]:
         }
         publisher.post_comment(job.full_name, job.pr_number, comment)
 
-        asyncio.run(
-            persist_analysis_job(
-                repo_full_name=job.full_name,
-                pr_number=job.pr_number,
-                action=job.action,
-                installation_id=job.installation_id,
-                delivery_id=job.delivery_id,
-                head_sha=job.head_sha,
-                base_sha=job.base_sha,
-                owner_login=job.owner,
-                repo_name=job.repo,
-                payload_json={"phase": "completed"},
-                status="completed",
-                attempts=1,
-                result_summary={
-                    "phase": "completed",
-                    "verdict": result.get("verdict"),
-                    "risk_level": result.get("pr_risk_level"),
-                },
-            )
+        await persist_analysis_job(
+            repo_full_name=job.full_name,
+            pr_number=job.pr_number,
+            action=job.action,
+            installation_id=job.installation_id,
+            delivery_id=job.delivery_id,
+            head_sha=job.head_sha,
+            base_sha=job.base_sha,
+            owner_login=job.owner,
+            repo_name=job.repo,
+            payload_json={"phase": "completed"},
+            status="completed",
+            attempts=1,
+            result_summary={
+                "phase": "completed",
+                "verdict": result.get("verdict"),
+                "risk_level": result.get("pr_risk_level"),
+            },
         )
 
         try:
-            # Persist analysis run for traceability; do not fail the worker if persistence errors occur
-            asyncio.run(orchestrator.log_run(result))
+            await orchestrator.log_run(result)
         except Exception as exc:
             print(f"Failed to persist analysis run from worker: {repr(exc)}")
 
         return result
     except Exception as exc:
-        asyncio.run(
-            persist_analysis_job(
-                repo_full_name=job.full_name,
-                pr_number=job.pr_number,
-                action=job.action,
-                installation_id=job.installation_id,
-                delivery_id=job.delivery_id,
-                head_sha=job.head_sha,
-                base_sha=job.base_sha,
-                owner_login=job.owner,
-                repo_name=job.repo,
-                payload_json={"phase": "failed"},
-                status="failed",
-                attempts=1,
-                error_stage="worker",
-                error_trace=traceback.format_exc(),
-                result_summary={"phase": "failed", "error": repr(exc)},
-            )
+        await persist_analysis_job(
+            repo_full_name=job.full_name,
+            pr_number=job.pr_number,
+            action=job.action,
+            installation_id=job.installation_id,
+            delivery_id=job.delivery_id,
+            head_sha=job.head_sha,
+            base_sha=job.base_sha,
+            owner_login=job.owner,
+            repo_name=job.repo,
+            payload_json={"phase": "failed"},
+            status="failed",
+            attempts=1,
+            error_stage="worker",
+            error_trace=traceback.format_exc(),
+            result_summary={"phase": "failed", "error": repr(exc)},
         )
         raise
 
 
-# Dramatiq actor wrapper so jobs can be enqueued to Redis
+def process_pull_request_job(job: PullRequestAnalysisJob) -> dict[str, Any]:
+    return asyncio.run(_process_pull_request_job_async(job))
+
+
 @actor(queue_name="analysis_jobs", max_retries=0)
 def process_pull_request_job_actor(job_dict: dict) -> None:
-    """Actor entrypoint. Accepts a serializable job dict and executes the analysis.
-
-    This function reconstructs the PullRequestAnalysisJob dataclass and delegates
-    to the synchronous `process_pull_request_job` function.
-    """
-    try:
-        pj = PullRequestAnalysisJob(
-            installation_id=_optional_int(job_dict.get("installation_id")),
-            owner=str(job_dict.get("owner") or ""),
-            repo=str(job_dict.get("repo") or ""),
-            pr_number=int(job_dict.get("pr_number") or 0),
-            action=str(job_dict.get("action") or ""),
-            delivery_id=job_dict.get("delivery_id"),
-            head_sha=job_dict.get("head_sha"),
-            base_sha=job_dict.get("base_sha"),
-            title=job_dict.get("title"),
-            author_login=job_dict.get("author_login"),
-            merge_sha=job_dict.get("merge_sha"),
-            state=job_dict.get("state"),
-            merged=bool(job_dict.get("merged", False)),
-            changed_files_count=_optional_int(job_dict.get("changed_files_count")),
-            repository_id=job_dict.get("repository_id"),
-            github_pr_id=job_dict.get("github_pr_id"),
-            default_branch=job_dict.get("default_branch"),
-        )
-        process_pull_request_job(pj)
-    except Exception:
-        # Let dramatiq handle retries/logging if configured
-        raise
+    pj = PullRequestAnalysisJob(
+        installation_id=_optional_int(job_dict.get("installation_id")),
+        owner=str(job_dict.get("owner") or ""),
+        repo=str(job_dict.get("repo") or ""),
+        pr_number=int(job_dict.get("pr_number") or 0),
+        action=str(job_dict.get("action") or ""),
+        delivery_id=job_dict.get("delivery_id"),
+        head_sha=job_dict.get("head_sha"),
+        base_sha=job_dict.get("base_sha"),
+        title=job_dict.get("title"),
+        author_login=job_dict.get("author_login"),
+        merge_sha=job_dict.get("merge_sha"),
+        state=job_dict.get("state"),
+        merged=bool(job_dict.get("merged", False)),
+        changed_files_count=_optional_int(job_dict.get("changed_files_count")),
+        repository_id=job_dict.get("repository_id"),
+        github_pr_id=job_dict.get("github_pr_id"),
+        default_branch=job_dict.get("default_branch"),
+    )
+    process_pull_request_job(pj)
