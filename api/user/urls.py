@@ -210,18 +210,18 @@ async def github_webhook(
     )
 
 
-@router.post("/v1/github/webhook", include_in_schema=False)
-async def github_webhook_v1(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    x_github_event: str | None = Header(default=None, alias="X-GitHub-Event"),
-    x_github_delivery: str | None = Header(default=None, alias="X-GitHub-Delivery"),
-    x_hub_signature_256: str | None = Header(default=None, alias="X-Hub-Signature-256"),
-):
-    return await _github_webhook_handler(
-        request=request,
-        background_tasks=background_tasks,
-        x_github_event=x_github_event,
-        x_github_delivery=x_github_delivery,
-        x_hub_signature_256=x_hub_signature_256,
-    )
+# @router.post("/v1/github/webhook", include_in_schema=False)
+# async def github_webhook_v1(
+#     request: Request,
+#     background_tasks: BackgroundTasks,
+#     x_github_event: str | None = Header(default=None, alias="X-GitHub-Event"),
+#     x_github_delivery: str | None = Header(default=None, alias="X-GitHub-Delivery"),
+#     x_hub_signature_256: str | None = Header(default=None, alias="X-Hub-Signature-256"),
+# ):
+#     return await _github_webhook_handler(
+#         request=request,
+#         background_tasks=background_tasks,
+#         x_github_event=x_github_event,
+#         x_github_delivery=x_github_delivery,
+#         x_hub_signature_256=x_hub_signature_256,
+#     )
