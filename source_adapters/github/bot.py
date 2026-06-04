@@ -179,10 +179,13 @@ class GitHubBot:
 
         return DiffIR(files=files)
 
+    # def _get_client(self) -> Github:
+    #     if self.client is None:
+    #         raise ValueError("GitHub token is required")
+    #     return self.client
+    
     def _get_client(self) -> Github:
-        if self.client is None:
-            raise ValueError("GitHub token is required")
-        return self.client
+        return self.client or Github()
 
     def _headers(self, accept: str) -> Dict[str, str]:
         headers = {"Accept": accept}

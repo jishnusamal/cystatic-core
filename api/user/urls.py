@@ -2,28 +2,19 @@ from __future__ import annotations
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
-
-from api.models import persist_analysis_job
 from api.settings import get_settings
-from api.utils import verify_api_key
 from core_engine.failure_simulation_llm import FailureSimulationLLM
 from core_engine.orchestrator import DiffOrchestrator, Orchestrator
 from language_adapters import PythonAdapter
 from schemas import AnalyzeRequest
 from source_adapters.github import GitHubPublisher, GitHubSource
 from source_adapters.github.auth import get_installation_token
-from source_adapters.github.event_handler import (
-    build_pull_request_analysis_job,
-    schedule_pull_request_analysis,
-    should_process_pull_request_event,
-)
-from source_adapters.github.github_client import build_github_clients
-from source_adapters.github.webhook import verify_github_webhook_signature
+from source_adapters.github.github_client import build_github_clients, build_public_github_client
+from api.utils import github_webhook_handler
 from instrumentation import sentry_pr_context
 
 router = APIRouter()
 settings = get_settings()
-
 
 def build_failure_simulation_llm() -> FailureSimulationLLM | None:
     api_key = settings.llm_api_key or settings.ai_api_key
@@ -86,6 +77,32 @@ async def analyze_pr(body: AnalyzeRequest = Body(...)):
         print(f"Failed to persist analysis run: {repr(exc)}")
     return result
 
+@router.post(
+    "/v1/public/analyze-pr",
+    dependencies=[Depends(sentry_pr_context)],
+)
+async def analyze_public_pr(body: AnalyzeRequest = Body(...)):
+    source = build_public_github_client(token=settings.github_access_token)
+
+    failure_simulation_llm = build_failure_simulation_llm()
+
+    orchestrator = Orchestrator(
+        request=body,
+        source=source,
+        language=PythonAdapter(),
+        publisher=None,  # no PR comments in public mode
+        failure_simulation_llm=failure_simulation_llm,
+    )
+
+    result = orchestrator.run_pr_analysis()
+
+    # try:
+    #     await orchestrator.log_run(result)
+    # except Exception as exc:
+    #     print(f"Failed to persist analysis run: {repr(exc)}")
+
+    print(result['failure_simulation'])
+    return result
 
 @router.post("/v1/analyze-diff")
 async def analyze_diff(body: str = Body(..., media_type="text/plain")):
@@ -94,7 +111,7 @@ async def analyze_diff(body: str = Body(..., media_type="text/plain")):
     failure_simulation_llm = build_failure_simulation_llm()
     orchestrator = DiffOrchestrator(
         request={"diff": diff_text},
-        source=GitHubSource(token=None),
+        source=GitHubSource(token=settings.github_access_token),
         language=PythonAdapter(),
         failure_simulation_llm=failure_simulation_llm,
     )
@@ -108,91 +125,6 @@ async def analyze_diff(body: str = Body(..., media_type="text/plain")):
 
     return orchestrator.publish_comments(result)
 
-
-async def _github_webhook_handler(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    x_github_event: str | None = Header(default=None, alias="X-GitHub-Event"),
-    x_github_delivery: str | None = Header(default=None, alias="X-GitHub-Delivery"),
-    x_hub_signature_256: str | None = Header(default=None, alias="X-Hub-Signature-256"),
-):
-    payload_bytes = await request.body()
-
-    print(
-        "GitHub webhook received:",
-        {
-            "event": x_github_event,
-            "delivery": x_github_delivery,
-            "content_length": request.headers.get("content-length"),
-        },
-    )
-
-    try:
-        payload = await request.json()
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON payload") from exc
-
-    if not verify_github_webhook_signature(
-        payload=payload_bytes,
-        signature=x_hub_signature_256,
-        secret=settings.github_app_webhook_secret,
-    ):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid GitHub signature")
-
-    action = payload.get("action") if isinstance(payload, dict) else None
-    if not should_process_pull_request_event(x_github_event, action):
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={
-                "status": "ignored",
-                "event": x_github_event,
-                "action": action,
-                "delivery_id": x_github_delivery,
-            },
-        )
-
-    try:
-        job = build_pull_request_analysis_job(payload, delivery_id=x_github_delivery)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-    try:
-        job_record, _ = await persist_analysis_job(
-            repo_full_name=job.full_name,
-            pr_number=job.pr_number,
-            action=job.action,
-            installation_id=job.installation_id,
-            delivery_id=job.delivery_id,
-            head_sha=job.head_sha,
-            base_sha=job.base_sha,
-            owner_login=job.owner,
-            repo_name=job.repo,
-            payload_json=payload,
-        )
-    except Exception:
-        job_record = None
-
-    schedule_pull_request_analysis(background_tasks, job)
-
-    job_id_value = None
-    if job_record is not None:
-        job_id_value = getattr(job_record, "job_id", None) or getattr(job_record, "id", None)
-
-    return JSONResponse(
-        status_code=status.HTTP_202_ACCEPTED,
-        content={
-            "status": "accepted",
-            "installation_id": job.installation_id,
-            "owner": job.owner,
-            "repo": job.repo,
-            "pr_number": job.pr_number,
-            "action": job.action,
-            "delivery_id": x_github_delivery,
-            "job_id": job_id_value,
-        },
-    )
-
-
 @router.post("/github/webhook")
 async def github_webhook(
     request: Request,
@@ -201,7 +133,7 @@ async def github_webhook(
     x_github_delivery: str | None = Header(default=None, alias="X-GitHub-Delivery"),
     x_hub_signature_256: str | None = Header(default=None, alias="X-Hub-Signature-256"),
 ):
-    return await _github_webhook_handler(
+    return await github_webhook_handler(
         request=request,
         background_tasks=background_tasks,
         x_github_event=x_github_event,

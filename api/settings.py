@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     github_client_secret: str = ""
     github_private_key: str = ""
     github_app_webhook_secret: str = ""
+    github_access_token: str = ""
     sentry_dsn: str = ""
     app_env: str = ""
     app_version: str = ""
