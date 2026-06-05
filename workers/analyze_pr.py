@@ -23,9 +23,10 @@ from tortoise import Tortoise
 
 try:
     from workers.queue import broker
-
     dramatiq.set_broker(broker)
-except Exception:
+    print("BROKER LOADED", broker)
+except Exception as e:
+    print("BROKER FAILED", repr(e))
     broker = None
 
 actor = dramatiq.actor

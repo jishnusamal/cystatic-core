@@ -4,16 +4,15 @@ from schemas import AnalyzeRequest
 import os, json
 from .settings import get_settings
 from api.models import persist_analysis_job
-from api.settings import get_settings
 from source_adapters.github.event_handler import (
     build_pull_request_analysis_job,
     schedule_pull_request_analysis,
     should_process_pull_request_event,
 )
 from source_adapters.github.webhook import verify_github_webhook_signature
+import logging
 
-
-
+logger = logging.getLogger(__name__)
 
 def verify_api_key(x_api_key: str = Header(...)):
     settings = get_settings()
@@ -68,6 +67,7 @@ async def github_webhook_handler(
 
     try:
         job = build_pull_request_analysis_job(payload, delivery_id=x_github_delivery)
+        logger.info("Published job")
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
