@@ -87,7 +87,7 @@ async def github_webhook_handler(
     except Exception:
         job_record = None
 
-    schedule_pull_request_analysis(background_tasks, job)
+    schedule_pull_request_analysis(background_tasks, job, use_queue=settings.use_queue)
 
     job_id_value = None
     if job_record is not None:

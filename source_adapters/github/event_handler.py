@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 from fastapi import BackgroundTasks
 
+
+logger = logging.getLogger(__name__)
 
 PR_EVENT_ACTIONS = {"opened", "synchronize", "reopened"}
 
@@ -88,23 +91,33 @@ def build_pull_request_analysis_job(
 def schedule_pull_request_analysis(
     background_tasks: BackgroundTasks,
     job: PullRequestAnalysisJob,
+    *,
+    use_queue: bool,
 ) -> None:
-    # Try to enqueue via dramatiq actor if available, otherwise fall back to BackgroundTasks
-    try:
-        from workers.analyze_pr import process_pull_request_job_actor
+    from workers.analyze_pr import (
+        process_pull_request_job,
+        process_pull_request_job_actor,
+    )
 
-        # Actor expects a serializable dict. Use getattr so Pylance does not
-        # require the imported symbol to expose a statically known `.send`.
-        send_job = getattr(process_pull_request_job_actor, "send", None)
-        if callable(send_job):
-            send_job(job.__dict__)
+    if use_queue:
+        try:
+            process_pull_request_job_actor.send(job.__dict__)
+            logger.info(
+                "Queued PR analysis",
+                extra={
+                    "repo": job.full_name,
+                    "pr_number": job.pr_number,
+                },
+            )
             return
-    except Exception:
-        from workers.analyze_pr import process_pull_request_job
-
-        background_tasks.add_task(process_pull_request_job, job)
-        return
-
-    from workers.analyze_pr import process_pull_request_job
+        except Exception:
+            logger.exception("Failed to enqueue job, falling back to BackgroundTasks")
 
     background_tasks.add_task(process_pull_request_job, job)
+    logger.info(
+        "Scheduled PR analysis via BackgroundTasks",
+        extra={
+            "repo": job.full_name,
+            "pr_number": job.pr_number,
+        },
+    )

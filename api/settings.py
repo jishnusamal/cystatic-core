@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.groq.com/openai/v1"
     upstash_redis_rest_token: str = ""
     upstash_redis_rest_url: str = ""
+    use_queue: bool = False
 
     model_config = SettingsConfigDict(env_file=BASE_DIR / ".env.local")
 
