@@ -96,12 +96,16 @@ async def analyze_public_pr(body: AnalyzeRequest = Body(...)):
 
     result = orchestrator.run_pr_analysis()
 
+    # Render PR comment using BaseOrchestrator._render_pr_comment but don't publish
+    comment = orchestrator._render_pr_comment("github/pr_comment.md.j2", result)
+    result["generated_comment"] = comment
+
     # try:
     #     await orchestrator.log_run(result)
     # except Exception as exc:
     #     print(f"Failed to persist analysis run: {repr(exc)}")
 
-    print(result['failure_simulation'])
+    print(comment)
     return result
 
 @router.post("/v1/analyze-diff")
