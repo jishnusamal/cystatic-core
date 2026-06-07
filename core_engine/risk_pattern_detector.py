@@ -12,8 +12,23 @@ FLOW_SIGNAL_MAP: dict[FlowType, set[SignalType]] = {
         SignalType.AUTH_SURFACE,
         SignalType.LOGIN_LOGOUT,
     },
-    FlowType.PAYMENT_PROCESSING: {
+    FlowType.PAYMENT_CHECKOUT: {
         SignalType.PAYMENT_SURFACE,
+    },
+    FlowType.PAYMENT_WEBHOOK: {
+        SignalType.WEBHOOK_SURFACE,
+    },
+    FlowType.PAYMENT_BILLING: {
+        SignalType.BILLING_SURFACE,
+    },
+    FlowType.PAYMENT_REFUND: {
+        SignalType.REFUND_SURFACE,
+    },
+    FlowType.PAYMENT_TAX: {
+        SignalType.TAX_SURFACE,
+    },
+    FlowType.PAYMENT_TESTING: {
+        SignalType.TESTING_SURFACE,
     },
     FlowType.USER_MANAGEMENT: {
         SignalType.USER_INPUT,
@@ -26,9 +41,9 @@ FLOW_SIGNAL_MAP: dict[FlowType, set[SignalType]] = {
 EVENT_TO_SYSTEM_AREAS: dict[RiskEventType, list[str]] = {
     RiskEventType.AUTH_BYPASS: ["authentication_flow", "session_handling"],
     RiskEventType.PERMISSION_REMOVED: ["authentication_flow", "session_handling"],
-    RiskEventType.FINANCIAL_LOGIC_CHANGE: ["payment_processing"],
-    RiskEventType.FINANCIAL_DATA_MODEL_CHANGE: ["payment_processing", "data_model"],
-    RiskEventType.TAX_CALCULATION_CHANGE: ["payment_processing", "tax_pipeline"],
+    RiskEventType.FINANCIAL_LOGIC_CHANGE: ["payment_checkout", "payment_webhook", "payment_billing"],
+    RiskEventType.FINANCIAL_DATA_MODEL_CHANGE: ["payment_checkout", "payment_billing", "data_model"],
+    RiskEventType.TAX_CALCULATION_CHANGE: ["payment_tax", "tax_pipeline"],
     RiskEventType.SCHEMA_MIGRATION: ["data_model", "migration_pipeline"],
     RiskEventType.DATA_BACKFILL: ["data_model", "migration_pipeline"],
     RiskEventType.INVOICE_RENDERING_CHANGE: ["invoice_pipeline"],
@@ -128,8 +143,27 @@ def detect_flows(file_data: dict) -> list[FlowType]:
         any(marker in path for marker in ("payment", "checkout", "billing", "invoice"))
         or any(any(marker in name for marker in payment_fn_markers) for name in function_names)
     ):
-        if FlowType.PAYMENT_PROCESSING not in flows:
-            flows.append(FlowType.PAYMENT_PROCESSING)
+        # Map to appropriate payment sub-flow based on path
+        path_lower = path.lower()
+        if "webhook" in path_lower:
+            if FlowType.PAYMENT_WEBHOOK not in flows:
+                flows.append(FlowType.PAYMENT_WEBHOOK)
+        elif "billing" in path_lower or "subscription" in path_lower:
+            if FlowType.PAYMENT_BILLING not in flows:
+                flows.append(FlowType.PAYMENT_BILLING)
+        elif "refund" in path_lower:
+            if FlowType.PAYMENT_REFUND not in flows:
+                flows.append(FlowType.PAYMENT_REFUND)
+        elif "tax" in path_lower:
+            if FlowType.PAYMENT_TAX not in flows:
+                flows.append(FlowType.PAYMENT_TAX)
+        elif "test" in path_lower:
+            if FlowType.PAYMENT_TESTING not in flows:
+                flows.append(FlowType.PAYMENT_TESTING)
+        else:
+            # Default to checkout
+            if FlowType.PAYMENT_CHECKOUT not in flows:
+                flows.append(FlowType.PAYMENT_CHECKOUT)
 
     # session_handling heuristics:
     # session["user_id"], cookie/cookies, JWT, access_token/refresh_token.

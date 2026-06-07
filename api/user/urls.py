@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, Header, HTTPException, Request, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Body,
+    Depends,
+    Header,
+    HTTPException,
+    Request,
+    status,
+)
 from fastapi.responses import JSONResponse
 from api.settings import get_settings
 from core_engine.failure_simulation_llm import FailureSimulationLLM
@@ -9,12 +18,16 @@ from language_adapters import PythonAdapter
 from schemas import AnalyzeRequest
 from source_adapters.github import GitHubPublisher, GitHubSource
 from source_adapters.github.auth import get_installation_token
-from source_adapters.github.github_client import build_github_clients, build_public_github_client
+from source_adapters.github.github_client import (
+    build_github_clients,
+    build_public_github_client,
+)
 from api.utils import github_webhook_handler
 from instrumentation import sentry_pr_context
 
 router = APIRouter()
 settings = get_settings()
+
 
 def build_failure_simulation_llm() -> FailureSimulationLLM | None:
     api_key = settings.llm_api_key or settings.ai_api_key
@@ -77,6 +90,7 @@ async def analyze_pr(body: AnalyzeRequest = Body(...)):
         print(f"Failed to persist analysis run: {repr(exc)}")
     return result
 
+
 @router.post(
     "/v1/public/analyze-pr",
     dependencies=[Depends(sentry_pr_context)],
@@ -108,6 +122,7 @@ async def analyze_public_pr(body: AnalyzeRequest = Body(...)):
     print(comment)
     return result
 
+
 @router.post("/v1/analyze-diff")
 async def analyze_diff(body: str = Body(..., media_type="text/plain")):
     diff_text = body
@@ -128,6 +143,7 @@ async def analyze_diff(body: str = Body(..., media_type="text/plain")):
         print(f"Failed to persist analysis run: {repr(exc)}")
 
     return orchestrator.publish_comments(result)
+
 
 @router.post("/github/webhook")
 async def github_webhook(

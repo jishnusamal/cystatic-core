@@ -16,3 +16,4 @@ async def health(request: Request):
     if request.method == "HEAD":
         return Response(status_code=status.HTTP_200_OK)
     return {"status": "ok"}
+

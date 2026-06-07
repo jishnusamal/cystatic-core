@@ -23,10 +23,20 @@ class SignalType(str, Enum):
     VALIDATION_LOGIC = "VALIDATION_LOGIC"
     USER_INPUT = "USER_INPUT"
     CONFIG_CHANGE = "CONFIG_CHANGE"
+    WEBHOOK_SURFACE = "WEBHOOK_SURFACE"
+    BILLING_SURFACE = "BILLING_SURFACE"
+    REFUND_SURFACE = "REFUND_SURFACE"
+    TAX_SURFACE = "TAX_SURFACE"
+    TESTING_SURFACE = "TESTING_SURFACE"
 
 
 class FlowType(str, Enum):
     AUTHENTICATION_FLOW = "authentication_flow"
-    PAYMENT_PROCESSING = "payment_processing"
+    PAYMENT_CHECKOUT = "payment_checkout"
+    PAYMENT_WEBHOOK = "payment_webhook"
+    PAYMENT_BILLING = "payment_billing"
+    PAYMENT_REFUND = "payment_refund"
+    PAYMENT_TAX = "payment_tax"
+    PAYMENT_TESTING = "payment_testing"
     USER_MANAGEMENT = "user_management"
     SESSION_HANDLING = "session_handling"

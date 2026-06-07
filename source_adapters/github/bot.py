@@ -7,10 +7,13 @@ import base64
 import hmac
 from dataclasses import dataclass
 from typing import Any, Dict, List
+from urllib.parse import quote
 
 import requests
 from github import Auth, Github, GithubException
+from requests.adapters import HTTPAdapter
 from unidiff import PatchSet
+from urllib3.util.retry import Retry
 
 from instrumentation import sentry
 from schemas import AnalyzeRequest, DiffHunk, DiffIR, DiffLine, FileDiff
@@ -49,10 +52,23 @@ class GitHubBot:
         self.token = token or ""
         self.base_url = (base_url or "https://api.github.com").rstrip("/")
         self.client = Github(auth=Auth.Token(self.token)) if self.token else None
+        self._session = requests.Session()
+        retry = Retry(
+            total=3,
+            connect=3,
+            read=3,
+            backoff_factor=1,
+            status_forcelist=(429, 500, 502, 503, 504),
+            allowed_methods=frozenset(["GET", "POST"]),
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        self._session.mount("https://", adapter)
+        self._session.mount("http://", adapter)
 
     def close(self) -> None:
         if self.client is not None:
             self.client.close()
+        self._session.close()
 
     def get_head_sha(self, repo: str, pr_number: int) -> str:
         repository = self._get_client().get_repo(repo)
@@ -60,8 +76,9 @@ class GitHubBot:
         return pull_request.head.sha
 
     def fetch_file_at_sha(self, repo: str, file_path: str, sha: str) -> GitHubFileSnapshot:
-        url = f"{self.base_url}/repos/{repo}/contents/{file_path}"
-        response = requests.get(
+        encoded_path = quote(file_path, safe="/")
+        url = f"{self.base_url}/repos/{repo}/contents/{encoded_path}"
+        response = self._session.get(
             url,
             headers=self._headers("application/vnd.github+json"),
             params={"ref": sha},
@@ -76,7 +93,7 @@ class GitHubBot:
 
     def fetch_diff(self, repo: str, pr_number: int) -> DiffIR:
         url = f"{self.base_url}/repos/{repo}/pulls/{pr_number}"
-        response = requests.get(
+        response = self._session.get(
             url,
             headers=self._headers("application/vnd.github.v3.diff"),
             timeout=30,
@@ -88,7 +105,7 @@ class GitHubBot:
         repository = self._get_client().get_repo(repo)
         archive_url = repository.get_archive_link("zipball", ref=ref)
 
-        response = requests.get(archive_url, timeout=30)
+        response = self._session.get(archive_url, timeout=60)
         response.raise_for_status()
 
         return GitHubFetchResult(content=response.content, ref=ref, repo=repo)
@@ -188,7 +205,10 @@ class GitHubBot:
         return self.client or Github()
 
     def _headers(self, accept: str) -> Dict[str, str]:
-        headers = {"Accept": accept}
+        headers = {
+            "Accept": accept,
+            "User-Agent": "cystatic-core",
+        }
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         return headers

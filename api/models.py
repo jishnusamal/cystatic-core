@@ -33,7 +33,9 @@ class Organization(TimestampedFields, models.Model):
 
 class Repository(TimestampedFields, models.Model):
     repo_id = fields.IntField(pk=True)
-    organization = fields.ForeignKeyField("models.Organization", related_name="repositories", on_delete=fields.CASCADE)
+    organization = fields.ForeignKeyField(
+        "models.Organization", related_name="repositories", on_delete=fields.CASCADE
+    )
     github_repo_id = fields.BigIntField(null=True)
     full_name = fields.CharField(max_length=255, unique=True)
     name = fields.CharField(max_length=255)
@@ -52,7 +54,9 @@ class Repository(TimestampedFields, models.Model):
 
 class PullRequest(TimestampedFields, models.Model):
     pull_request_id = fields.IntField(pk=True)
-    repository = fields.ForeignKeyField("models.Repository", related_name="pull_requests", on_delete=fields.CASCADE)
+    repository = fields.ForeignKeyField(
+        "models.Repository", related_name="pull_requests", on_delete=fields.CASCADE
+    )
     github_pr_id = fields.BigIntField(null=True)
     number = fields.IntField()
     title = fields.CharField(max_length=512, default="")
@@ -74,8 +78,12 @@ class PullRequest(TimestampedFields, models.Model):
 
 class PullRequestSnapshot(TimestampedFields, models.Model):
     snapshot_id = fields.IntField(pk=True)
-    analysis_run = fields.ForeignKeyField("models.AnalysisRun", related_name="snapshots", on_delete=fields.CASCADE)
-    pull_request = fields.ForeignKeyField("models.PullRequest", related_name="snapshots", on_delete=fields.CASCADE)
+    analysis_run = fields.ForeignKeyField(
+        "models.AnalysisRun", related_name="snapshots", on_delete=fields.CASCADE
+    )
+    pull_request = fields.ForeignKeyField(
+        "models.PullRequest", related_name="snapshots", on_delete=fields.CASCADE
+    )
     snapshot_kind = fields.CharField(max_length=64, default="analysis_input")
     head_sha = fields.CharField(max_length=128, default="")
     base_sha = fields.CharField(max_length=128, default="")
@@ -92,7 +100,9 @@ class PullRequestSnapshot(TimestampedFields, models.Model):
 
 class AnalysisRun(TimestampedFields, models.Model):
     analysis_run_id = fields.IntField(pk=True)
-    pull_request = fields.ForeignKeyField("models.PullRequest", related_name="analysis_runs", on_delete=fields.CASCADE)
+    pull_request = fields.ForeignKeyField(
+        "models.PullRequest", related_name="analysis_runs", on_delete=fields.CASCADE
+    )
     # Head SHA captured at run time for idempotency and traceability
     head_sha = fields.CharField(max_length=128, default="")
     analyzer_version = fields.CharField(max_length=64)
@@ -113,11 +123,16 @@ class AnalysisRun(TimestampedFields, models.Model):
     risk_score = fields.FloatField(null=True)
     risk_category = fields.CharField(max_length=64, default="")
     verdict = fields.CharField(max_length=64, default="")
-     # Canonical comment should live in AnalysisComment — this field stores a short
+    # Canonical comment should live in AnalysisComment — this field stores a short
     # summary or reference to the canonical comment for quick searching.
     generated_comment_summary = fields.TextField(null=True)
     # Reference to the canonical comment (AnalysisComment) when posted.
-    canonical_comment = fields.ForeignKeyField("models.AnalysisComment", related_name="canonical_for_run", null=True, on_delete=fields.SET_NULL)
+    canonical_comment = fields.ForeignKeyField(
+        "models.AnalysisComment",
+        related_name="canonical_for_run",
+        null=True,
+        on_delete=fields.SET_NULL,
+    )
     analysis_mode = fields.CharField(max_length=32, default="")
     analysis_snapshot = fields.JSONField(default=dict)
     internal_reasoning_artifacts = fields.JSONField(default=dict)
@@ -135,7 +150,11 @@ class AnalysisRun(TimestampedFields, models.Model):
 
 class DeterministicAnalyzerOutput(TimestampedFields, models.Model):
     output_id = fields.IntField(pk=True)
-    analysis_run = fields.ForeignKeyField("models.AnalysisRun", related_name="deterministic_outputs", on_delete=fields.CASCADE)
+    analysis_run = fields.ForeignKeyField(
+        "models.AnalysisRun",
+        related_name="deterministic_outputs",
+        on_delete=fields.CASCADE,
+    )
     files = fields.JSONField(default=list)
     risk_patterns = fields.JSONField(default=list)
     entry_points_affected = fields.JSONField(default=list)
@@ -164,6 +183,7 @@ class DeterministicAnalyzerOutput(TimestampedFields, models.Model):
 
 class AnalysisJob(TimestampedFields, models.Model):
     """Queue/job entity separate from AnalysisRun for leasing, retries, and scheduling."""
+
     job_id = fields.IntField(pk=True)
     repo_full_name = fields.CharField(max_length=255)
     owner_login = fields.CharField(max_length=255, null=True)
@@ -177,8 +197,15 @@ class AnalysisJob(TimestampedFields, models.Model):
     result_summary = fields.JSONField(default=dict)
     error_stage = fields.CharField(max_length=64, null=True)
     error_trace = fields.TextField(null=True)
-    pull_request = fields.ForeignKeyField("models.PullRequest", related_name="jobs", null=True, on_delete=fields.SET_NULL)
-    analysis_run = fields.ForeignKeyField("models.AnalysisRun", related_name="job_record", null=True, on_delete=fields.SET_NULL)
+    pull_request = fields.ForeignKeyField(
+        "models.PullRequest", related_name="jobs", null=True, on_delete=fields.SET_NULL
+    )
+    analysis_run = fields.ForeignKeyField(
+        "models.AnalysisRun",
+        related_name="job_record",
+        null=True,
+        on_delete=fields.SET_NULL,
+    )
     status = fields.CharField(max_length=32, default="queued")
     attempts = fields.IntField(default=0)
     max_attempts = fields.IntField(default=5)
@@ -195,7 +222,9 @@ class AnalysisJob(TimestampedFields, models.Model):
 
 class RiskFinding(TimestampedFields, models.Model):
     finding_id = fields.IntField(pk=True)
-    analysis_run = fields.ForeignKeyField("models.AnalysisRun", related_name="risk_findings", on_delete=fields.CASCADE)
+    analysis_run = fields.ForeignKeyField(
+        "models.AnalysisRun", related_name="risk_findings", on_delete=fields.CASCADE
+    )
     category = fields.CharField(max_length=128)
     severity = fields.CharField(max_length=32)
     confidence_bucket = fields.CharField(max_length=32)
@@ -212,7 +241,9 @@ class RiskFinding(TimestampedFields, models.Model):
 
 class AnalysisArtifact(TimestampedFields, models.Model):
     artifact_id = fields.IntField(pk=True)
-    analysis_run = fields.ForeignKeyField("models.AnalysisRun", related_name="artifacts", on_delete=fields.CASCADE)
+    analysis_run = fields.ForeignKeyField(
+        "models.AnalysisRun", related_name="artifacts", on_delete=fields.CASCADE
+    )
     artifact_type = fields.CharField(max_length=64)
     storage_uri = fields.CharField(max_length=512, null=True)
     checksum = fields.CharField(max_length=128, null=True)
@@ -227,7 +258,9 @@ class AnalysisArtifact(TimestampedFields, models.Model):
 
 class AnalysisComment(TimestampedFields, models.Model):
     comment_id = fields.IntField(pk=True)
-    analysis_run = fields.ForeignKeyField("models.AnalysisRun", related_name="comments", on_delete=fields.CASCADE)
+    analysis_run = fields.ForeignKeyField(
+        "models.AnalysisRun", related_name="comments", on_delete=fields.CASCADE
+    )
     body = fields.TextField()
     comment_type = fields.CharField(max_length=32, default="initial")
     suppressed = fields.BooleanField(default=False)
@@ -242,8 +275,15 @@ class AnalysisComment(TimestampedFields, models.Model):
 
 class FeedbackSignal(TimestampedFields, models.Model):
     feedback_signal_id = fields.IntField(pk=True)
-    analysis_run = fields.ForeignKeyField("models.AnalysisRun", related_name="feedback_signals", null=True, on_delete=fields.SET_NULL)
-    pull_request = fields.ForeignKeyField("models.PullRequest", related_name="feedback_signals", on_delete=fields.CASCADE)
+    analysis_run = fields.ForeignKeyField(
+        "models.AnalysisRun",
+        related_name="feedback_signals",
+        null=True,
+        on_delete=fields.SET_NULL,
+    )
+    pull_request = fields.ForeignKeyField(
+        "models.PullRequest", related_name="feedback_signals", on_delete=fields.CASCADE
+    )
     signal_type = fields.CharField(max_length=64)
     value = fields.BooleanField(null=True)
     source = fields.CharField(max_length=64, default="manual")
@@ -449,7 +489,8 @@ async def persist_analysis_result(result: dict[str, Any]) -> None:
     compressed_for_llm = _jsonable(result.get("compressed_for_llm", {})) or {}
     internal_reasoning_artifacts = {
         "compressed_for_llm": compressed_for_llm,
-        "entry_points_affected": _jsonable(result.get("entry_points_affected", [])) or [],
+        "entry_points_affected": _jsonable(result.get("entry_points_affected", []))
+        or [],
         "system_impact": _jsonable(result.get("system_impact", [])) or [],
         "excluded_files": _jsonable(result.get("excluded_files", [])) or [],
     }
@@ -466,7 +507,13 @@ async def persist_analysis_result(result: dict[str, Any]) -> None:
         risk_score=_to_float(result.get("pr_risk_score")),
         risk_category=str(result.get("pr_risk_level") or ""),
         verdict=str(result.get("verdict") or ""),
-        generated_comment_summary=(result.get("generated_comment_summary") or (result.get("generated_comment") and (str(result.get("generated_comment"))[:1024]))) ,
+        generated_comment_summary=(
+            result.get("generated_comment_summary")
+            or (
+                result.get("generated_comment")
+                and (str(result.get("generated_comment"))[:1024])
+            )
+        ),
         analysis_mode=str(result.get("analysis_mode") or ""),
         analysis_snapshot=analysis_snapshot,
         internal_reasoning_artifacts=internal_reasoning_artifacts,
@@ -489,7 +536,9 @@ async def persist_analysis_result(result: dict[str, Any]) -> None:
         head_sha=str(context.get("head_sha") or pull_request.head_sha or ""),
         base_sha=str(context.get("base_sha") or pull_request.base_sha or ""),
         title=str(context.get("title") or pull_request.title or ""),
-        author_login=str(context.get("author_login") or pull_request.author_login or ""),
+        author_login=str(
+            context.get("author_login") or pull_request.author_login or ""
+        ),
         state=str(context.get("state") or pull_request.state or ""),
         merged=bool(context.get("merged", pull_request.merged)),
         changed_files=changed_files,
@@ -544,12 +593,20 @@ async def persist_analysis_result(result: dict[str, Any]) -> None:
             if isinstance(n, dict):
                 tags = n.get("tags") or []
                 ntype = n.get("type") or n.get("node_type")
-                if n.get("auth") or "auth" in tags or (isinstance(ntype, str) and "auth" in ntype.lower()):
+                if (
+                    n.get("auth")
+                    or "auth" in tags
+                    or (isinstance(ntype, str) and "auth" in ntype.lower())
+                ):
                     impacted_auth_nodes_count += 1
                 if isinstance(ntype, str) and "service" in ntype.lower():
                     service_boundary_count += 1
 
-    changed_execution_path_count = len(compressed_for_llm.get("execution_paths", [])) if compressed_for_llm.get("execution_paths") is not None else 0
+    changed_execution_path_count = (
+        len(compressed_for_llm.get("execution_paths", []))
+        if compressed_for_llm.get("execution_paths") is not None
+        else 0
+    )
 
     await DeterministicAnalyzerOutput.create(
         analysis_run=analysis_run,
@@ -571,7 +628,8 @@ async def persist_analysis_result(result: dict[str, Any]) -> None:
         dataflow_changes=compressed_for_llm.get("dataflow_changes", []) or [],
         deleted_guards=compressed_for_llm.get("deleted_guards", []) or [],
         changed_api_contracts=compressed_for_llm.get("changed_api_contracts", []) or [],
-        event_flow_modifications=compressed_for_llm.get("event_flow_modifications", []) or [],
+        event_flow_modifications=compressed_for_llm.get("event_flow_modifications", [])
+        or [],
         inferred_risk_regions=compressed_for_llm.get("inferred_risk_regions", []) or [],
     )
 
@@ -602,17 +660,25 @@ async def persist_analysis_result(result: dict[str, Any]) -> None:
                 "flows": risk.get("flows"),
                 "system_areas": system_areas,
             },
-            affected_components=[str(item) for item in system_areas if str(item).strip()],
-            inferred_blast_radius=[str(item) for item in system_impact if str(item).strip()],
+            affected_components=[
+                str(item) for item in system_areas if str(item).strip()
+            ],
+            inferred_blast_radius=[
+                str(item) for item in system_impact if str(item).strip()
+            ],
             code_locations=code_locations,
             summary=str(risk.get("reason") or risk.get("trigger") or category),
         )
 
     # Create canonical AnalysisComment if analyzer produced a comment body.
     generated_body = None
-    if isinstance(result.get("generated_comment"), (str,)) and result.get("generated_comment"):
+    if isinstance(result.get("generated_comment"), (str,)) and result.get(
+        "generated_comment"
+    ):
         generated_body = result.get("generated_comment")
-    elif isinstance(analysis_snapshot.get("generated_comment"), (str,)) and analysis_snapshot.get("generated_comment"):
+    elif isinstance(
+        analysis_snapshot.get("generated_comment"), (str,)
+    ) and analysis_snapshot.get("generated_comment"):
         generated_body = analysis_snapshot.get("generated_comment")
 
     if generated_body:
@@ -657,7 +723,9 @@ async def persist_analysis_job(
     if not owner_login or not repo_name:
         owner_login, repo_name = _split_repo_full_name(repo_full_name)
 
-    idempotency_key = delivery_id or f"{repo_full_name}:{pr_number}:{head_sha or ''}:{action}"
+    idempotency_key = (
+        delivery_id or f"{repo_full_name}:{pr_number}:{head_sha or ''}:{action}"
+    )
 
     defaults: dict[str, Any] = {
         "repo_full_name": repo_full_name,

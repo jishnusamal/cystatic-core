@@ -1,6 +1,18 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
+
+from core_engine.behavior_diff_builder import BehaviorDiff, build_behavior_diffs
+from core_engine.factor_ir_v3 import build_factor_ir_v3
+
+
+@dataclass
+class Evidence:
+    """Concrete evidence supporting a reasoning artifact."""
+    type: str  # function, file, line, call, import
+    value: str
+    source: str  # file_path where evidence was found
 
 
 class RIRCompressor:
@@ -15,10 +27,16 @@ class RIRCompressor:
         risk_patterns: list[Any] | None = None,
         entry_points_affected: list[Any] | None = None,
     ) -> dict[str, Any]:
+        """Legacy multi-view IR — kept for persistence/debugging, not sent to LLM."""
         flows = self._collect_flows(enriched_files)
         risk_events = self._collect_risk_events(risk_patterns or [])
         changed_functions = self._collect_changed_functions(enriched_files)
         entry_points = self._collect_entry_points(entry_points_affected or [])
+        
+        # Phase 1: Evidence preservation
+        evidence = self._collect_evidence(enriched_files)
+        changed_symbols = self._collect_changed_symbols(enriched_files)
+        changed_lines = self._collect_changed_lines(enriched_files)
 
         return {
             "flows": flows,
@@ -31,7 +49,27 @@ class RIRCompressor:
                 changed_functions=changed_functions,
             ),
             "change_summaries": self._build_change_summaries(enriched_files),
+            # Phase 1 additions
+            "evidence": [e.__dict__ for e in evidence],
+            "changed_symbols": changed_symbols,
+            "changed_lines": changed_lines,
         }
+
+    def compress_v3(
+        self,
+        enriched_files: list[dict],
+        risk_patterns: list[Any] | None = None,
+        entry_points_affected: list[Any] | None = None,
+        behavior_diffs: list[BehaviorDiff] | None = None,
+    ) -> dict[str, Any]:
+        """Canonical Factor IR v3 — the only payload sent to the LLM."""
+        diffs = behavior_diffs if behavior_diffs is not None else build_behavior_diffs(enriched_files)
+        return build_factor_ir_v3(
+            enriched_files=enriched_files,
+            behavior_diffs=diffs,
+            entry_points_affected=entry_points_affected,
+            risk_patterns=risk_patterns,
+        )
 
     def _collect_flows(self, enriched_files: list[dict]) -> list[str]:
         values: set[str] = set()
@@ -234,3 +272,92 @@ class RIRCompressor:
             "Business-critical function changed in the current execution path.",
             "Behavioral regressions in this function can impact downstream workflows.",
         )
+
+    # Phase 1: Evidence preservation methods
+    def _collect_evidence(self, enriched_files: list[dict]) -> list[Evidence]:
+        """Collect concrete evidence from the PR changes."""
+        evidence: list[Evidence] = []
+        
+        for file_data in enriched_files:
+            file_path = str(file_data.get("file_path", ""))
+            if not file_path:
+                continue
+            
+            # Evidence from changed functions
+            changed_functions = file_data.get("changed_functions", []) or []
+            for fn in changed_functions:
+                fn_data = self._as_dict(fn)
+                name = str(fn_data.get("name", "")).strip()
+                if name:
+                    evidence.append(Evidence(
+                        type="function",
+                        value=name,
+                        source=file_path
+                    ))
+            
+            # Evidence from keyword signals
+            keyword_signals = file_data.get("keyword_signals", []) or []
+            for signal in keyword_signals:
+                signal_data = self._as_dict(signal)
+                keyword = str(signal_data.get("keyword", "")).strip()
+                category = str(signal_data.get("category", "")).strip()
+                if keyword:
+                    evidence.append(Evidence(
+                        type="signal",
+                        value=f"{category}:{keyword}",
+                        source=file_path
+                    ))
+            
+            # Evidence from risk events (flows)
+            flows = file_data.get("flows", []) or []
+            for flow in flows:
+                flow_str = self._enum_or_string(flow)
+                if flow_str:
+                    evidence.append(Evidence(
+                        type="flow",
+                        value=flow_str,
+                        source=file_path
+                    ))
+        
+        return evidence
+
+    def _collect_changed_symbols(self, enriched_files: list[dict]) -> list[str]:
+        """Collect fully qualified changed symbols (Class.method format)."""
+        symbols: set[str] = set()
+        
+        for file_data in enriched_files:
+            file_path = str(file_data.get("file_path", ""))
+            changed_functions = file_data.get("changed_functions", []) or []
+            
+            for fn in changed_functions:
+                fn_data = self._as_dict(fn)
+                name = str(fn_data.get("name", "")).strip()
+                if name:
+                    # Include file context for disambiguation
+                    symbol = f"{file_path}:{name}"
+                    symbols.add(symbol)
+        
+        return sorted(symbols)
+
+    def _collect_changed_lines(self, enriched_files: list[dict]) -> list[str]:
+        """Collect the most important changed lines (10-20 lines max)."""
+        lines: list[str] = []
+        
+        for file_data in enriched_files:
+            hunks = file_data.get("hunks", []) or []
+            for hunk in hunks:
+                hunk_data = self._as_dict(hunk)
+                for raw_line in hunk_data.get("lines", []) or []:
+                    line_data = self._as_dict(raw_line)
+                    line_type = str(line_data.get("line_type", ""))
+                    content = str(line_data.get("content", "")).strip()
+                    
+                    if line_type in ("added", "removed") and content:
+                        # Filter out trivial changes
+                        if len(content) > 3 and not content.startswith("#"):
+                            lines.append(f"{line_type}: {content}")
+                            
+                            if len(lines) >= 20:
+                                return lines
+        
+        return lines

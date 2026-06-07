@@ -72,6 +72,7 @@ dependencies = [
     "pytest-asyncio>=1.4.0",
     "dramatiq>=2.1.0",
     "redis>=7.4.0",
+    "pytest-cov>=7.1.0",
 ]
 
 [project.optional-dependencies]

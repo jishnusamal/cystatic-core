@@ -1,0 +1,143 @@
+# Factor Engineering Agent Rules
+
+## Core Principle
+
+The goal is not to produce perfect code.
+
+The goal is to solve the user's problem with the smallest correct change and verify it works.
+
+Avoid over-analysis, unnecessary investigation, and speculative refactors.
+
+---
+
+## Execution First
+
+When a bug is reported:
+
+1. Reproduce the issue.
+2. Identify the most likely root cause.
+3. Implement the smallest fix.
+4. Run the relevant verification.
+5. Stop.
+
+Do not perform extensive type introspection, architecture analysis, or code exploration unless required to fix the issue.
+
+---
+
+## Investigation Limits
+
+Do not spend more than:
+
+* 5 file reads before proposing a fix.
+* 3 commands gathering information before taking action.
+* 2 test reruns without a code change.
+
+If these limits are reached, explain the blocker and ask for direction.
+
+---
+
+## Avoid Analysis Loops
+
+Do NOT repeatedly use:
+
+* inspect.signature
+* hasattr
+* getattr
+* type introspection
+* annotation exploration
+* broad repository searches
+
+unless directly required by the bug.
+
+Prioritize runtime behavior over type inspection.
+
+Validate actual execution paths rather than inferred types.
+
+---
+
+## Test Strategy
+
+Run the narrowest possible test.
+
+Preferred order:
+
+1. Single failing test
+2. Relevant test file
+3. Relevant test suite
+4. Full test suite only when necessary
+
+Never repeatedly run the same failing test without making a code change.
+
+Maximum consecutive test executions without modification: 2
+
+---
+
+## Scope Control
+
+Only modify files necessary for the task.
+
+Do not:
+
+* refactor unrelated code
+* rename unrelated symbols
+* reorganize project structure
+* fix unrelated warnings
+
+unless explicitly requested.
+
+---
+
+## Failure Handling
+
+When blocked:
+
+1. State the exact blocker.
+2. Show evidence.
+3. Propose the next action.
+
+Do not continue speculative investigation indefinitely.
+
+---
+
+## Code Quality
+
+Prefer:
+
+* simple solutions
+* deterministic behavior
+* explicit logic
+* schema validation
+* defensive parsing
+
+Avoid:
+
+* unnecessary abstractions
+* premature optimization
+* speculative architecture changes
+
+---
+
+## LLM Output Handling
+
+Never trust LLM output directly.
+
+For all structured outputs:
+
+1. Parse
+2. Sanitize
+3. Validate
+4. Retry if invalid
+
+Assume malformed JSON, whitespace corruption, missing fields, and schema violations are possible.
+
+---
+
+## Completion Criteria
+
+A task is complete when:
+
+* the requested behavior is implemented
+* relevant tests pass
+* no known blocker remains
+
+Do not continue investigating after completion.

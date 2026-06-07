@@ -4,6 +4,7 @@ from functools import lru_cache
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
 class Settings(BaseSettings):
     app_name: str = "Factor API"
     admin_email: str = ""
@@ -28,6 +29,7 @@ class Settings(BaseSettings):
     use_queue: bool = False
 
     model_config = SettingsConfigDict(env_file=BASE_DIR / ".env.local")
+
 
 @lru_cache
 def get_settings():

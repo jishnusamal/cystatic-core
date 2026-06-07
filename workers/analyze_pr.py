@@ -23,6 +23,7 @@ from tortoise import Tortoise
 
 try:
     from workers.queue import broker
+
     dramatiq.set_broker(broker)
     print("BROKER LOADED", broker)
 except Exception as e:
@@ -62,7 +63,9 @@ def build_failure_simulation_llm() -> FailureSimulationLLM | None:
     )
 
 
-async def _process_pull_request_job_async(job: PullRequestAnalysisJob) -> dict[str, Any]:
+async def _process_pull_request_job_async(
+    job: PullRequestAnalysisJob,
+) -> dict[str, Any]:
     settings = get_settings()
     await _ensure_tortoise_initialized()
 
@@ -70,7 +73,9 @@ async def _process_pull_request_job_async(job: PullRequestAnalysisJob) -> dict[s
         raise ValueError("Installation ID is required for GitHub App webhook analysis")
 
     if not settings.github_app_client_id:
-        raise ValueError("GITHUB_APP_CLIENT_ID is required for installation token exchange")
+        raise ValueError(
+            "GITHUB_APP_CLIENT_ID is required for installation token exchange"
+        )
 
     token = get_installation_token(
         app_id=settings.github_app_client_id,
