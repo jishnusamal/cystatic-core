@@ -13,13 +13,177 @@ from __future__ import annotations
 
 import ast
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 
+# Test/mock function prefixes — symbols matching these are excluded from
+# the causal graph and change influence pipeline. They are noise, not
+# production-relevant symbols.
+_TEST_FN_PREFIXES: tuple[str, ...] = (
+    "test_", "_test", "mock_", "fixture_", "stub_", "fake_", "dummy_"
+)
+
+# Phase 3: Domain hub constants — synthetic aggregation nodes that collapse
+# N² cross-domain edges into 2N hub edges.
+# Example: instead of 20 checkout symbols × 20 tax symbols = 400 edges,
+# we get 20 checkout → DOMAIN_CHECKOUT + 20 tax → DOMAIN_TAX + 1 hub edge = 41 edges.
+_DOMAIN_HUB_NAMES: tuple[str, ...] = (
+    "DOMAIN_CHECKOUT",
+    "DOMAIN_ORDER",
+    "DOMAIN_INVOICE",
+    "DOMAIN_PAYMENT",
+    "DOMAIN_TAX",
+    "DOMAIN_WALLET",
+    "DOMAIN_BILLING",
+    "DOMAIN_AUTH",
+    "DOMAIN_NOTIFICATION",
+    "DOMAIN_FULFILLMENT",
+    "DOMAIN_INVENTORY",
+    "DOMAIN_CATALOG",
+)
+
+# Mapping from domain keywords to hub names
+_DOMAIN_TO_HUB: dict[str, str] = {
+    "checkout": "DOMAIN_CHECKOUT",
+    "order": "DOMAIN_ORDER",
+    "invoice": "DOMAIN_INVOICE",
+    "payment": "DOMAIN_PAYMENT",
+    "tax": "DOMAIN_TAX",
+    "wallet": "DOMAIN_WALLET",
+    "billing": "DOMAIN_BILLING",
+    "auth": "DOMAIN_AUTH",
+    "notification": "DOMAIN_NOTIFICATION",
+    "fulfillment": "DOMAIN_FULFILLMENT",
+    "inventory": "DOMAIN_INVENTORY",
+    "catalog": "DOMAIN_CATALOG",
+}
+
+# Phase 3: Typed edge weights for propagation scoring.
+# These override raw confidence when set on CausalEdge.edge_weight.
+_EDGE_TYPE_WEIGHTS: dict[str, float] = {
+    "calls": 1.0,
+    "called_by": 0.9,
+    "data_flow": 0.9,
+    "shared_state": 0.8,
+    "async_event": 0.7,
+    "db_dependency": 0.7,
+    "transaction_boundary": 0.85,
+    "control_flow": 0.6,
+    # Phase 3: Domain hub edges
+    "domain": 0.4,
+}
+
+
+def _is_test_or_mock_symbol(symbol: str) -> bool:
+    """Check if a symbol name indicates a test, mock, or fixture function."""
+    lowered = symbol.lower()
+    return any(lowered.startswith(prefix) or lowered.endswith(prefix.rstrip("_"))
+               for prefix in _TEST_FN_PREFIXES)
+
+
+@dataclass
+class SymbolSignals:
+    """Lightweight behavioral signals for a symbol, extracted via static heuristics.
+
+    This is the "evidence token" layer — not ground truth, but probabilistic
+    structure that makes the causal graph actionable.
+    """
+    is_entrypoint: bool = False
+    is_io: bool = False
+    writes_state: bool = False
+    reads_state: list[str] = field(default_factory=list)
+    calls: list[str] = field(default_factory=list)
+    called_by: list[str] = field(default_factory=list)
+    imports: list[str] = field(default_factory=list)
+
+
+@dataclass
+class EvidenceNode:
+    """A grounded node in the evidence graph with behavioral signals.
+
+    The evidence graph is the enriched, grounded version of raw symbols.
+    Each node carries probabilistic signals (is_entrypoint, is_io, etc.)
+    that downstream consumers (blast radius, propagation) can use for
+    richer analysis.
+    """
+    symbol: str
+    file: str
+    change_type: str  # "added" | "modified" | "deleted"
+    signals: SymbolSignals = field(default_factory=SymbolSignals)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "symbol": self.symbol,
+            "file": self.file,
+            "change_type": self.change_type,
+            "signals": {
+                "is_entrypoint": self.signals.is_entrypoint,
+                "is_io": self.signals.is_io,
+                "writes_state": self.signals.writes_state,
+                "reads_state": self.signals.reads_state,
+                "calls": self.signals.calls,
+                "called_by": self.signals.called_by,
+                "imports": self.signals.imports,
+            },
+        }
+
+
+@dataclass
+class WeakEdge:
+    """A weak causal edge with evidence tokens.
+
+    Phase 2 — evidence edges with confidence + type. Every edge MUST have
+    at least 1 evidence string. This replaces LLM reasoning with grounded,
+    probabilistic structure.
+
+    Edge types (5):
+        CALLS              — direct function invocation
+        SHARES_STATE       — shared state (cache/redis/session) coupling
+        DATA_FLOW          — result flows from one symbol to another
+        CONTROL_FLOW       — one symbol gates execution of another
+        CONTRACT_DEPENDENCY — import/type annotation coupling
+    """
+    from_symbol: str
+    to_symbol: str
+    edge_type: str  # CALLS | SHARES_STATE | DATA_FLOW | CONTROL_FLOW | CONTRACT_DEPENDENCY
+    confidence: float = 0.5  # 0.0 – 1.0
+    evidence: list[str] = field(default_factory=list)  # ≥1 evidence string required
+    file_path: str = ""
+
+    def __post_init__(self) -> None:
+        """Defensive: ensure evidence is always a list (never None or str)."""
+        if not isinstance(self.evidence, list):
+            self.evidence = [str(self.evidence)] if self.evidence else []
+
+    def __hash__(self) -> int:
+        return hash((self.from_symbol, self.to_symbol, self.edge_type))
+
+    def __eq__(self, other: object) -> bool:
+        """Equality by (from, to, type) only — matching __hash__."""
+        if not isinstance(other, WeakEdge):
+            return NotImplemented
+        return (
+            self.from_symbol == other.from_symbol
+            and self.to_symbol == other.to_symbol
+            and self.edge_type == other.edge_type
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "from": self.from_symbol,
+            "to": self.to_symbol,
+            "type": self.edge_type,
+            "confidence": round(self.confidence, 3),
+            "evidence": self.evidence,
+            "file_path": self.file_path,
+        }
+
+
 @dataclass
 class CausalEdge:
-    """A directed edge in the causal graph."""
+    """A directed edge in the causal graph with typed edge weights."""
     from_symbol: str
     to_symbol: str
     edge_type: str  # data_flow | control_flow | shared_state | async_event | db_dependency | transaction_boundary
@@ -32,6 +196,10 @@ class CausalEdge:
     evidence_location: str = ""  # "file/path.py:42"
     evidence_snippet: str = ""  # Actual code line that produced the edge
 
+    # Phase 3: Typed edge weights for propagation scoring
+    # EDGE_CALL = 1.0, EDGE_STATE = 0.9, EDGE_IMPORT = 0.6, EDGE_DOMAIN = 0.4
+    edge_weight: float = 0.5  # Override weight for propagation scoring
+
     def __hash__(self) -> int:
         return hash((self.from_symbol, self.to_symbol, self.edge_type))
 
@@ -40,11 +208,16 @@ class CausalEdge:
 class CausalNode:
     """A node in the causal graph with type information."""
     name: str
-    # Valid types: "symbol" | "endpoint" | "service" | "database" | "queue"
-    #   | "shared_state"
+    # Valid types:
+    #   Production: "symbol" | "endpoint" | "service" | "database" | "queue"
+    #     | "shared_state"
+    #   Classification: "runtime" | "test"
+    #   Domain hub: "domain_hub"
     # `shared_state` (Task I) represents a named resource like
     # `cache:user`, `redis:cart`, `session:token` — typed so it shows up
     # in blast radius the same way services/endpoints/databases do.
+    # `domain_hub` (Phase 3) represents a synthetic domain aggregation node
+    # like DOMAIN_CHECKOUT, DOMAIN_PAYMENT, etc.
     node_type: str = "symbol"
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -69,6 +242,26 @@ class CausalGraph:
         if edge.to_symbol not in self.nodes:
             self.nodes[edge.to_symbol] = CausalNode(name=edge.to_symbol)
 
+    def get_edge_weight(self, edge: CausalEdge) -> float:
+        """Get the effective weight for propagation scoring.
+
+        Phase 3: Uses typed edge weights when available, falls back to confidence.
+        """
+        if edge.edge_weight != 0.5:  # Non-default weight was set
+            return edge.edge_weight
+        # Fallback mapping by edge_type
+        type_weights = {
+            "calls": 1.0,
+            "called_by": 0.9,
+            "data_flow": 0.9,
+            "shared_state": 0.8,
+            "async_event": 0.7,
+            "db_dependency": 0.7,
+            "transaction_boundary": 0.85,
+            "control_flow": 0.6,
+        }
+        return type_weights.get(edge.edge_type, edge.confidence)
+
     def add_node(self, node: CausalNode) -> None:
         self.nodes[node.name] = node
 
@@ -84,6 +277,8 @@ class CausalGraph:
         """
         Get all downstream symbols reachable from the given symbol.
         Returns list of (symbol, propagated_confidence, hop_distance) tuples.
+
+        Phase 3: Uses typed edge weights for propagation scoring.
         """
         downstream: list[tuple[str, float, int]] = []
         visited: set[tuple[str, str]] = set()
@@ -96,7 +291,9 @@ class CausalGraph:
                 if edge_key in visited:
                     continue
                 visited.add(edge_key)
-                propagated = confidence * edge.confidence
+                # Phase 3: Use typed edge weight instead of raw confidence
+                effective_weight = self.get_edge_weight(edge)
+                propagated = confidence * effective_weight
                 downstream.append((edge.to_symbol, propagated, hops))
                 _traverse(edge.to_symbol, propagated, hops + 1)
 
@@ -116,6 +313,8 @@ class CausalGraph:
         shared-state resources, downstream symbols, and critical paths.
 
         This is the core product primitive — customers pay for blast radius.
+
+        Phase 3: Uses typed edge weights for propagation scoring.
         """
         affected_services: set[str] = set()
         affected_endpoints: set[str] = set()
@@ -156,6 +355,7 @@ class CausalGraph:
                     affected_queues.add(current)
                 elif node.node_type == "shared_state":
                     affected_shared_state.add(current)
+                # Phase 3: domain_hub nodes are traversal intermediaries, not terminal targets
 
             for edge in self.get_outgoing(current):
                 edge_key = (current, edge.to_symbol)
@@ -163,7 +363,9 @@ class CausalGraph:
                     continue
                 visited_edges.add(edge_key)
 
-                propagated = confidence * edge.confidence
+                # Phase 3: Use typed edge weight for propagation
+                effective_weight = self.get_edge_weight(edge)
+                propagated = confidence * effective_weight
                 if propagated < confidence_threshold:
                     continue
 
@@ -183,7 +385,7 @@ class CausalGraph:
                 new_path = path + [edge.to_symbol]
                 # Record if this path ends at a typed boundary node.
                 # shared_state is included — it's a real coupling surface
-                # (Task I).
+                # (Task I). domain_hub is excluded — it's an intermediary.
                 target_node = self.nodes.get(edge.to_symbol)
                 if target_node and target_node.node_type in (
                     "service", "database", "endpoint", "queue", "shared_state",
@@ -525,7 +727,14 @@ class CausalGraphBuilder:
                 name = str(fn_data.get("name", "")).strip()
                 if name:
                     symbol = name.split(".")[-1] if "." in name else name
+                    # Skip test/mock/fixture symbols — they are noise, not
+                    # production-relevant symbols.
+                    if _is_test_or_mock_symbol(symbol):
+                        continue
                     self._repo_symbols.add(symbol)
+
+        # Store for use by build_evidence_graph() and other post-build methods.
+        self._repo_index = repo_index
 
         # CRITICAL: Only symbols defined in the repository are "known".
         # Imported symbols are NOT treated as dependencies.
@@ -536,6 +745,9 @@ class CausalGraphBuilder:
             # repo becomes a valid edge target. This is the unlock for
             # propagation reaching past the diff boundary.
             known_symbols = known_symbols | repo_index.known_symbols
+
+        # Phase 3: Collect symbol-to-domain mapping for hub construction
+        symbol_domains: dict[str, str] = {}
 
         for file_data in enriched_files:
             file_path = str(file_data.get("file_path", ""))
@@ -565,6 +777,15 @@ class CausalGraphBuilder:
 
             # 5. Detect transaction_boundary edges (inside loop — per-file)
             self._detect_transaction_edges(graph, file_symbols, hunk_lines, file_path)
+
+            # Phase 3: Track domain for each symbol
+            for symbol in file_symbols:
+                domain = self._infer_domain_from_context(symbol, file_path, hunk_lines)
+                if domain:
+                    symbol_domains[symbol] = domain
+
+        # Phase 3: Build domain hub nodes and connect symbols to hubs
+        self._build_domain_hubs(graph, symbol_domains)
 
         return graph
 
@@ -653,6 +874,139 @@ class CausalGraphBuilder:
                 symbol = name.split(".")[-1] if "." in name else name
                 symbols.append(symbol)
         return symbols
+
+    def _infer_domain_from_context(self, symbol: str, file_path: str, lines: list[str]) -> str | None:
+        """Infer the domain of a symbol from file path and code context.
+
+        Phase 3: Used to connect symbols to domain hub nodes.
+        """
+        # Check file path first (most reliable)
+        path_lower = file_path.lower()
+        for domain_key in _DOMAIN_TO_HUB:
+            if domain_key in path_lower:
+                return domain_key
+
+        # Check symbol name
+        symbol_lower = symbol.lower()
+        for domain_key in _DOMAIN_TO_HUB:
+            if domain_key in symbol_lower:
+                return domain_key
+
+        # Check code context for domain signals
+        for line in lines:
+            line_lower = line.lower()
+            for domain_key in _DOMAIN_TO_HUB:
+                if domain_key in line_lower:
+                    return domain_key
+
+        return None
+
+    def _build_domain_hubs(self, graph: CausalGraph, symbol_domains: dict[str, str]) -> None:
+        """Build domain hub nodes and connect symbols to their domains.
+
+        Phase 3: This collapses N² cross-domain edges into 2N hub edges.
+        Instead of every checkout symbol connecting to every tax symbol,
+        each connects to its domain hub, and hubs connect to each other.
+
+        Args:
+            graph: The causal graph to augment.
+            symbol_domains: Mapping from symbol name to inferred domain.
+        """
+        # Track which hubs are needed
+        hubs_needed: set[str] = set()
+        symbol_to_hub: dict[str, str] = {}
+
+        for symbol, domain in symbol_domains.items():
+            hub_name = _DOMAIN_TO_HUB.get(domain)
+            if hub_name:
+                hubs_needed.add(hub_name)
+                symbol_to_hub[symbol] = hub_name
+
+        # Register hub nodes (idempotent)
+        for hub_name in hubs_needed:
+            graph.add_node(CausalNode(
+                name=hub_name,
+                node_type="domain_hub",
+                metadata={"domain": hub_name.replace("DOMAIN_", "").lower()},
+            ))
+
+        # Connect symbols to their domain hubs
+        for symbol, hub_name in symbol_to_hub.items():
+            # Symbol → Hub (outgoing edge)
+            graph.add_edge(CausalEdge(
+                from_symbol=symbol,
+                to_symbol=hub_name,
+                edge_type="domain",
+                confidence=0.5,
+                evidence=f"{symbol} belongs to {hub_name.replace('DOMAIN_', '').lower()} domain",
+                file_path="",
+                evidence_type="domain_classification",
+                evidence_location="",
+                evidence_snippet="",
+                edge_weight=_EDGE_TYPE_WEIGHTS["domain"],
+            ))
+
+            # Hub → Symbol (incoming edge for reverse propagation)
+            graph.add_edge(CausalEdge(
+                from_symbol=hub_name,
+                to_symbol=symbol,
+                edge_type="domain",
+                confidence=0.5,
+                evidence=f"{hub_name} contains {symbol}",
+                file_path="",
+                evidence_type="domain_classification",
+                evidence_location="",
+                evidence_snippet="",
+                edge_weight=_EDGE_TYPE_WEIGHTS["domain"],
+            ))
+
+        # Connect related hubs together (e.g., checkout → payment → tax)
+        # This creates a domain-level propagation path
+        hub_connections = [
+            ("DOMAIN_CHECKOUT", "DOMAIN_PAYMENT"),
+            ("DOMAIN_CHECKOUT", "DOMAIN_TAX"),
+            ("DOMAIN_CHECKOUT", "DOMAIN_ORDER"),
+            ("DOMAIN_ORDER", "DOMAIN_PAYMENT"),
+            ("DOMAIN_ORDER", "DOMAIN_INVOICE"),
+            ("DOMAIN_ORDER", "DOMAIN_TAX"),
+            ("DOMAIN_PAYMENT", "DOMAIN_INVOICE"),
+            ("DOMAIN_PAYMENT", "DOMAIN_BILLING"),
+            ("DOMAIN_TAX", "DOMAIN_INVOICE"),
+            ("DOMAIN_AUTH", "DOMAIN_PAYMENT"),
+            ("DOMAIN_AUTH", "DOMAIN_ORDER"),
+            ("DOMAIN_FULFILLMENT", "DOMAIN_INVENTORY"),
+            ("DOMAIN_FULFILLMENT", "DOMAIN_ORDER"),
+            ("DOMAIN_NOTIFICATION", "DOMAIN_ORDER"),
+            ("DOMAIN_NOTIFICATION", "DOMAIN_PAYMENT"),
+        ]
+
+        for hub_a, hub_b in hub_connections:
+            if hub_a in hubs_needed and hub_b in hubs_needed:
+                # Bidirectional hub connections
+                graph.add_edge(CausalEdge(
+                    from_symbol=hub_a,
+                    to_symbol=hub_b,
+                    edge_type="domain",
+                    confidence=0.3,
+                    evidence=f"{hub_a} flows to {hub_b}",
+                    file_path="",
+                    evidence_type="domain_flow",
+                    evidence_location="",
+                    evidence_snippet="",
+                    edge_weight=_EDGE_TYPE_WEIGHTS["domain"],
+                ))
+                graph.add_edge(CausalEdge(
+                    from_symbol=hub_b,
+                    to_symbol=hub_a,
+                    edge_type="domain",
+                    confidence=0.3,
+                    evidence=f"{hub_b} flows to {hub_a}",
+                    file_path="",
+                    evidence_type="domain_flow",
+                    evidence_location="",
+                    evidence_snippet="",
+                    edge_weight=_EDGE_TYPE_WEIGHTS["domain"],
+                ))
 
     # Common Python/stdlib builtins to exclude from call detection noise
     COMMON_BUILTINS: set[str] = {
@@ -1328,6 +1682,581 @@ class CausalGraphBuilder:
             return value.model_dump()
         return {}
 
+    # -------------------------------------------------------------------------
+    # Evidence Graph — signal extraction helpers (Phase 1)
+    # -------------------------------------------------------------------------
+
+    def _extract_imports(self, full_content: str) -> list[str]:
+        """Extract import module names from full file content via AST.
+
+        Returns a flat list of module names:
+          import os  →  ["os"]
+          from stripe import charge  →  ["stripe"]
+          from services.tax import calculate  →  ["services.tax"]
+        """
+        if not full_content or not isinstance(full_content, str):
+            return []
+        try:
+            tree = ast.parse(full_content)
+        except SyntaxError:
+            return []
+
+        imports: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imports.append(alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    imports.append(node.module)
+        return imports
+
+    def _extract_call_targets(self, lines: list[str]) -> list[str]:
+        """Extract function call targets from code lines via regex.
+
+        Returns deduplicated list of called function names.
+        Filters control flow keywords and builtins.
+        """
+        noise = {
+            "self", "cls", "super", "if", "for", "while", "with",
+            "return", "raise", "import", "from", "as", "try",
+            "except", "finally", "elif", "else", "pass", "print",
+            "len", "str", "int", "float", "bool", "list", "dict",
+            "set", "tuple", "range", "enumerate", "zip", "map",
+            "filter", "sorted", "min", "max", "sum", "type",
+            "isinstance", "hasattr", "getattr", "setattr",
+        }
+        targets: list[str] = []
+        seen: set[str] = set()
+        for line in lines:
+            for match in self.CALL_PATTERN.finditer(line):
+                name = match.group(1)
+                if name not in noise and name not in seen:
+                    seen.add(name)
+                    targets.append(name)
+        return targets
+
+    def _is_entrypoint(self, symbol: str, file_data: dict, repo_index: "RepositorySymbolIndex | None") -> bool:
+        """Check if symbol is an HTTP entrypoint via AST decorators or repo index."""
+        # Check enriched file endpoints
+        for ep in file_data.get("endpoints", []) or []:
+            if isinstance(ep, dict) and ep.get("function") == symbol:
+                return True
+        # Check repo-wide index
+        if repo_index is not None and repo_index.get_endpoints_for_symbol(symbol):
+            return True
+        # Check full file content for route decorators
+        full_content = file_data.get("full_content", "")
+        if full_content:
+            try:
+                tree = ast.parse(full_content)
+            except (SyntaxError, TypeError):
+                return False
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if node.name != symbol:
+                    continue
+                for dec in node.decorator_list:
+                    if isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute):
+                        if dec.func.attr.lower() in _HTTP_METHODS or dec.func.attr == "route":
+                            return True
+        return False
+
+    def _is_io(self, lines: list[str]) -> bool:
+        """Check if symbol performs I/O operations via grep-based heuristics."""
+        io_patterns = (
+            "requests.", "httpx.", "urllib.", "aiohttp.",
+            "open(", "urlopen(",
+            "socket.", "connect(",
+            "subprocess.", "Popen(",
+        )
+        for line in lines:
+            lower = line.lower()
+            if any(p in lower for p in io_patterns):
+                return True
+        return False
+
+    def _detect_reads_state(self, lines: list[str]) -> list[str]:
+        """Detect shared state resources that the symbol reads from."""
+        reads: list[str] = []
+        seen: set[str] = set()
+        for line in lines:
+            lower = line.lower()
+            is_read = any(p in lower for p in self.SHARED_STATE_READ_PATTERNS)
+            if not is_read:
+                # Check for bare subscription reads
+                if "[" in line and "]" in line and "=" in line:
+                    eq_idx = line.find("=")
+                    if line.find("[") > eq_idx:
+                        is_read = True
+            if is_read:
+                for pattern in self.SHARED_STATE_PATTERNS:
+                    if pattern in lower:
+                        resource = self._infer_shared_state_resource(line, pattern)
+                        if resource and resource not in seen:
+                            seen.add(resource)
+                            reads.append(resource)
+                        break
+        return reads
+
+    def _detect_writes_state(self, lines: list[str]) -> bool:
+        """Check if the symbol writes to any shared state resource."""
+        for line in lines:
+            lower = line.lower()
+            if any(p in lower for p in self.SHARED_STATE_WRITE_PATTERNS):
+                return True
+            # Check for subscription writes
+            if "[" in line and "]" in line and "=" in line:
+                eq_idx = line.find("=")
+                if line.find("[") < eq_idx:
+                    return True
+        return False
+
+    def build_evidence_graph(
+        self,
+        enriched_files: list[dict],
+        repo_index: "RepositorySymbolIndex | None" = None,
+    ) -> list[dict]:
+        """Build the evidence graph: enriched symbol nodes with behavioral signals.
+
+        For every changed symbol across all enriched files, extracts:
+          - is_entrypoint: has HTTP route decorators (FastAPI/Flask)
+          - is_io: performs network/file I/O
+          - writes_state: mutates shared state (cache/redis/session)
+          - reads_state: reads shared state resources
+          - calls: function call targets in the changed lines
+          - called_by: reverse callers (from causal graph edges)
+          - imports: module imports from the file
+
+        Args:
+            enriched_files: Same enriched_files passed to build().
+            repo_index: Optional repo-wide symbol index for endpoint lookup.
+
+        Returns:
+            List of EvidenceNode dicts (see EvidenceNode.to_dict).
+        """
+        if not enriched_files:
+            return []
+
+        ri = repo_index if repo_index is not None else getattr(self, "_repo_index", None)
+        known_symbols = self._repo_symbols | (ri.known_symbols if ri else set())
+
+        evidence_nodes: list[dict] = []
+
+        for file_data in enriched_files:
+            file_path = str(file_data.get("file_path", ""))
+            hunks = file_data.get("hunks", []) or []
+            hunk_lines = self._collect_lines(hunks)
+            full_content = file_data.get("full_content", "")
+
+            # AST-based imports from full file content
+            file_imports = self._extract_imports(full_content)
+
+            for fn in (file_data.get("changed_functions", []) or []):
+                fn_data = self._as_dict(fn)
+                name = str(fn_data.get("name", "")).strip()
+                if not name:
+                    continue
+
+                symbol = name.split(".")[-1] if "." in name else name
+                change_type = str(fn_data.get("change_type", "modified"))
+                node = EvidenceNode(
+                    symbol=symbol,
+                    file=file_path,
+                    change_type=change_type,
+                )
+
+                # --- Signal: entrypoint ---
+                node.signals.is_entrypoint = self._is_entrypoint(symbol, file_data, ri)
+
+                # --- Signal: I/O ---
+                node.signals.is_io = self._is_io(hunk_lines)
+
+                # --- Signal: writes/reads state ---
+                node.signals.writes_state = self._detect_writes_state(hunk_lines)
+                node.signals.reads_state = self._detect_reads_state(hunk_lines)
+
+                # --- Signal: calls (regex from hunk lines) ---
+                node.signals.calls = self._extract_call_targets(hunk_lines)
+
+                # --- Signal: called_by (from causal graph incoming edges) ---
+                if hasattr(self, "_graph") and self._graph is not None:
+                    incoming = self._graph.get_incoming(symbol)
+                    caller_set: set[str] = set()
+                    for edge in incoming:
+                        if edge.edge_type in ("calls", "called_by"):
+                            caller_set.add(edge.from_symbol)
+                    node.signals.called_by = sorted(caller_set)
+
+                # --- Signal: imports ---
+                node.signals.imports = file_imports
+
+                evidence_nodes.append(node.to_dict())
+
+        # Pass 2: backfill called_by from cross-file causal edges.
+        # Build a quick index from this evidence graph.
+        evidence_symbols = {n["symbol"] for n in evidence_nodes}
+        evidence_index: dict[str, dict] = {
+            n["symbol"]: n for n in evidence_nodes
+        }
+
+        for node_dict in evidence_nodes:
+            sym = node_dict["symbol"]
+            called = node_dict["signals"]["calls"]
+            for target in called:
+                if target in evidence_index:
+                    target_signals = evidence_index[target]["signals"]
+                    if sym not in target_signals["called_by"]:
+                        target_signals["called_by"].append(sym)
+                        target_signals["called_by"].sort()
+
+        # Rebuild causal graph for edge-based called_by backfill
+        if not hasattr(self, "_graph") or self._graph is None:
+            self._graph = self.build(enriched_files, repo_index=ri)
+
+        for node_dict in evidence_nodes:
+            sym = node_dict["symbol"]
+            incoming = self._graph.get_incoming(sym)
+            for edge in incoming:
+                if edge.edge_type in ("calls", "called_by"):
+                    caller = edge.from_symbol
+                    if caller in evidence_index:
+                        target_signals = evidence_index[caller]["signals"]
+                        if sym not in target_signals["calls"]:
+                            # caller called sym, so caller.calls should include sym
+                            if sym not in target_signals["calls"]:
+                                target_signals["calls"].append(sym)
+                                target_signals["calls"].sort()
+
+        return evidence_nodes
+
+
+    # -------------------------------------------------------------------------
+    # Phase 2 — Weak Causal Edges
+    # -------------------------------------------------------------------------
+
+    _WEAK_NOISE: set[str] = {
+        "self", "cls", "super", "if", "for", "while", "with",
+        "return", "raise", "import", "from", "as", "try",
+        "except", "finally", "elif", "else", "pass", "print",
+        "len", "str", "int", "float", "bool", "list", "dict",
+        "set", "tuple", "range", "enumerate", "zip", "map",
+        "filter", "sorted", "min", "max", "sum", "type",
+        "isinstance", "hasattr", "getattr", "setattr",
+        "json", "datetime", "os", "sys", "logging", "logger",
+        "requests", "httpx", "fastapi", "pydantic",
+    }
+
+    def build_weak_edges(
+        self,
+        enriched_files: list[dict],
+        repo_index: "RepositorySymbolIndex | None" = None,
+    ) -> list[dict]:
+        """Build weak causal edges with evidence tokens (Phase 2).
+
+        Produces evidence edges with 5 types:
+            CALLS, SHARES_STATE, DATA_FLOW, CONTROL_FLOW, CONTRACT_DEPENDENCY
+
+        Every edge MUST have ≥1 evidence string. This replaces LLM reasoning
+        with grounded, probabilistic structure.
+
+        Returns:
+            List of WeakEdge dicts (see WeakEdge.to_dict).
+        """
+        if not enriched_files:
+            return []
+
+        ri = repo_index if repo_index is not None else getattr(self, "_repo_index", None)
+        known_symbols = self._repo_symbols | (ri.known_symbols if ri else set())
+
+        # Ensure causal graph is built for cross-reference
+        if not hasattr(self, "_graph") or self._graph is None:
+            self.build(enriched_files, repo_index=ri)
+
+        weak_edges: list[WeakEdge] = []
+        seen_keys: set[tuple[str, str, str]] = set()
+
+        def _add(edge: WeakEdge) -> None:
+            """Add edge if valid and not duplicate."""
+            if not edge.evidence:
+                return  # REQUIREMENT: every edge must have ≥1 evidence
+            key = (edge.from_symbol, edge.to_symbol, edge.edge_type)
+            if key in seen_keys:
+                return
+            seen_keys.add(key)
+            weak_edges.append(edge)
+
+        for file_data in enriched_files:
+            file_path = str(file_data.get("file_path", ""))
+            hunks = file_data.get("hunks", []) or []
+            hunk_lines = self._collect_lines(hunks)
+            full_content = file_data.get("full_content", "")
+            file_imports = self._extract_imports(full_content)
+
+            symbols = [
+                str(self._as_dict(fn).get("name", "")).split(".")[-1]
+                for fn in (file_data.get("changed_functions", []) or [])
+                if str(self._as_dict(fn).get("name", "")).strip()
+            ]
+
+            self._build_weak_call_edges(weak_edges, symbols, hunk_lines, file_path, known_symbols, _add)
+            self._build_weak_shared_state_edges(weak_edges, symbols, hunk_lines, file_path, _add)
+            self._build_weak_data_flow_edges(weak_edges, symbols, hunk_lines, file_path, known_symbols, _add)
+            self._build_weak_control_flow_edges(weak_edges, symbols, hunk_lines, file_path, _add)
+            self._build_weak_contract_dependency_edges(weak_edges, symbols, file_path, file_imports, known_symbols, _add)
+
+        return [e.to_dict() for e in weak_edges]
+
+    def _build_weak_call_edges(
+        self,
+        edges: list[WeakEdge],
+        symbols: list[str],
+        lines: list[str],
+        file_path: str,
+        known_symbols: set[str],
+        add: Callable[["WeakEdge"], None],
+    ) -> None:
+        """Detect CALLS edges: direct function invocations."""
+        for line_no, line in enumerate(lines, start=1):
+            calls = self.CALL_PATTERN.findall(line)
+            for called in calls:
+                if called in self._WEAK_NOISE:
+                    continue
+                if called in self.COMMON_BUILTINS:
+                    continue
+                if called in self.KNOWN_LIBRARY_CALLS:
+                    continue
+                if called not in known_symbols:
+                    continue
+
+                evidence: list[str] = []
+                # Primary evidence: direct invocation found
+                evidence.append(f"direct invocation found in {file_path}")
+                # Secondary: symbol appears in function body
+                snippet = line.strip()
+                if snippet:
+                    evidence.append(f"function call pattern detected: `{called}()` in changed code")
+                # Tertiary: call graph match
+                evidence.append(f"function name `{called}` appears in call graph of changed symbols")
+
+                is_chained = f".{called}" in line
+                is_assignment = "=" in line and called in line.split("=")[0]
+                if is_chained:
+                    confidence = 0.72
+                elif is_assignment:
+                    confidence = 0.78
+                else:
+                    confidence = 0.85
+
+                for symbol in symbols:
+                    if called == symbol:
+                        continue
+                    add(WeakEdge(
+                        from_symbol=symbol,
+                        to_symbol=called,
+                        edge_type="CALLS",
+                        confidence=confidence,
+                        evidence=evidence,
+                        file_path=file_path,
+                    ))
+
+    def _build_weak_shared_state_edges(
+        self,
+        edges: list[WeakEdge],
+        symbols: list[str],
+        lines: list[str],
+        file_path: str,
+        add: Callable[["WeakEdge"], None],
+    ) -> None:
+        """Detect SHARES_STATE edges: shared state coupling via cache/redis/session."""
+        # Track resource access per symbol
+        # resource_name -> [(direction, symbol, snippet)]
+        resource_access: dict[str, list[tuple[str, str, str]]] = {}
+
+        for line in lines:
+            lower = line.lower()
+            backend: str | None = None
+            for pattern in self.SHARED_STATE_PATTERNS:
+                if pattern in lower:
+                    backend = pattern
+                    break
+            if backend is None:
+                continue
+
+            resource = self._infer_shared_state_resource(line, backend)
+            if not resource:
+                continue
+
+            is_write = any(p in lower for p in self.SHARED_STATE_WRITE_PATTERNS)
+            direction = "write" if is_write else "read"
+
+            for symbol in symbols:
+                if symbol in line or (symbol.lower() in lower):
+                    resource_access.setdefault(resource, []).append(
+                        (direction, symbol, line.strip()),
+                    )
+
+        # Edges: for each resource, create writer→reader edges
+        for resource, accesses in resource_access.items():
+            writers = [(s, snip) for d, s, snip in accesses if d == "write"]
+            readers = [(s, snip) for d, s, snip in accesses if d == "read"]
+
+            for writer_sym, writer_snip in writers:
+                for reader_sym, reader_snip in readers:
+                    if writer_sym == reader_sym:
+                        continue
+                    evidence = [
+                        f"symbol `{writer_sym}` writes to `{resource}` in {file_path}",
+                        f"symbol `{reader_sym}` reads from `{resource}` in {file_path}",
+                        f"shared state access detected via `{resource}` coupling",
+                    ]
+                    add(WeakEdge(
+                        from_symbol=writer_sym,
+                        to_symbol=reader_sym,
+                        edge_type="SHARES_STATE",
+                        confidence=0.65,
+                        evidence=evidence,
+                        file_path=file_path,
+                    ))
+
+    def _build_weak_data_flow_edges(
+        self,
+        edges: list[WeakEdge],
+        symbols: list[str],
+        lines: list[str],
+        file_path: str,
+        known_symbols: set[str],
+        add: Callable[["WeakEdge"], None],
+    ) -> None:
+        """Detect DATA_FLOW edges: result of one symbol feeds another."""
+        # Pattern: `x = symbol(...)` or `result = symbol().method()`
+        assignment_pattern = re.compile(
+            r'([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(?:self\.)?([a-zA-Z_][a-zA-Z0-9_]*)\s*\('
+        )
+        for line_no, line in enumerate(lines, start=1):
+            m = assignment_pattern.search(line)
+            if not m:
+                continue
+            target_var = m.group(1)
+            source_fn = m.group(2)
+
+            if source_fn in self._WEAK_NOISE or source_fn in self.COMMON_BUILTINS:
+                continue
+            if source_fn not in known_symbols:
+                continue
+
+            # Find symbols that use this variable on subsequent lines
+            for symbol in symbols:
+                if symbol == source_fn:
+                    continue
+                # Check if the variable appears in lines that mention this symbol
+                for later_line in lines:
+                    if target_var in later_line and symbol in later_line and symbol != target_var:
+                        evidence = [
+                            f"result of `{source_fn}()` assigned to `{target_var}` in {file_path}",
+                            f"variable `{target_var}` used by `{symbol}` in changed code",
+                            "assignment chain detected in function body",
+                        ]
+                        add(WeakEdge(
+                            from_symbol=source_fn,
+                            to_symbol=symbol,
+                            edge_type="DATA_FLOW",
+                            confidence=0.58,
+                            evidence=evidence,
+                            file_path=file_path,
+                        ))
+                        break
+
+    def _build_weak_control_flow_edges(
+        self,
+        edges: list[WeakEdge],
+        symbols: list[str],
+        lines: list[str],
+        file_path: str,
+        add: Callable[["WeakEdge"], None],
+    ) -> None:
+        """Detect CONTROL_FLOW edges: one symbol gates execution of another."""
+        control_keywords = ("if ", "elif ", "while ", "try:", "except ", "with ")
+        # Pattern: `if symbol(...):` or `with symbol(...):` etc.
+        conditional_pattern = re.compile(
+            r'(?:if|elif|while|with)\s+(?:self\.)?([a-zA-Z_][a-zA-Z0-9_]*)\s*\('
+        )
+        # Pattern: `return symbol(...)` which is conditional on prior guards
+        guard_pattern = re.compile(
+            r'return\s+(?:self\.)?([a-zA-Z_][a-zA-Z0-9_]*)\s*\('
+        )
+
+        for line_no, line in enumerate(lines, start=1):
+            lower = line.lower().lstrip()
+            gated_symbols: list[str] = []
+
+            m = conditional_pattern.search(line)
+            if m:
+                gated_symbols.append(m.group(1))
+
+            if lower.startswith("return"):
+                m2 = guard_pattern.search(line)
+                if m2:
+                    gated_symbols.append(m2.group(1))
+
+            for gated in gated_symbols:
+                if gated in self._WEAK_NOISE or gated in self.COMMON_BUILTINS:
+                    continue
+                # The symbol that appears in this line as the condition
+                for symbol in symbols:
+                    if symbol == gated:
+                        continue
+                    # If the conditional symbol is called by `symbol`, there's control flow
+                    if symbol in line and gated in line:
+                        evidence = [
+                            f"symbol `{gated}` appears in conditional context in {file_path}",
+                            f"execution gated by `{symbol}` in changed code",
+                            "control flow dependency detected in function body",
+                        ]
+                        add(WeakEdge(
+                            from_symbol=symbol,
+                            to_symbol=gated,
+                            edge_type="CONTROL_FLOW",
+                            confidence=0.48,
+                            evidence=evidence,
+                            file_path=file_path,
+                        ))
+
+    def _build_weak_contract_dependency_edges(
+        self,
+        edges: list[WeakEdge],
+        symbols: list[str],
+        file_path: str,
+        file_imports: list[str],
+        known_symbols: set[str],
+        add: Callable[["WeakEdge"], None],
+    ) -> None:
+        """Detect CONTRACT_DEPENDENCY edges: import-based coupling."""
+        for symbol in symbols:
+            for module in file_imports:
+                if module in self._WEAK_NOISE:
+                    continue
+                evidence = [
+                    f"import path suggests dependency: `{module}` imported in {file_path}",
+                    f"module `{module}` appears in import graph of changed file",
+                ]
+                # Higher confidence if the module name is a known symbol
+                if module in known_symbols:
+                    confidence = 0.52
+                    evidence.append(f"module `{module}` is a known symbol in the repository")
+                else:
+                    confidence = 0.38
+                    evidence.append(f"module `{module}` referenced in import section")
+                add(WeakEdge(
+                    from_symbol=symbol,
+                    to_symbol=module,
+                    edge_type="CONTRACT_DEPENDENCY",
+                    confidence=confidence,
+                    evidence=evidence,
+                    file_path=file_path,
+                ))
+
 
 def build_causal_graph(
     enriched_files: list[dict],
@@ -1345,3 +2274,33 @@ def build_causal_graph(
         behavior_diffs,
         repo_index=repo_index,
     )
+
+
+def build_evidence_graph(
+    enriched_files: list[dict],
+    repo_index: RepositorySymbolIndex | None = None,
+) -> list[dict]:
+    """Convenience function for building the evidence graph.
+
+    Builds the causal graph first (to populate called_by edges), then
+    extracts per-symbol behavioral signals. Returns a list of
+    EvidenceNode dicts (see EvidenceNode.to_dict).
+    """
+    builder = CausalGraphBuilder()
+    builder.build(enriched_files, repo_index=repo_index)
+    return builder.build_evidence_graph(enriched_files, repo_index=repo_index)
+
+
+def build_weak_edges(
+    enriched_files: list[dict],
+    repo_index: RepositorySymbolIndex | None = None,
+) -> list[dict]:
+    """Convenience function for building weak causal edges.
+
+    Builds the causal graph first, then produces weak edges with 5 types
+    (CALLS, SHARES_STATE, DATA_FLOW, CONTROL_FLOW, CONTRACT_DEPENDENCY).
+    Each edge has ≥1 evidence string. Returns list of WeakEdge dicts.
+    """
+    builder = CausalGraphBuilder()
+    builder.build(enriched_files, repo_index=repo_index)
+    return builder.build_weak_edges(enriched_files, repo_index=repo_index)

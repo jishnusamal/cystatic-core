@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from core_engine.behavior_diff_builder import BehaviorDiff, build_behavior_diffs
-from core_engine.factor_ir_v3 import build_factor_ir_v3
 
 
 @dataclass
@@ -21,40 +20,6 @@ class RIRCompressor:
     intended for LLM reasoning with low token cost.
     """
 
-    def compress(
-        self,
-        enriched_files: list[dict],
-        risk_patterns: list[Any] | None = None,
-        entry_points_affected: list[Any] | None = None,
-    ) -> dict[str, Any]:
-        """Legacy multi-view IR — kept for persistence/debugging, not sent to LLM."""
-        flows = self._collect_flows(enriched_files)
-        risk_events = self._collect_risk_events(risk_patterns or [])
-        changed_functions = self._collect_changed_functions(enriched_files)
-        entry_points = self._collect_entry_points(entry_points_affected or [])
-        
-        # Phase 1: Evidence preservation
-        evidence = self._collect_evidence(enriched_files)
-        changed_symbols = self._collect_changed_symbols(enriched_files)
-        changed_lines = self._collect_changed_lines(enriched_files)
-
-        return {
-            "flows": flows,
-            "risk_events": risk_events,
-            "changed_functions": changed_functions,
-            "entry_points": entry_points,
-            "execution_path_hint": self._build_execution_path_hint(
-                flows=flows,
-                risk_events=risk_events,
-                changed_functions=changed_functions,
-            ),
-            "change_summaries": self._build_change_summaries(enriched_files),
-            # Phase 1 additions
-            "evidence": [e.__dict__ for e in evidence],
-            "changed_symbols": changed_symbols,
-            "changed_lines": changed_lines,
-        }
-
     def compress_v3(
         self,
         enriched_files: list[dict],
@@ -62,14 +27,82 @@ class RIRCompressor:
         entry_points_affected: list[Any] | None = None,
         behavior_diffs: list[BehaviorDiff] | None = None,
     ) -> dict[str, Any]:
-        """Canonical Factor IR v3 — the only payload sent to the LLM."""
+        """Canonical Factor IR v3 — internal representation for validation and artifacts.
+        
+        NOTE: This is NOT the LLM input. The LLM receives the V5 minimal causal truth
+        contract built by the orchestrator from individual components:
+        - change_influence, execution_paths, soft_edges, constraints, risk_zones, changed_symbols
+        """
         diffs = behavior_diffs if behavior_diffs is not None else build_behavior_diffs(enriched_files)
-        return build_factor_ir_v3(
-            enriched_files=enriched_files,
-            behavior_diffs=diffs,
-            entry_points_affected=entry_points_affected,
-            risk_patterns=risk_patterns,
+        
+        # Build change anchors (replaces change_graph)
+        diff_symbols = {item.symbol for item in diffs}
+        change_anchors: list[dict[str, Any]] = []
+        seen_anchors: set[str] = set()
+        
+        for file_data in enriched_files:
+            file_path = str(file_data.get("file_path", "")).strip()
+            if not file_path:
+                continue
+            
+            for fn in file_data.get("changed_functions", []) or []:
+                fn_data = self._as_dict(fn)
+                name = str(fn_data.get("name", "")).strip()
+                if not name:
+                    continue
+                
+                symbol = name.split(".")[-1] if "." in name else name
+                if diff_symbols and symbol not in diff_symbols:
+                    continue
+                
+                if symbol in seen_anchors:
+                    continue
+                seen_anchors.add(symbol)
+                
+                # Infer risk tags
+                tags = self._infer_tags(symbol, file_path)
+                strength = "HIGH" if self._is_high_risk(symbol, file_path) else "MEDIUM"
+                
+                change_anchors.append({
+                    "symbol": symbol,
+                    "file": file_path,
+                    "strength": strength,
+                    "tags": tags,
+                })
+        
+        # Build execution paths (placeholder - will be populated by orchestrator)
+        execution_paths: list[dict[str, Any]] = []
+        
+        # Build path overlays (placeholder - will be populated by orchestrator)
+        path_overlays: list[dict[str, Any]] = []
+        
+        # Collect system context (minimal - just regions)
+        regions: set[str] = set()
+        domain_regions = (
+            "checkout", "discount", "payment", "billing", "invoice",
+            "auth", "authentication", "subscription", "order", "tax",
         )
+        for file_data in enriched_files:
+            file_path = str(file_data.get("file_path", "")).lower()
+            for region in domain_regions:
+                if region in file_path:
+                    regions.add(region)
+            for flow in file_data.get("flows", []) or []:
+                flow_text = self._enum_or_string(flow).lower()
+                for region in domain_regions:
+                    if region in flow_text:
+                        regions.add(region)
+        
+        system_context = {
+            "regions": sorted(regions) if regions else ["general"]
+        }
+        
+        return {
+            "execution_paths": execution_paths,
+            "change_anchors": change_anchors[:20],
+            "path_overlays": path_overlays,
+            "system_context": system_context,
+        }
 
     def _collect_flows(self, enriched_files: list[dict]) -> list[str]:
         values: set[str] = set()
@@ -164,6 +197,51 @@ class RIRCompressor:
                 return True
 
         return False
+
+    def _infer_tags(self, symbol: str, file_path: str) -> list[str]:
+        """Infer risk tags for a change anchor."""
+        tags = []
+        symbol_lower = symbol.lower()
+        file_lower = file_path.lower()
+        
+        # Domain tags
+        if any(domain in symbol_lower or domain in file_lower for domain in ["payment", "pay", "charge", "billing"]):
+            tags.append("payment_flow")
+        if any(domain in symbol_lower or domain in file_lower for domain in ["order", "cart", "checkout"]):
+            tags.append("order_flow")
+        if any(domain in symbol_lower or domain in file_lower for domain in ["invoice", "receipt"]):
+            tags.append("invoice_flow")
+        if any(domain in symbol_lower or domain in file_lower for domain in ["tax", "vat"]):
+            tags.append("tax_flow")
+        if any(domain in symbol_lower or domain in file_lower for domain in ["auth", "permission", "access"]):
+            tags.append("auth_flow")
+        
+        # Mutation type tags
+        if any(mut in symbol_lower for mut in ["update", "set", "mutate", "write", "save"]):
+            tags.append("state_mutation")
+        if any(mut in symbol_lower for mut in ["calculate", "compute", "total", "amount"]):
+            tags.append("money_flow")
+        
+        # Default tag
+        if not tags:
+            tags.append("general")
+        
+        return tags
+
+    def _is_high_risk(self, symbol: str, file_path: str) -> bool:
+        """Determine if a change is high risk."""
+        symbol_lower = symbol.lower()
+        file_lower = file_path.lower()
+        
+        high_risk_indicators = [
+            "payment", "charge", "billing", "order", "checkout",
+            "invoice", "tax", "auth", "permission"
+        ]
+        
+        return any(
+            indicator in symbol_lower or indicator in file_lower
+            for indicator in high_risk_indicators
+        )
 
     def _build_execution_path_hint(
         self,

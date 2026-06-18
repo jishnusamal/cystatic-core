@@ -17,7 +17,7 @@ class FailureScenario(BaseModel):
     title: str = Field(min_length=8)
     trigger: str = Field(min_length=12)
     execution_path: str = Field(min_length=12)
-    evidence_type: Literal["direct", "inferred", "structural_pattern"] = "inferred"
+    evidence_type: Literal["direct", "inferred", "structural_pattern", "inferred_bridge"] = "inferred"
     production_impact: str = Field(min_length=12)
     confidence: float = Field(ge=0.0, le=1.0)
     # NEW: Confidence propagation through causal chain

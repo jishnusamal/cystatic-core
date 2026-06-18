@@ -1,3 +1,38 @@
+"""
+PHASE 5 — LLM INPUT CONTRACT (FACTOR V5 — MINIMAL CAUSAL TRUTH)
+
+The LLM receives exactly 1 structure with 4 signal types:
+  1. change_influence []       — ONLY scored symbols + domains (Layer 1)
+  2. execution_paths []        — Hard truth propagation chains (Layer 2+3)
+  3. soft_edges []             — Weak adjacency only if needed (Layer 2)
+  4. constraints {}            — System rules (what is allowed/forbidden)
+  5. risk_zones []             — Domain regions (checkout, invoice, tax, etc.)
+  6. changed_symbols []        — Tiny hint: list of changed symbols
+
+REMOVED (not reasoning inputs):
+  - files (enriched_files)     ❌ (too big + already abstracted elsewhere)
+  - excluded_files             ❌ (irrelevant to reasoning)
+  - keywords_detected          ❌ (already in change_influence)
+  - risk_patterns              ❌ (already encoded in domain + influence)
+  - entry_points_affected      ❌ (already in execution_paths)
+  - system_impact              ❌ (already in propagation layer)
+  - pr_risk_score              ❌ (system opinion, LLM should derive)
+  - pr_risk_level              ❌ (system opinion, LLM should derive)
+  - compressed_for_llm         ❌ (reintroduces everything we separated)
+  - failure_simulation         ❌ (this is OUTPUT, not INPUT)
+
+LLM ROLE:
+  You are a causal reasoning engine.
+  You derive failure scenarios from nodes, edges, and constraints only.
+
+KEY RULE:
+  Everything the LLM receives must be a node, edge, or constraint.
+  All other data is preprocessing junk that causes:
+  - contradiction
+  - overconfidence noise
+  - hallucinated reconciliation
+  - diluted signal strength
+"""
 from __future__ import annotations
 
 import json
@@ -10,55 +45,68 @@ from pydantic import ValidationError  # pyright: ignore[reportMissingImports]
 from schemas.failure_simulation import FailureSimulationOutput
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# PROMPTS
+# ══════════════════════════════════════════════════════════════════════════════
+
 USER_PROMPT_TEMPLATE = """
-Simulate production failures from this PR analysis.
+You are a causal reasoning engine analyzing production risk in a codebase.
 
-The system has already constructed:
-1. A **causal graph** showing how changed symbols connect to downstream systems
-2. A **propagation impact tree** showing blast radius with confidence scores
-3. **Matched failure templates** suggesting specific failure classes
-4. **System behavior deltas** describing semantic shifts (not just code diffs)
-5. **Risk patterns** detected from code analysis
-6. **Causal hypotheses** — structured, scored inferences about what breaks
+You receive ONLY nodes, edges, and constraints. Everything else is noise.
 
-Your job: synthesize these into ranked failure scenarios.
+RULES:
 
-CAUSAL GRAPH:
-{causal_graph}
+1. Every failure scenario MUST originate from execution_paths or soft_edges.
+2. You may NOT create new chains or new flows.
+3. You may only use:
+   - change_influence (what changed + where it matters)
+   - execution_paths (hard truth propagation)
+   - soft_edges (weak adjacency, only if execution_paths are sparse)
+   - constraints (system rules: what is allowed/forbidden)
+   - risk_zones (domain regions: checkout, invoice, tax, etc.)
+   - changed_symbols (list of modified symbols)
 
-IMPACT TREE (blast radius):
-{impact_tree}
+4. IMPORTANT PRIORITY ORDER:
+   execution_paths > soft_edges > change_influence > constraints > risk_zones
 
-FAILURE TEMPLATE MATCHES:
-{failure_template_matches}
+5. change_influence tells you WHAT changed and HOW MUCH it matters.
+   It does NOT create risk by itself.
 
-SYSTEM BEHAVIOR DELTAS:
-{system_behavior_deltas}
+6. execution_paths are the TRUTH — ordered propagation chains.
+   If a path exists, risk can flow through it.
 
-RISK PATTERNS:
-{risk_patterns}
+7. soft_edges are WEAK signals — use only when execution_paths are sparse.
+   They suggest likely propagation but are not guaranteed.
 
-CHANGE GRAPH:
-{change_graph}
+8. constraints define SYSTEM RULES — idempotency, transactions, retries, etc.
+   Violating a constraint is a strong failure signal.
 
-BEHAVIOR DIFF:
-{behavior_diff}
+9. risk_zones tell you WHERE it matters — checkout, invoice, tax, etc.
 
-CAUSAL HYPOTHESES (structured inferences attached to causal edges):
-{causal_hypotheses}
+10. If no execution_path has changed symbols AND no soft_edge connects to changed symbols:
+    return NO_SIGNIFICANT_PROPAGATION_FOUND
 
-Each causal hypothesis includes:
-- from/to symbols and edge type
-- the hypothesis text
-- a confidence score (0.0–1.0) reflecting how strongly the inference is supported
-- a failure class prediction (e.g. null_propagation, stale_cache, auth_bypass_chain)
-- the propagation path it follows
+11. SAFE is ONLY allowed if:
+    - no execution path touches changed symbols
+    - no soft edge connects to changed symbols
 
-Use these as your starting point for failure scenario construction. Each hypothesis is a potential failure mode — validate it against the causal graph and impact tree, then promote to a full scenario if supported.
+12. NEVER default to SAFE.
 
-Return JSON with scored, concrete failure scenarios.
+13. Prefer 1–3 high-confidence failures over none.
 
-{
+────────────────────────────────────────────────────────────────────────────────
+# INPUT STRUCTURE
+────────────────────────────────────────────────────────────────────────────────
+
+{input_structure}
+
+────────────────────────────────────────────────────────────────────────────────
+# OUTPUT FORMAT
+────────────────────────────────────────────────────────────────────────────────
+
+Return STRICT JSON only:
+
+{{
   "verdict": "SAFE | LOW_RISK | UNCERTAIN_IMPACT | NO_SIGNIFICANT_PROPAGATION_FOUND | REVIEW_REQUIRED | BLOCK_REVIEW",
 
   "failure_scenarios": [
@@ -66,7 +114,7 @@ Return JSON with scored, concrete failure scenarios.
       "title": "specific, concrete failure (not generic)",
       "trigger": "exact condition that activates the failure",
       "execution_path": "function → function → system outcome",
-      "evidence_type": "direct | inferred | structural_pattern",
+      "evidence_type": "direct | inferred | structural_pattern | inferred_bridge",
       "production_impact": "real-world consequence (money, data, users, ops)",
       "confidence": 0.0,
       "hop_confidence": 0.0,
@@ -105,68 +153,61 @@ Return JSON with scored, concrete failure scenarios.
   "merge_risk_statement": "This PR is mergeable but behaviorally unsafe under production conditions",
   "verdict_rationale": "SAFE because .... LOW_RISK because .... REVIEW_REQUIRED because .... BLOCK_REVIEW because ....",
   "final_question": "a sharp question that forces reconsideration before merge"
-}
+}}
 """
 
 SYSTEM_PROMPT = """
-You are Factor's Production Failure Simulator.
+You are a causal reasoning engine analyzing production risk in a codebase.
 
-Your job is to help engineers understand:
-> "How could this PR break production even if CI passes?"
+You receive ONLY nodes, edges, and constraints. Everything else is noise.
 
-You operate on EXPLICITLY MODELED system structure:
-- A causal graph showing how changes propagate
-- An impact tree with confidence propagation
-- Pre-matched failure templates
-- System behavior deltas (semantic shifts, not just code diffs)
+RULES:
 
----
+1. Every failure scenario MUST originate from execution_paths or soft_edges.
+2. You may NOT create new chains or new flows.
+3. You may only use:
+   - change_influence (what changed + where it matters)
+   - execution_paths (hard truth propagation)
+   - soft_edges (weak adjacency, only if execution_paths are sparse)
+   - constraints (system rules: what is allowed/forbidden)
+   - risk_zones (domain regions: checkout, invoice, tax, etc.)
+   - changed_symbols (list of modified symbols)
 
-# REASONING STYLE
+4. IMPORTANT PRIORITY ORDER:
+   execution_paths > soft_edges > change_influence > constraints > risk_zones
 
-You are NOT a validator. You are a simulation engine.
+5. change_influence tells you WHAT changed and HOW MUCH it matters.
+   It does NOT create risk by itself.
 
-You should behave like a senior engineer running a production walkthrough
-using the explicit system model provided to you.
+6. execution_paths are the TRUTH — ordered propagation chains.
+   If a path exists, risk can flow through it.
 
----
+7. soft_edges are WEAK signals — use only when execution_paths are sparse.
+   They suggest likely propagation but are not guaranteed.
 
-# HOW TO THINK
+8. constraints define SYSTEM RULES — idempotency, transactions, retries, etc.
+   Violating a constraint is a strong failure signal.
 
-You may:
-- Use the causal graph to trace failure propagation paths
-- Use the impact tree to determine blast radius
-- Use failure templates as structured hypotheses (not guesses)
-- Assign hop_confidence that decays with causal distance
-- Rank scenarios by confidence * severity
+9. risk_zones tell you WHERE it matters — checkout, invoice, tax, etc.
 
-You should NOT:
-- Invent symbols or systems not in the causal graph
-- Ignore the failure templates — they are grounded signals
-- Claim absolute certainty (confidence must be calibrated)
-- Default to SAFE — SAFE requires positive evidence
+10. If no execution_path has changed symbols AND no soft_edge connects to changed symbols:
+    return NO_SIGNIFICANT_PROPAGATION_FOUND
 
----
+11. SAFE is ONLY allowed if:
+    - no execution path touches changed symbols
+    - no soft edge connects to changed symbols
 
-# VERDICT GUIDELINES
+12. NEVER default to SAFE.
 
-SAFE: Evidence confirms no production impact. Zero failure scenarios. STRONG rationale required.
-LOW_RISK: Minor concerns, no critical system impact. Some risk but acceptable.
-UNCERTAIN_IMPACT: Suspicious patterns found but no direct evidence of failure chain.
-NO_SIGNIFICANT_PROPAGATION_FOUND: Changes exist but causal propagation shows no downstream impact.
-REVIEW_REQUIRED: One or more concrete failure scenarios with confidence >= 0.6.
-BLOCK_REVIEW: Critical failure scenario(s) with high confidence and severe impact.
+13. Prefer 1–3 high-confidence failures over none.
 
----
-
-# OUTPUT PRINCIPLES
-
-Be practical, not academic.
-Prefer 1-3 strong scenarios over many weak ones.
-Use the causal chain field to show your propagation reasoning.
-Use failure_class to categorize the type of failure.
+OUTPUT MUST BE STRICT JSON.
 """
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Sanitization helpers (unchanged from V3)
+# ══════════════════════════════════════════════════════════════════════════════
 
 def sanitize_llm_json(raw_output: dict[str, Any]) -> dict[str, Any]:
     """Sanitize LLM output that may have malformed keys."""
@@ -304,6 +345,10 @@ def sanitize_llm_json_string(json_string: str) -> str:
     return fixed
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# LLM Class
+# ══════════════════════════════════════════════════════════════════════════════
+
 class FailureSimulationLLM:
     def __init__(
         self,
@@ -323,53 +368,43 @@ class FailureSimulationLLM:
 
     def build_prompt(
         self,
-        compressed_ir: dict[str, Any],
-        causal_graph: dict[str, Any] | None = None,
-        impact_tree: dict[str, Any] | None = None,
-        failure_template_matches: list[dict] | None = None,
-        system_behavior_deltas: list[dict] | None = None,
+        repo: str = "",
+        pr_number: int = 0,
+        change_influence: list[dict[str, Any]] | None = None,
+        execution_paths: list[dict[str, Any]] | None = None,
+        soft_edges: list[dict[str, Any]] | None = None,
+        constraints: dict[str, Any] | None = None,
+        risk_zones: list[str] | None = None,
+        changed_symbols: list[str] | None = None,
     ) -> list[Any]:
-        """Build prompt with causal graph, impact tree, and failure templates."""
-        # Extract IR components — causal_hypotheses replaces old unknowns bucket
-        core_context = compressed_ir.get("core_context", {})
-        change_graph = compressed_ir.get("change_graph", [])
-        behavior_diff = compressed_ir.get("behavior_diff", [])
-        causal_hypotheses = compressed_ir.get("causal_hypotheses", [])
-        risk_events = compressed_ir.get("risk_events", [])
+        """Build prompt with the V5 minimal causal truth input contract.
 
-        # Format causal graph
-        causal_graph_str = json.dumps(causal_graph or {}, indent=2)
+        Args:
+            repo: Repository identifier.
+            pr_number: PR number.
+            change_influence: Scored symbols + domains (Layer 1).
+            execution_paths: Hard truth propagation chains (Layer 2+3).
+            soft_edges: Weak adjacency edges (Layer 2, only if needed).
+            constraints: System rules (what is allowed/forbidden).
+            risk_zones: Domain regions (checkout, invoice, tax, etc.).
+            changed_symbols: List of modified symbols.
 
-        # Format impact tree
-        impact_tree_str = json.dumps(impact_tree or {}, indent=2)
-
-        # Format failure template matches
-        templates_str = json.dumps(failure_template_matches or [], indent=2)
-
-        # Format system behavior deltas
-        deltas_str = json.dumps(system_behavior_deltas or [], indent=2)
-
-        # Format risk patterns
-        risk_patterns_str = json.dumps(risk_events, indent=2)
-
-        # Format change graph
-        change_graph_str = json.dumps(change_graph, indent=2)
-
-        # Format behavior diff
-        behavior_diff_str = json.dumps(behavior_diff, indent=2)
-
-        # Format causal hypotheses (structured, scored, edge-attached)
-        causal_hypotheses_str = json.dumps(causal_hypotheses, indent=2)
-
+        Returns:
+            List of message dicts for the LLM API call.
+        """
+        input_structure = {
+            "repo": repo,
+            "pr_number": pr_number,
+            "change_influence": change_influence or [],
+            "execution_paths": execution_paths or [],
+            "soft_edges": soft_edges or [],
+            "constraints": constraints or {},
+            "risk_zones": risk_zones or [],
+            "changed_symbols": changed_symbols or [],
+        }
+        
         prompt = USER_PROMPT_TEMPLATE\
-            .replace("{causal_graph}", causal_graph_str)\
-            .replace("{impact_tree}", impact_tree_str)\
-            .replace("{failure_template_matches}", templates_str)\
-            .replace("{system_behavior_deltas}", deltas_str)\
-            .replace("{risk_patterns}", risk_patterns_str)\
-            .replace("{change_graph}", change_graph_str)\
-            .replace("{behavior_diff}", behavior_diff_str)\
-            .replace("{causal_hypotheses}", causal_hypotheses_str)
+            .replace("{input_structure}", json.dumps(input_structure, indent=2))
 
         return [
             {"role": "system", "content": SYSTEM_PROMPT.strip()},
@@ -378,12 +413,30 @@ class FailureSimulationLLM:
 
     def generate(
         self,
-        compressed_ir: dict[str, Any],
-        causal_graph: dict[str, Any] | None = None,
-        impact_tree: dict[str, Any] | None = None,
-        failure_template_matches: list[dict] | None = None,
-        system_behavior_deltas: list[dict] | None = None,
+        repo: str = "",
+        pr_number: int = 0,
+        change_influence: list[dict[str, Any]] | None = None,
+        execution_paths: list[dict[str, Any]] | None = None,
+        soft_edges: list[dict[str, Any]] | None = None,
+        constraints: dict[str, Any] | None = None,
+        risk_zones: list[str] | None = None,
+        changed_symbols: list[str] | None = None,
     ) -> FailureSimulationOutput:
+        """Generate failure simulation from V5 minimal causal truth input contract.
+
+        Args:
+            repo: Repository identifier.
+            pr_number: PR number.
+            change_influence: Scored symbols + domains (Layer 1).
+            execution_paths: Hard truth propagation chains (Layer 2+3).
+            soft_edges: Weak adjacency edges (Layer 2, only if needed).
+            constraints: System rules (what is allowed/forbidden).
+            risk_zones: Domain regions (checkout, invoice, tax, etc.).
+            changed_symbols: List of modified symbols.
+
+        Returns:
+            FailureSimulationOutput with verdict and scenarios.
+        """
         headers: dict[str, str] = {}
         if self.site_url:
             headers["HTTP-Referer"] = self.site_url
@@ -397,11 +450,14 @@ class FailureSimulationLLM:
         completion = self.client.chat.completions.create(
             model=self.model,
             messages=self.build_prompt(
-                compressed_ir=compressed_ir,
-                causal_graph=causal_graph,
-                impact_tree=impact_tree,
-                failure_template_matches=failure_template_matches,
-                system_behavior_deltas=system_behavior_deltas,
+                repo=repo,
+                pr_number=pr_number,
+                change_influence=change_influence,
+                execution_paths=execution_paths,
+                soft_edges=soft_edges,
+                constraints=constraints,
+                risk_zones=risk_zones,
+                changed_symbols=changed_symbols,
             ),
             extra_headers=headers,
             extra_body=extra_body,

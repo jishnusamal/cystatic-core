@@ -18,8 +18,198 @@ from core_engine.causal_graph import (
     CausalGraphBuilder,
     RepositorySymbolIndex,
 )
-from core_engine.propagation_engine import build_impact_tree, ImpactTree
 from core_engine.behavior_delta_system import build_system_behavior_deltas, SystemBehaviorDelta
+from core_engine.constraint_extractor import extract_constraints
+from core_engine.constraint_types import ConstraintSet
+from core_engine.change_influence import (
+    build_change_influence,
+    extract_changed_symbols,
+    ChangeInfluence,
+)
+from core_engine.soft_propagation import (
+    build_soft_propagation_graph,
+    extract_existing_edges_from_graph,
+    SoftEdge,
+)
+from core_engine.llm_packet_compressor import build_llm_packet
+from typing import Any
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DOMAIN RISK PRIORS (Layer 4 — Probabilistic Safety Net)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Base risk by domain (0.0–1.0)
+_DOMAIN_BASE_RISK: dict[str, float] = {
+    "billing": 0.7,
+    "billing_core": 0.65,
+    "billing_output": 0.6,
+    "billing_calculation": 0.7,
+    "billing_pricing": 0.6,
+    "billing_cart": 0.6,
+    "billing_recurring": 0.65,
+    "money_movement": 0.8,
+    "payment": 0.8,
+    "order": 0.6,
+    "invoice": 0.65,
+    "tax": 0.7,
+    "checkout": 0.75,
+    "fulfillment": 0.5,
+    "inventory": 0.5,
+    "catalog": 0.4,
+    "identity": 0.6,
+    "auth": 0.6,
+    "subscription": 0.65,
+    "notification": 0.3,
+    "cache": 0.2,
+    "general": 0.2,
+}
+
+# Failure modes by domain
+_DOMAIN_FAILURE_MODES: dict[str, list[str]] = {
+    "billing": ["double_charge", "tax_mismatch", "ledger_drift"],
+    "billing_core": ["double_charge", "partial_update_drift", "state_inconsistency"],
+    "billing_output": ["rendering_drift", "financial_inconsistency"],
+    "billing_calculation": ["tax_mismatch", "numeric_precision"],
+    "billing_pricing": ["pricing_error", "discount_miscount"],
+    "billing_cart": ["cart_state_drift", "price_mismatch"],
+    "billing_recurring": ["subscription_cycle_error", "renewal_miscount"],
+    "money_movement": ["double_charge", "ledger_drift", "irreversible_error"],
+    "payment": ["double_charge", "payment_flow_error", "webhook_mismatch"],
+    "order": ["idempotency_break", "duplicate_order", "order_state_drift"],
+    "invoice": ["rendering_drift", "financial_inconsistency", "tax_mismatch"],
+    "tax": ["tax_mismatch", "calculation_error", "compliance_violation"],
+    "checkout": ["checkout_flow_break", "cart_state_drift", "payment_mismatch"],
+    "fulfillment": ["fulfillment_delay", "inventory_desync"],
+    "inventory": ["stock_desync", "oversell"],
+    "catalog": ["catalog_desync", "price_stale"],
+    "identity": ["auth_bypass_chain", "session_hijack"],
+    "auth": ["auth_bypass_chain", "permission_escalation"],
+    "subscription": ["subscription_cycle_error", "renewal_miscount", "access_control_break"],
+    "notification": ["notification_silence", "delivery_delay"],
+    "cache": ["stale_cache", "cache_invalidation_miss"],
+    "general": ["state_inconsistency"],
+}
+
+# Mutation risk multipliers
+_MUTATION_RISK: dict[str, float] = {
+    "state_mutation": 0.6,
+    "payment_flow_change": 0.8,
+    "retry_handling_change": 0.75,
+    "financial_calculation_change": 0.7,
+    "schema_change": 0.5,
+    "control_flow_change": 0.4,
+    "api_contract_change": 0.55,
+    "default": 0.3,
+}
+
+
+def _build_domain_risk_priors(
+    change_influence: list[dict[str, Any]] | None = None,
+    risk_patterns: list | None = None,
+    enriched_files: list[dict] | None = None,
+) -> dict[str, Any]:
+    """Build domain_risk_priors from change influence and risk patterns.
+
+    This is the Layer 4 probabilistic safety net that gives the LLM
+    permission to flag risks even when the causal graph is sparse.
+    """
+    change_influence = change_influence or []
+    risk_patterns = risk_patterns or []
+    enriched_files = enriched_files or []
+
+    # Collect domains touched by the change
+    touched_domains: dict[str, float] = {}
+    for ci in change_influence:
+        domain = ci.get("domain", "general")
+        score = ci.get("influence_score", 0.0)
+        # Track max influence per domain
+        if domain not in touched_domains or score > touched_domains[domain]:
+            touched_domains[domain] = score
+
+    # Also scan enriched files for domain signals
+    for file_data in enriched_files:
+        file_path = file_data.get("file_path", "").lower()
+        keyword_signals = file_data.get("keyword_signals", [])
+        for signal in keyword_signals:
+            signal_text = signal.keyword if hasattr(signal, "keyword") else str(signal)
+            signal_lower = signal_text.lower()
+            for domain_key in _DOMAIN_BASE_RISK:
+                if domain_key in signal_lower or domain_key in file_path:
+                    if domain_key not in touched_domains:
+                        touched_domains[domain_key] = 0.5  # moderate signal from keywords
+
+    # Build domain_risk_priors output
+    domain_risk_priors: dict[str, Any] = {
+        "domains": {},
+        "mutation_risk": {},
+        "overall_risk_level": "LOW",
+    }
+
+    # Populate domain entries
+    for domain, base_risk in _DOMAIN_BASE_RISK.items():
+        if domain in touched_domains:
+            influence = touched_domains[domain]
+            # Boost risk if change has high influence in this domain
+            adjusted_risk = min(base_risk + influence * 0.2, 1.0)
+            domain_risk_priors["domains"][domain] = {
+                "base_risk": round(base_risk, 2),
+                "adjusted_risk": round(adjusted_risk, 2),
+                "touched_by_change": True,
+                "change_influence": round(influence, 3),
+                "failure_modes": _DOMAIN_FAILURE_MODES.get(domain, ["state_inconsistency"]),
+            }
+
+    # If no domains touched, include high-risk domains that might be relevant
+    if not domain_risk_priors["domains"]:
+        # Include a few high-risk domains as context
+        for domain in ["billing", "payment", "order", "invoice", "tax"]:
+            domain_risk_priors["domains"][domain] = {
+                "base_risk": _DOMAIN_BASE_RISK.get(domain, 0.5),
+                "adjusted_risk": _DOMAIN_BASE_RISK.get(domain, 0.5),
+                "touched_by_change": False,
+                "change_influence": 0.0,
+                "failure_modes": _DOMAIN_FAILURE_MODES.get(domain, ["state_inconsistency"]),
+            }
+
+    # Populate mutation risk from risk patterns
+    mutation_risks: dict[str, float] = {}
+    for rp in risk_patterns:
+        rp_dict = rp.model_dump() if hasattr(rp, "model_dump") else (rp if isinstance(rp, dict) else {})
+        rp_type = rp_dict.get("risk_type", "")
+        # Map risk pattern types to mutation risk categories
+        if rp_type in ("FINANCIAL_LOGIC_CHANGE", "PAYMENT_FLOW"):
+            mutation_risks["payment_flow_change"] = _MUTATION_RISK["payment_flow_change"]
+        elif rp_type in ("TAX_CALCULATION_CHANGE",):
+            mutation_risks["financial_calculation_change"] = _MUTATION_RISK["financial_calculation_change"]
+        elif rp_type in ("SCHEMA_MIGRATION", "DATA_MODEL_CHANGE"):
+            mutation_risks["schema_change"] = _MUTATION_RISK["schema_change"]
+        elif rp_type in ("RETRY_HANDLING",):
+            mutation_risks["retry_handling_change"] = _MUTATION_RISK["retry_handling_change"]
+        elif rp_type in ("STATE_MUTATION",):
+            mutation_risks["state_mutation"] = _MUTATION_RISK["state_mutation"]
+
+    # Add default mutation risks if none detected
+    if not mutation_risks:
+        mutation_risks["state_mutation"] = _MUTATION_RISK["state_mutation"]
+
+    domain_risk_priors["mutation_risk"] = mutation_risks
+
+    # Compute overall risk level
+    max_domain_risk = max(
+        (d.get("adjusted_risk", 0.0) for d in domain_risk_priors["domains"].values()),
+        default=0.0,
+    )
+    max_mutation_risk = max(mutation_risks.values(), default=0.0)
+    overall = max(max_domain_risk, max_mutation_risk)
+
+    if overall >= 0.7:
+        domain_risk_priors["overall_risk_level"] = "HIGH"
+    elif overall >= 0.5:
+        domain_risk_priors["overall_risk_level"] = "MEDIUM"
+    else:
+        domain_risk_priors["overall_risk_level"] = "LOW"
+
+    return domain_risk_priors
 
 # failure_templates is an OPTIONAL hypothesis layer — imported lazily to allow
 # graceful degradation if the module is unavailable or takes too long.
@@ -30,7 +220,6 @@ try:
 except ImportError:
     match_failure_templates = None  # type: ignore[assignment]
     _HAS_FAILURE_TEMPLATES = False
-from typing import Any
 
 
 class BaseOrchestrator:
@@ -51,91 +240,37 @@ class BaseOrchestrator:
         raise NotImplementedError("Must implement log_run in subclass")
 
     # -------------------------------------------------------------------------
-    # Verdict Aggregator — blast radius is primary, templates are optional
+    # Verdict Aggregator — LLM verdict primary, risk patterns secondary
     # -------------------------------------------------------------------------
     def _aggregate_verdict(
         self,
         failure_simulation: dict,
         validation_score: ValidationScore | None = None,
-        impact_tree: ImpactTree | None = None,
         risk_patterns: list | None = None,
     ) -> dict:
         """
-        Aggregate verdict from blast radius propagation and LLM output.
+        Aggregate verdict from LLM output and risk patterns.
 
-        Core signal: blast radius from causal graph propagation.
-        Secondary signal: LLM assessment.
-        Optional hypothesis: failure templates (demoted — conclusions, not evidence).
-
-        matched_failure_templates are treated as optional hypotheses, not core signals.
-        They do NOT drive verdict upgrades. Only blast radius propagation does.
+        Core signal: LLM assessment with causal context.
+        Secondary signal: risk patterns.
         """
         if not isinstance(failure_simulation, dict):
             failure_simulation = self._default_failure_simulation()
 
         llm_verdict = failure_simulation.get("verdict", "")
-        has_impact = impact_tree is not None and bool(impact_tree.get_impacted_symbols(min_confidence=0.2))
 
-        # Get blast radius from impact tree as the primary signal
-        blast_radius = impact_tree.get_blast_radius() if impact_tree else {}
-        max_confidence = blast_radius.get("max_confidence", 0.0)
-        impacted_services = blast_radius.get("impacted_services", [])
-        impacted_endpoints = blast_radius.get("impacted_endpoints", [])
-        impacted_databases = blast_radius.get("impacted_databases", [])
-
-        # Blast radius drives verdict
-        if impacted_services or impacted_endpoints or impacted_databases:
-            # There is actual blast radius - always at least LOW_RISK
-            blast_based_verdict = "LOW_RISK"
-            blast_rationale_parts = []
-
-            if impacted_services:
-                blast_rationale_parts.append(
-                    f"affects services: {', '.join(impacted_services)}"
-                )
-            if impacted_endpoints:
-                blast_rationale_parts.append(
-                    f"affects endpoints: {', '.join(impacted_endpoints)}"
-                )
-            if impacted_databases:
-                blast_rationale_parts.append(
-                    f"affects datastores: {', '.join(impacted_databases)}"
-                )
-
-            if max_confidence >= 0.6:
-                blast_based_verdict = "REVIEW_REQUIRED"
-            elif max_confidence >= 0.25:
-                blast_based_verdict = "UNCERTAIN_IMPACT"
-
-            # Check LLM verdict — only allow STRONG llm verdicts to override
-            # (LLM sees code context we don't have from graph alone)
-            strong_llm_verdicts = {"SAFE", "BLOCK_REVIEW"}
-            if llm_verdict in strong_llm_verdicts:
-                failure_simulation["verdict"] = llm_verdict
-                failure_simulation["verdict_rationale"] = (
-                    f"Blast radius detection suggests {blast_based_verdict} "
-                    f"({'; '.join(blast_rationale_parts)}), "
-                    f"but LLM overrode with {llm_verdict} based on code-level analysis."
-                )
-                return failure_simulation
-
-            failure_simulation["verdict"] = blast_based_verdict
-            failure_simulation["verdict_rationale"] = (
-                f"Blast radius analysis: {'; '.join(blast_rationale_parts)}. "
-                f"Max propagation confidence: {max_confidence:.2f}. "
-                f"Verdict: {blast_based_verdict}."
-            )
-            return failure_simulation
-
-        # No significant blast radius detected — fall back to LLM
+        # Accept LLM verdict if present
         if llm_verdict:
             return failure_simulation
 
-        # Default when nothing detected
-        failure_simulation["verdict"] = "NO_SIGNIFICANT_PROPAGATION_FOUND"
+        # Fall back to risk pattern-based verdict
+        pr_risk_level = "LOW"
+        if risk_patterns:
+            pr_risk_level = "MEDIUM" if any(getattr(rp, 'severity', 'LOW') == 'HIGH' for rp in risk_patterns) else "LOW"
+        
+        failure_simulation["verdict"] = self._get_verdict(pr_risk_level, risk_patterns=risk_patterns)
         failure_simulation["verdict_rationale"] = (
-            "No downstream propagation detected through the causal graph. "
-            "Changes appear isolated."
+            "No LLM verdict provided. Using risk pattern-based assessment."
         )
 
         return failure_simulation
@@ -144,7 +279,6 @@ class BaseOrchestrator:
     # Defaults and Normalization
     # -------------------------------------------------------------------------
     def _default_failure_simulation(self) -> dict:
-        # SAFE is no longer the default - NO_SIGNIFICANT_PROPAGATION_FOUND is
         return {
             "failure_scenarios": [],
             "hidden_impact_chain": [],
@@ -366,20 +500,24 @@ class BaseOrchestrator:
         enriched_files: list[dict],
         risk_patterns: list | None = None,
         failure_simulation: dict | list | None = None,
-        entry_points_affected: list | None = None,
-        system_impact: list | None = None,
-        excluded_files: list[dict] | None = None,
         compressed_for_llm: dict | None = None,
+        change_influence: list[dict] | None = None,
+        execution_paths: dict | None = None,
+        soft_edges: list[dict] | None = None,
+        system_constraints: dict | None = None,
+        risk_zones: list[str] | None = None,
+        changed_symbols: list[str] | None = None,
+        behavior_deltas: list | None = None,
+        behavior_diffs: list | None = None,
+        reachability_results: dict | None = None,
+        side_effect_results: dict | None = None,
+        causal_graph: Any | None = None,
+        system_behavior_deltas: list | None = None,
+        matched_failure_templates: list | None = None,
     ) -> dict:
         failure_simulation = self._normalize_failure_simulation(failure_simulation)
         pr_risk_score = self._calculate_pr_risk_score(enriched_files)
         pr_risk_level = self._classify_risk(pr_risk_score)
-
-        keywords_detected = [
-            signal
-            for file in enriched_files
-            for signal in file.get("keyword_signals", [])
-        ]
 
         # Accept the full new verdict set
         llm_verdict = None
@@ -400,26 +538,29 @@ class BaseOrchestrator:
             "repo": repo,
             "pr_number": pr_number,
             "analysis_mode": analysis_mode.value,
-            "files": enriched_files,
-            "excluded_files": excluded_files or [],
-            "keywords_detected": keywords_detected,
-            "risk_patterns": [
-                rp.model_dump() if hasattr(rp, "model_dump") else rp
-                for rp in (risk_patterns or [])
-            ],
             "failure_simulation": failure_simulation,
-            "entry_points_affected": [
-                ep.model_dump() if hasattr(ep, "model_dump") else ep
-                for ep in (entry_points_affected or [])
-            ],
+            
+            # 1. CHANGE SIGNAL (Layer 1)
+            "change_influence": change_influence or [],
+            # 2. PROPAGATION (Layer 2 + 3)
+            "execution_paths": execution_paths or {},
+            "soft_edges": soft_edges or [],
+            # 3. SYSTEM RULES
+            "constraints": system_constraints or {},
+            # 4. CONTEXT FILTER (VERY SMALL)
+            "risk_zones": risk_zones or ["general"],
+            # optional tiny hint
+            "changed_symbols": changed_symbols or [],
             "compressed_for_llm": compressed_for_llm or {},
-            "system_impact": [
-                impact.model_dump() if hasattr(impact, "model_dump") else impact
-                for impact in (system_impact or [])
-            ],
-            "pr_risk_score": pr_risk_score,
-            "pr_risk_level": pr_risk_level,
             "verdict": final_verdict,
+            # Analysis artifacts
+            # "behavior_deltas": [d.__dict__ for d in (behavior_deltas or [])],
+            # "behavior_diffs": [{"symbol": d.symbol, "before": d.before, "after": d.after} for d in (behavior_diffs or [])],
+            # "reachability": {k: v.__dict__ for k, v in (reachability_results or {}).items()},
+            # "side_effects": {k: v.__dict__ for k, v in (side_effect_results or {}).items()},
+            # "causal_graph": causal_graph.to_dict() if causal_graph else {},
+            # "system_behavior_deltas": [d.to_dict() for d in (system_behavior_deltas or [])],
+            # "matched_failure_templates": matched_failure_templates or [],
         }
 
     def _build_repo_index(
@@ -452,8 +593,6 @@ class BaseOrchestrator:
         """
         Match failure templates if available. Returns empty list if templates
         module is not available — failure templates are OPTIONAL.
-
-        Core signals (blast radius, causal graph, impact tree) do NOT depend on this.
         """
         if not _HAS_FAILURE_TEMPLATES or match_failure_templates is None:
             return []
@@ -476,20 +615,19 @@ class BaseOrchestrator:
         behavior_diffs: list,
         compressed_for_llm: dict,
         repo_index: RepositorySymbolIndex | None = None,
-    ) -> tuple[Any, Any, list[dict], list[Any], list[str], list]:
-        """Run the causal graph + propagation engine + templates pipeline.
+        entry_points_affected: list | None = None,
+    ) -> tuple[CausalGraph, list[dict], list[Any], list[str]]:
+        """Run the causal graph + templates pipeline.
 
         Args:
             enriched_files: Diff-only or full-file enriched file data.
             risk_patterns: Detected risk patterns.
             behavior_diffs: Behavior-level deltas.
             compressed_for_llm: Compressed IR for the LLM.
-            repo_index: Optional repo-wide symbol index. When provided, the
-                causal graph expands `known_symbols` to include every
-                defined function in the repo and registers ALL endpoints —
-                not just the ones in the diff. This is the repo-wide
-                expansion that unlocks richer blast radius propagation.
-                Pass `None` in DIFF_ONLY mode (no repo access).
+            repo_index: Optional repo-wide symbol index.
+
+        Returns:
+            Tuple of (causal_graph, template_matches, system_deltas, directly_changed).
         """
         # Step 1: Build causal graph
         causal_graph = build_causal_graph(
@@ -503,21 +641,14 @@ class BaseOrchestrator:
             diff.symbol for diff in behavior_diffs
         }) if behavior_diffs else []
 
-        # Step 3: Build impact tree (propagation engine)
-        impact_tree = build_impact_tree(
-            causal_graph=causal_graph,
-            directly_changed=directly_changed,
-            max_hops=5,
-        )
-
-        # Step 4: Match failure templates (OPTIONAL hypothesis layer)
+        # Step 3: Match failure templates (OPTIONAL hypothesis layer)
         template_matches = self._match_failure_templates(
             risk_patterns=risk_patterns,
             enriched_files=enriched_files,
             behavior_diffs=behavior_diffs,
         )
 
-        # Step 5: Build system-level behavior deltas
+        # Step 4: Build system-level behavior deltas
         system_deltas = build_system_behavior_deltas(
             enriched_files=enriched_files,
             behavior_diffs=behavior_diffs,
@@ -525,124 +656,76 @@ class BaseOrchestrator:
             failure_template_matches=template_matches,
         )
 
-        # Step 6: Build structured hypotheses on causal edges (replaces unknowns dump zone)
-        structured_hypotheses = self._build_structured_hypotheses(
-            causal_graph=causal_graph,
-            impact_tree=impact_tree,
-            risk_patterns=risk_patterns,
-            template_matches=template_matches,
-            enriched_files=enriched_files,
-        )
-
-        return causal_graph, impact_tree, template_matches, system_deltas, directly_changed, structured_hypotheses
-
-    def _build_structured_hypotheses(
-        self,
-        causal_graph: Any,
-        impact_tree: Any,
-        risk_patterns: list,
-        template_matches: list[dict],
-        enriched_files: list[dict],
-    ) -> list[dict]:
-        """
-        Build structured hypotheses attached to causal edges.
-        Replaces the old 'unknowns = dump zone for inference' pattern.
-        
-        Each hypothesis is a testable claim about what might go wrong,
-        attached to a specific causal edge in the graph.
-        """
-        hypotheses: list[dict] = []
-
-        # Get impacted symbols from propagation
-        impacted = impact_tree.get_impacted_symbols(min_confidence=0.15) if impact_tree else []
-
-        # For each impacted symbol with an incoming causal edge, build a hypothesis
-        for symbol in impacted[:15]:  # cap at 15
-            if not impact_tree:
-                continue
-            node = impact_tree.all_nodes.get(symbol)
-            if not node or not node.incoming_edges:
-                continue
-
-            for edge in node.incoming_edges:
-                # Compute hypothesis confidence from edge + propagation
-                hypothesis_confidence = edge.confidence * node.confidence * 0.9
-
-                # Generate hypothesis based on edge type
-                if edge.edge_type == "data_flow":
-                    template = "If {from_symbol} changes, {to_symbol} may receive unexpected input through data flow"
-                elif edge.edge_type == "control_flow":
-                    template = "If {from_symbol} changes, {to_symbol} execution gating may be altered"
-                elif edge.edge_type == "shared_state":
-                    template = "If {from_symbol} changes, {to_symbol} may read inconsistent shared state"
-                elif edge.edge_type == "async_event":
-                    template = "If {from_symbol} changes, event emitted to {to_symbol} may carry unexpected payload"
-                elif edge.edge_type == "db_dependency":
-                    template = "If {from_symbol} changes, {to_symbol} may read stale or inconsistent DB state"
-                elif edge.edge_type == "transaction_boundary":
-                    template = "If {from_symbol} fails, {to_symbol} may roll back due to shared transaction boundary"
-                else:
-                    continue
-
-                hypothesis = {
-                    "from_symbol": edge.from_symbol,
-                    "to_symbol": edge.to_symbol,
-                    "edge_type": edge.edge_type,
-                    "hypothesis": template.format(from_symbol=edge.from_symbol, to_symbol=edge.to_symbol),
-                    "confidence": round(hypothesis_confidence, 3),
-                    "propagation_path": [edge.from_symbol, edge.to_symbol],
-                    "source": "causal_propagation",
-                }
-
-                # Cross-reference with failure template matches
-                for tmpl in template_matches:
-                    tmpl_name = tmpl.get("template_name", "")
-                    tmpl_regions = tmpl.get("matched_system_regions", [])
-                    if any(r.lower() in symbol.lower() or symbol.lower() in r.lower() for r in tmpl_regions):
-                        hypothesis["related_failure_template"] = tmpl_name
-                        hypothesis["confidence"] = min(1.0, hypothesis_confidence + 0.15)
-                        break
-
-                hypotheses.append(hypothesis)
-
-        # Sort by confidence descending
-        hypotheses.sort(key=lambda h: -h["confidence"])
-        return hypotheses[:20]
+        return causal_graph, template_matches, system_deltas, directly_changed
 
     def _run_llm_with_causal_context(
         self,
         compressed_for_llm: dict[str, Any],
-        causal_graph: Any,
-        impact_tree: Any,
-        template_matches: list[dict[str, Any]],
-        system_deltas: list[SystemBehaviorDelta],
+        causal_graph: CausalGraph,
+        system_constraints: ConstraintSet | None = None,
+        behavior_diffs: list[Any] | None = None,
+        enriched_files: list[dict] | None = None,
         risk_patterns: list | None = None,
-        structured_hypotheses: list[dict] | None = None,
     ) -> dict:
-        """Call LLM with causal context and score scenarios."""
-        output = self.failure_simulation_llm.generate(
-            compressed_ir=compressed_for_llm,
-            causal_graph=causal_graph.to_dict(),
-            impact_tree=impact_tree.get_blast_radius(),
-            failure_template_matches=template_matches,
-            system_behavior_deltas=[d.to_dict() for d in system_deltas],
+        """Call LLM with the V5 token-efficient LLM payload."""
+        assert self.failure_simulation_llm is not None, (
+            "failure_simulation_llm must be set before calling _run_llm_with_causal_context"
         )
+
+        # Build changed symbols list
+        changed_symbols_list = extract_changed_symbols(
+            behavior_diffs=behavior_diffs,
+            enriched_files=enriched_files,
+        )
+        changed_symbols = [
+            item["symbol"] for item in changed_symbols_list
+            if isinstance(item, dict) and item.get("symbol")
+        ]
+
+        # Layer 1: change_influence — scored symbols + domains
+        change_influence_entries = build_change_influence(
+            all_changed_symbols=changed_symbols_list,
+        )
+        change_influence = [entry.to_dict() for entry in change_influence_entries]
+
+        # Layer 2: soft_edges — weak adjacency
+        existing_edges = extract_existing_edges_from_graph(causal_graph)
+        soft_edges_list = build_soft_propagation_graph(
+            all_changed_symbols=changed_symbols_list,
+            existing_edges=existing_edges,
+        )
+        soft_edges = [edge.to_dict() for edge in soft_edges_list]
+
+        # Layer 3: constraints — system rules
+        constraints = system_constraints.to_dict() if system_constraints else {}
+
+        # Layer 4: risk_zones — domain regions
+        risk_zones = self._build_minimal_system_context(
+            enriched_files=enriched_files,
+            risk_patterns=risk_patterns,
+            causal_graph=causal_graph,
+        ).get("regions", ["general"])
+
+        # Build token-efficient LLM packet
+        packet = build_llm_packet(
+            change_influence=change_influence,
+            execution_paths=[],
+            soft_edges=soft_edges,
+            constraints=constraints,
+            risk_zones=risk_zones,
+            changed_symbols=changed_symbols,
+            repo=compressed_for_llm.get("repo", ""),
+            pr_number=compressed_for_llm.get("pr_number", 0),
+            impact_propagation=None,
+        )
+
+        # Call LLM with compressed packet
+        llm_kwargs = {k: v for k, v in packet.items() if k != "impact_propagation"}
+        output = self.failure_simulation_llm.generate(**llm_kwargs)
         failure_simulation = output.model_dump()
 
         # Sanitize LLM output
         failure_simulation = self._sanitize_llm_output(failure_simulation)
-
-        # Add causal artifacts
-        if not failure_simulation.get("system_behavior_deltas"):
-            failure_simulation["system_behavior_deltas"] = [d.to_dict() for d in system_deltas]
-        if not failure_simulation.get("matched_failure_templates"):
-            failure_simulation["matched_failure_templates"] = template_matches
-        if not failure_simulation.get("blast_radius"):
-            failure_simulation["blast_radius"] = impact_tree.get_blast_radius()
-
-        # Attach structured hypotheses (replaces unknowns dump zone)
-        if structured_hypotheses and not failure_simulation.get("structured_hypotheses"):
-            failure_simulation["structured_hypotheses"] = structured_hypotheses
 
         # Score scenarios (not hard-reject)
         validation_score = score_scenarios(failure_simulation, compressed_for_llm)
@@ -665,15 +748,71 @@ class BaseOrchestrator:
                         f"\n[Validation: {'; '.join(score.issues)}]"
                     )
 
-        # Aggregate verdict (thread risk_patterns explicitly — fixes bug with self.risk_patterns)
-        failure_simulation = self._aggregate_verdict(
+        return failure_simulation
+
+    def _build_minimal_system_context(
+        self,
+        enriched_files: list[dict] | None = None,
+        risk_patterns: list | None = None,
+        causal_graph: Any = None,
+    ) -> dict[str, Any]:
+        """Build minimal system_context with only regions (risk_zones)."""
+        regions = set()
+        
+        # Extract regions from enriched files
+        if enriched_files:
+            for file_data in enriched_files:
+                file_path = file_data.get("file_path", "").lower()
+                keyword_signals = file_data.get("keyword_signals", [])
+                
+                # Domain detection from file path
+                for domain in ["checkout", "order", "invoice", "tax", "payment", "billing", "auth", "fulfillment", "inventory", "catalog"]:
+                    if domain in file_path:
+                        regions.add(domain)
+                
+                # Domain detection from keyword signals
+                for signal in keyword_signals:
+                    signal_text = signal.keyword if hasattr(signal, "keyword") else str(signal)
+                    signal_lower = signal_text.lower()
+                    for domain in ["checkout", "order", "invoice", "tax", "payment", "billing", "auth", "fulfillment", "inventory", "catalog"]:
+                        if domain in signal_lower:
+                            regions.add(domain)
+        
+        # Extract regions from risk patterns
+        if risk_patterns:
+            for rp in risk_patterns:
+                rp_dict = rp.model_dump() if hasattr(rp, "model_dump") else (rp if isinstance(rp, dict) else {})
+                domain = rp_dict.get("domain", "")
+                if domain and domain != "general":
+                    regions.add(domain)
+        
+        # Extract regions from causal graph nodes
+        if causal_graph and hasattr(causal_graph, "nodes"):
+            for node_name, node in causal_graph.nodes.items():
+                node_type = getattr(node, "node_type", "")
+                if node_type in ("endpoint", "service"):
+                    # Extract domain from node name or metadata
+                    node_lower = node_name.lower()
+                    for domain in ["checkout", "order", "invoice", "tax", "payment", "billing", "auth"]:
+                        if domain in node_lower:
+                            regions.add(domain)
+        
+        return {
+            "regions": sorted(list(regions)) if regions else ["general"]
+        }
+
+    def _finalize_verdict(
+        self,
+        failure_simulation: dict,
+        validation_score: ValidationScore,
+        risk_patterns: list | None = None,
+    ) -> dict:
+        """Aggregate verdict using LLM output and risk patterns."""
+        return self._aggregate_verdict(
             failure_simulation=failure_simulation,
             validation_score=validation_score,
-            impact_tree=impact_tree,
             risk_patterns=risk_patterns,
         )
-
-        return failure_simulation
 
 
 class Orchestrator(BaseOrchestrator):
@@ -702,11 +841,6 @@ class Orchestrator(BaseOrchestrator):
 
         files = lang.extract_changed_files(diff_ir) or []
         enriched_files = []
-        # Collect (file_path, content) pairs for repo-wide symbol indexing.
-        # We already fetch these snapshots for the diff, so we reuse them
-        # to build a partial-but-real repo index — no extra HTTP calls.
-        # The index expands `known_symbols` in the causal graph and unlocks
-        # richer blast radius propagation. (Task H — repo-wide symbol index.)
         repo_index_files: list[tuple[str, str]] = []
 
         for file in files:
@@ -729,13 +863,8 @@ class Orchestrator(BaseOrchestrator):
                 file=file, changed_functions=changed_functions,
                 endpoints=impacted_endpoints, keyword_signals=keyword_signals,
             ))
-            # Track this snapshot for repo-wide index construction.
             repo_index_files.append((file["file_path"], snapshot.content))
 
-        # Build the repo-wide symbol index from the snapshots we already have.
-        # This is the smallest correct change: reuses already-fetched data,
-        # adds zero new HTTP calls, and unlocks propagation to reach past
-        # the diff boundary into unchanged helper functions.
         repo_index = self._build_repo_index(repo_index_files)
 
         risk_detector = RiskPatternDetector()
@@ -752,38 +881,44 @@ class Orchestrator(BaseOrchestrator):
         side_effect_results = side_effect_detector.detect(enriched_files)
 
         compressor = RIRCompressor()
-        legacy_compressed = compressor.compress(
-            enriched_files=enriched_files, risk_patterns=risk_patterns,
-            entry_points_affected=entry_points_affected,
-        )
         compressed_for_llm = compressor.compress_v3(
             enriched_files=enriched_files, risk_patterns=risk_patterns,
             entry_points_affected=entry_points_affected, behavior_diffs=behavior_diffs,
         )
 
-        # ==========================================================
-        # PIPELINE: Causal graph -> propagation -> templates -> LLM -> scenarios -> verdict
-        # ==========================================================
-        # `repo_index` is the Task H repo-wide symbol index. It may be None
-        # if no snapshots were available (e.g. all files were excluded) —
-        # the pipeline handles that gracefully and falls back to diff-only.
-        causal_graph, impact_tree, template_matches, system_deltas, directly_changed, structured_hypotheses = self._run_causal_pipeline(
+        # Run causal pipeline (causal graph + templates + behavior deltas)
+        causal_graph, template_matches, system_deltas, directly_changed = self._run_causal_pipeline(
             enriched_files=enriched_files, risk_patterns=risk_patterns,
             behavior_diffs=behavior_diffs, compressed_for_llm=compressed_for_llm,
             repo_index=repo_index,
+            entry_points_affected=entry_points_affected,
+        )
+
+        # Extract system constraints
+        system_constraints = extract_constraints(
+            enriched_files=enriched_files,
+            risk_patterns=risk_patterns,
+            behavior_diffs=behavior_diffs,
+            causal_graph=causal_graph,
         )
 
         try:
             if self.failure_simulation_llm:
-                print("Calling LLM with causal graph, impact tree, and failure templates...")
+                print("Calling LLM...")
                 failure_simulation = self._run_llm_with_causal_context(
                     compressed_for_llm=compressed_for_llm,
                     causal_graph=causal_graph,
-                    impact_tree=impact_tree,
-                    template_matches=template_matches,
-                    system_deltas=system_deltas,
+                    system_constraints=system_constraints,
+                    behavior_diffs=behavior_diffs,
+                    enriched_files=enriched_files,
                     risk_patterns=risk_patterns,
-                    structured_hypotheses=structured_hypotheses,
+                )
+                # Finalize verdict
+                validation_score = score_scenarios(failure_simulation, compressed_for_llm)
+                failure_simulation = self._finalize_verdict(
+                    failure_simulation=failure_simulation,
+                    validation_score=validation_score,
+                    risk_patterns=risk_patterns,
                 )
             else:
                 failure_simulation = self._default_failure_simulation()
@@ -794,9 +929,6 @@ class Orchestrator(BaseOrchestrator):
                 ]
                 failure_simulation["system_behavior_deltas"] = [d.to_dict() for d in system_deltas]
                 failure_simulation["matched_failure_templates"] = template_matches
-                failure_simulation["blast_radius"] = impact_tree.get_blast_radius()
-                failure_simulation["causal_graph"] = causal_graph.to_dict()
-                failure_simulation["structured_hypotheses"] = structured_hypotheses
 
         except Exception as e:
             print(f"LLM failure simulation failed, falling back to rules: {repr(e)}")
@@ -808,30 +940,52 @@ class Orchestrator(BaseOrchestrator):
             ]
             failure_simulation["system_behavior_deltas"] = [d.to_dict() for d in system_deltas]
             failure_simulation["matched_failure_templates"] = template_matches
-            failure_simulation["blast_radius"] = impact_tree.get_blast_radius()
-            failure_simulation["structured_hypotheses"] = structured_hypotheses
-            failure_simulation["causal_graph"] = causal_graph.to_dict()
+
+        # Pre-compute V5 causal signals for _build_result
+        changed_symbols_list = extract_changed_symbols(
+            behavior_diffs=behavior_diffs,
+            enriched_files=enriched_files,
+        )
+        changed_symbols = [
+            item["symbol"] for item in changed_symbols_list
+            if isinstance(item, dict) and item.get("symbol")
+        ]
+        change_influence_entries = build_change_influence(
+            all_changed_symbols=changed_symbols_list,
+        )
+        change_influence = [entry.to_dict() for entry in change_influence_entries]
+        existing_edges = extract_existing_edges_from_graph(causal_graph)
+        soft_edges_list = build_soft_propagation_graph(
+            all_changed_symbols=changed_symbols_list,
+            existing_edges=existing_edges,
+        )
+        soft_edges = [edge.to_dict() for edge in soft_edges_list]
+        risk_zones = self._build_minimal_system_context(
+            enriched_files=enriched_files,
+            risk_patterns=risk_patterns,
+            causal_graph=causal_graph,
+        ).get("regions", ["general"])
 
         data = self._build_result(
             repo=request.repo, pr_number=request.pr_number,
             analysis_mode=AnalysisMode.FULL_FILE,
             failure_simulation=failure_simulation,
             enriched_files=enriched_files, risk_patterns=risk_patterns,
-            entry_points_affected=entry_points_affected, system_impact=system_impact,
-            excluded_files=excluded_files, compressed_for_llm=compressed_for_llm,
+            compressed_for_llm=compressed_for_llm,
+            change_influence=change_influence,
+            execution_paths={},
+            soft_edges=soft_edges,
+            system_constraints=system_constraints.to_dict(),
+            risk_zones=risk_zones,
+            changed_symbols=changed_symbols,
+            behavior_deltas=behavior_deltas,
+            behavior_diffs=behavior_diffs,
+            reachability_results=reachability_results,
+            side_effect_results=side_effect_results,
+            causal_graph=causal_graph,
+            system_behavior_deltas=system_deltas,
+            matched_failure_templates=template_matches,
         )
-
-        # Add analysis artifacts
-        data["behavior_deltas"] = [d.__dict__ for d in behavior_deltas]
-        data["behavior_diffs"] = [{"symbol": d.symbol, "before": d.before, "after": d.after} for d in behavior_diffs]
-        data["legacy_compressed_ir"] = legacy_compressed
-        data["reachability"] = {k: v.__dict__ for k, v in reachability_results.items()}
-        data["side_effects"] = {k: v.__dict__ for k, v in side_effect_results.items()}
-        data["causal_graph"] = causal_graph.to_dict()
-        data["impact_tree"] = impact_tree.get_blast_radius()
-        data["system_behavior_deltas"] = [d.to_dict() for d in system_deltas]
-        data["matched_failure_templates"] = template_matches
-        data["structured_hypotheses"] = structured_hypotheses
 
         return data
 
@@ -901,34 +1055,43 @@ class DiffOrchestrator(BaseOrchestrator):
         side_effect_results = side_effect_detector.detect(enriched_files)
 
         compressor = RIRCompressor()
-        legacy_compressed = compressor.compress(
-            enriched_files=enriched_files, risk_patterns=risk_patterns,
-            entry_points_affected=entry_points_affected,
-        )
         compressed_for_llm = compressor.compress_v3(
             enriched_files=enriched_files, risk_patterns=risk_patterns,
             entry_points_affected=entry_points_affected, behavior_diffs=behavior_diffs,
         )
 
-        # ==========================================================
-        # PIPELINE: Causal graph -> propagation -> templates -> scenarios -> verdict
-        # ==========================================================
-        causal_graph, impact_tree, template_matches, system_deltas, directly_changed, structured_hypotheses = self._run_causal_pipeline(
+        # Run causal pipeline
+        causal_graph, template_matches, system_deltas, directly_changed = self._run_causal_pipeline(
             enriched_files=enriched_files, risk_patterns=risk_patterns,
             behavior_diffs=behavior_diffs, compressed_for_llm=compressed_for_llm,
+            entry_points_affected=entry_points_affected,
+        )
+
+        # Extract system constraints
+        system_constraints = extract_constraints(
+            enriched_files=enriched_files,
+            risk_patterns=risk_patterns,
+            behavior_diffs=behavior_diffs,
+            causal_graph=causal_graph,
         )
 
         try:
             if self.failure_simulation_llm:
-                print("Calling LLM with causal graph, impact tree, and failure templates...")
+                print("Calling LLM with V5 minimal causal truth contract...")
                 failure_simulation = self._run_llm_with_causal_context(
                     compressed_for_llm=compressed_for_llm,
                     causal_graph=causal_graph,
-                    impact_tree=impact_tree,
-                    template_matches=template_matches,
-                    system_deltas=system_deltas,
+                    system_constraints=system_constraints,
+                    behavior_diffs=behavior_diffs,
+                    enriched_files=enriched_files,
                     risk_patterns=risk_patterns,
-                    structured_hypotheses=structured_hypotheses,
+                )
+                # Finalize verdict
+                validation_score = score_scenarios(failure_simulation, compressed_for_llm)
+                failure_simulation = self._finalize_verdict(
+                    failure_simulation=failure_simulation,
+                    validation_score=validation_score,
+                    risk_patterns=risk_patterns,
                 )
             else:
                 failure_simulation = self._default_failure_simulation()
@@ -939,9 +1102,6 @@ class DiffOrchestrator(BaseOrchestrator):
                 ]
                 failure_simulation["system_behavior_deltas"] = [d.to_dict() for d in system_deltas]
                 failure_simulation["matched_failure_templates"] = template_matches
-                failure_simulation["blast_radius"] = impact_tree.get_blast_radius()
-                failure_simulation["causal_graph"] = causal_graph.to_dict()
-                failure_simulation["structured_hypotheses"] = structured_hypotheses
 
         except Exception as e:
             print(f"LLM failure simulation failed, falling back to rules: {repr(e)}")
@@ -953,8 +1113,31 @@ class DiffOrchestrator(BaseOrchestrator):
             ]
             failure_simulation["system_behavior_deltas"] = [d.to_dict() for d in system_deltas]
             failure_simulation["matched_failure_templates"] = template_matches
-            failure_simulation["blast_radius"] = impact_tree.get_blast_radius()
-            failure_simulation["structured_hypotheses"] = structured_hypotheses
+
+        # Pre-compute V5 causal signals for _build_result
+        changed_symbols_list = extract_changed_symbols(
+            behavior_diffs=behavior_diffs,
+            enriched_files=enriched_files,
+        )
+        changed_symbols = [
+            item["symbol"] for item in changed_symbols_list
+            if isinstance(item, dict) and item.get("symbol")
+        ]
+        change_influence_entries = build_change_influence(
+            all_changed_symbols=changed_symbols_list,
+        )
+        change_influence = [entry.to_dict() for entry in change_influence_entries]
+        existing_edges = extract_existing_edges_from_graph(causal_graph)
+        soft_edges_list = build_soft_propagation_graph(
+            all_changed_symbols=changed_symbols_list,
+            existing_edges=existing_edges,
+        )
+        soft_edges = [edge.to_dict() for edge in soft_edges_list]
+        risk_zones = self._build_minimal_system_context(
+            enriched_files=enriched_files,
+            risk_patterns=risk_patterns,
+            causal_graph=causal_graph,
+        ).get("regions", ["general"])
 
         data = self._build_result(
             repo=request.get("repo", "example/repo"),
@@ -962,21 +1145,21 @@ class DiffOrchestrator(BaseOrchestrator):
             analysis_mode=AnalysisMode.DIFF_ONLY,
             failure_simulation=failure_simulation,
             enriched_files=enriched_files, risk_patterns=risk_patterns,
-            entry_points_affected=entry_points_affected, system_impact=system_impact,
-            excluded_files=excluded_files, compressed_for_llm=compressed_for_llm,
+            compressed_for_llm=compressed_for_llm,
+            change_influence=change_influence,
+            execution_paths={},
+            soft_edges=soft_edges,
+            system_constraints=system_constraints.to_dict(),
+            risk_zones=risk_zones,
+            changed_symbols=changed_symbols,
+            behavior_deltas=behavior_deltas,
+            behavior_diffs=behavior_diffs,
+            reachability_results=reachability_results,
+            side_effect_results=side_effect_results,
+            causal_graph=causal_graph,
+            system_behavior_deltas=system_deltas,
+            matched_failure_templates=template_matches,
         )
-
-        # Add analysis artifacts
-        data["behavior_deltas"] = [d.__dict__ for d in behavior_deltas]
-        data["behavior_diffs"] = [{"symbol": d.symbol, "before": d.before, "after": d.after} for d in behavior_diffs]
-        data["legacy_compressed_ir"] = legacy_compressed
-        data["reachability"] = {k: v.__dict__ for k, v in reachability_results.items()}
-        data["side_effects"] = {k: v.__dict__ for k, v in side_effect_results.items()}
-        data["causal_graph"] = causal_graph.to_dict()
-        data["impact_tree"] = impact_tree.get_blast_radius()
-        data["system_behavior_deltas"] = [d.to_dict() for d in system_deltas]
-        data["matched_failure_templates"] = template_matches
-        data["structured_hypotheses"] = structured_hypotheses
 
         return data
 
