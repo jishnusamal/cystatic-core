@@ -48,6 +48,6 @@ def compress_constraints(constraints):
     return {}
 
 
-def compress_llm_payload(change_influence=None, execution_paths=None, soft_edges=None,
-                         constraints=None, risk_zones=None, changed_symbols=None):
+def compress_llm_payload(change_influence=None, impact_evidence=None,
+                         risk_zones=None, changed_symbols=None):
     return {}

@@ -1,20 +1,19 @@
 """
-PHASE 5 — LLM INPUT CONTRACT (FACTOR V5 — MINIMAL CAUSAL TRUTH)
+PHASE 6 — LLM INPUT CONTRACT (FACTOR V6 — EVIDENCE-DRIVEN)
 
-The LLM receives exactly 1 structure with 4 signal types:
+The LLM receives exactly 1 structure with 5 signal types:
   1. change_influence []       — ONLY scored symbols + domains (Layer 1)
-  2. execution_paths []        — Hard truth propagation chains (Layer 2+3)
-  3. soft_edges []             — Weak adjacency only if needed (Layer 2)
-  4. constraints {}            — System rules (what is allowed/forbidden)
-  5. risk_zones []             — Domain regions (checkout, invoice, tax, etc.)
-  6. changed_symbols []        — Tiny hint: list of changed symbols
+  2. impact_evidence []        — Evidence connecting changed symbols (Layer 2)
+  3. risk_zones []             — Domain regions (checkout, invoice, tax, etc.)
+  4. changed_symbols []        — Tiny hint: list of changed symbols
+  5. impact_propagation {}     — Optional: Impact Propagation Kernel output
 
 REMOVED (not reasoning inputs):
   - files (enriched_files)     ❌ (too big + already abstracted elsewhere)
   - excluded_files             ❌ (irrelevant to reasoning)
   - keywords_detected          ❌ (already in change_influence)
   - risk_patterns              ❌ (already encoded in domain + influence)
-  - entry_points_affected      ❌ (already in execution_paths)
+  - entry_points_affected      ❌ (already in impact_evidence)
   - system_impact              ❌ (already in propagation layer)
   - pr_risk_score              ❌ (system opinion, LLM should derive)
   - pr_risk_level              ❌ (system opinion, LLM should derive)
@@ -23,10 +22,10 @@ REMOVED (not reasoning inputs):
 
 LLM ROLE:
   You are a causal reasoning engine.
-  You derive failure scenarios from nodes, edges, and constraints only.
+  You derive failure scenarios from change signals and evidence.
 
 KEY RULE:
-  Everything the LLM receives must be a node, edge, or constraint.
+  Everything the LLM receives must be a change signal, evidence, or constraint.
   All other data is preprocessing junk that causes:
   - contradiction
   - overconfidence noise
@@ -52,47 +51,52 @@ from schemas.failure_simulation import FailureSimulationOutput
 USER_PROMPT_TEMPLATE = """
 You are a causal reasoning engine analyzing production risk in a codebase.
 
-You receive ONLY nodes, edges, and constraints. Everything else is noise.
+You receive ONLY change signals, pre-synthesized evidence summaries, and risk context. Everything else is noise.
 
 RULES:
 
-1. Every failure scenario MUST originate from execution_paths or soft_edges.
+1. Every failure scenario MUST originate from evidence_summary.
 2. You may NOT create new chains or new flows.
 3. You may only use:
    - change_influence (what changed + where it matters)
-   - execution_paths (hard truth propagation)
-   - soft_edges (weak adjacency, only if execution_paths are sparse)
-   - constraints (system rules: what is allowed/forbidden)
+   - evidence_summary (pre-synthesized evidence clusters — the deterministic engine has already answered "what appears involved?")
    - risk_zones (domain regions: checkout, invoice, tax, etc.)
    - changed_symbols (list of modified symbols)
 
 4. IMPORTANT PRIORITY ORDER:
-   execution_paths > soft_edges > change_influence > constraints > risk_zones
+   evidence_summary > change_influence > risk_zones
 
 5. change_influence tells you WHAT changed and HOW MUCH it matters.
    It does NOT create risk by itself.
 
-6. execution_paths are the TRUTH — ordered propagation chains.
-   If a path exists, risk can flow through it.
+6. evidence_summary is the PRIMARY signal. Each item contains:
+   - risk_area: the themed risk area (e.g., "tax_to_invoice")
+   - confidence: how confident the engine is in this connection (0.0–1.0)
+   - evidence_strength: "STRONG" | "MEDIUM" | "WEAK"
+     - STRONG (0.7–0.95): shared_class, shared_module, import_reference, ast_reference, symbol_reference
+     - MEDIUM (0.5–0.7): shared_business_object, shared_domain, risk_tag_association
+     - WEAK (0.2–0.4): canonical_flow, naming_similarity, shared_file
+   - evidence: pre-written claims about what appears connected
+   - supporting_symbols: symbols involved in this risk area
 
-7. soft_edges are WEAK signals — use only when execution_paths are sparse.
-   They suggest likely propagation but are not guaranteed.
+7. evidence_strength tells you how reliable the connection is:
+   - STRONG: high confidence, treat as near-certain
+   - MEDIUM: moderate confidence, treat as likely
+   - WEAK: low confidence, treat as a signal worth investigating but not proof
 
-8. constraints define SYSTEM RULES — idempotency, transactions, retries, etc.
-   Violating a constraint is a strong failure signal.
+8. risk_zones tell you WHERE it matters — checkout, invoice, tax, etc.
 
-9. risk_zones tell you WHERE it matters — checkout, invoice, tax, etc.
+9. If no evidence_summary items exist:
+   return NO_SIGNIFICANT_PROPAGATION_FOUND
 
-10. If no execution_path has changed symbols AND no soft_edge connects to changed symbols:
-    return NO_SIGNIFICANT_PROPAGATION_FOUND
+10. SAFE is ONLY allowed if:
+    - no evidence summary connects changed symbols to downstream risk
 
-11. SAFE is ONLY allowed if:
-    - no execution path touches changed symbols
-    - no soft edge connects to changed symbols
+11. NEVER default to SAFE.
 
-12. NEVER default to SAFE.
+12. Prefer 1–3 high-confidence failures over none.
 
-13. Prefer 1–3 high-confidence failures over none.
+13. When writing failure_scenarios, reference the evidence_summary items that support each scenario.
 
 ────────────────────────────────────────────────────────────────────────────────
 # INPUT STRUCTURE
@@ -159,54 +163,54 @@ Return STRICT JSON only:
 SYSTEM_PROMPT = """
 You are a causal reasoning engine analyzing production risk in a codebase.
 
-You receive ONLY nodes, edges, and constraints. Everything else is noise.
+You receive ONLY change signals, pre-synthesized evidence summaries, and risk context. Everything else is noise.
 
 RULES:
 
-1. Every failure scenario MUST originate from execution_paths or soft_edges.
+1. Every failure scenario MUST originate from evidence_summary.
 2. You may NOT create new chains or new flows.
 3. You may only use:
    - change_influence (what changed + where it matters)
-   - execution_paths (hard truth propagation)
-   - soft_edges (weak adjacency, only if execution_paths are sparse)
-   - constraints (system rules: what is allowed/forbidden)
+   - evidence_summary (pre-synthesized evidence clusters — the deterministic engine has already answered "what appears involved?")
    - risk_zones (domain regions: checkout, invoice, tax, etc.)
    - changed_symbols (list of modified symbols)
 
 4. IMPORTANT PRIORITY ORDER:
-   execution_paths > soft_edges > change_influence > constraints > risk_zones
+   evidence_summary > change_influence > risk_zones
 
 5. change_influence tells you WHAT changed and HOW MUCH it matters.
    It does NOT create risk by itself.
 
-6. execution_paths are the TRUTH — ordered propagation chains.
-   If a path exists, risk can flow through it.
+6. evidence_summary is the PRIMARY signal. Each item contains:
+   - risk_area: the themed risk area
+   - confidence: how confident the engine is in this connection
+   - evidence_strength: "STRONG" | "MEDIUM" | "WEAK"
+   - evidence: pre-written claims about what appears connected
+   - supporting_symbols: symbols involved in this risk area
 
-7. soft_edges are WEAK signals — use only when execution_paths are sparse.
-   They suggest likely propagation but are not guaranteed.
+7. evidence_strength tells you how reliable the connection is:
+   - STRONG: high confidence, treat as near-certain
+   - MEDIUM: moderate confidence, treat as likely
+   - WEAK: low confidence, treat as a signal worth investigating but not proof
 
-8. constraints define SYSTEM RULES — idempotency, transactions, retries, etc.
-   Violating a constraint is a strong failure signal.
+8. risk_zones tell you WHERE it matters — checkout, invoice, tax, etc.
 
-9. risk_zones tell you WHERE it matters — checkout, invoice, tax, etc.
+9. If no evidence_summary items exist:
+   return NO_SIGNIFICANT_PROPAGATION_FOUND
 
-10. If no execution_path has changed symbols AND no soft_edge connects to changed symbols:
-    return NO_SIGNIFICANT_PROPAGATION_FOUND
+10. SAFE is ONLY allowed if:
+    - no evidence summary connects changed symbols to downstream risk
 
-11. SAFE is ONLY allowed if:
-    - no execution path touches changed symbols
-    - no soft edge connects to changed symbols
+11. NEVER default to SAFE.
 
-12. NEVER default to SAFE.
-
-13. Prefer 1–3 high-confidence failures over none.
+12. Prefer 1–3 high-confidence failures over none.
 
 OUTPUT MUST BE STRICT JSON.
 """
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Sanitization helpers (unchanged from V3)
+# Sanitization helpers
 # ══════════════════════════════════════════════════════════════════════════════
 
 def sanitize_llm_json(raw_output: dict[str, Any]) -> dict[str, Any]:
@@ -371,23 +375,21 @@ class FailureSimulationLLM:
         repo: str = "",
         pr_number: int = 0,
         change_influence: list[dict[str, Any]] | None = None,
-        execution_paths: list[dict[str, Any]] | None = None,
-        soft_edges: list[dict[str, Any]] | None = None,
-        constraints: dict[str, Any] | None = None,
+        impact_evidence: list[dict[str, Any]] | None = None,
         risk_zones: list[str] | None = None,
         changed_symbols: list[str] | None = None,
+        evidence_summary: list[dict[str, Any]] | None = None,
     ) -> list[Any]:
-        """Build prompt with the V5 minimal causal truth input contract.
+        """Build prompt with the V6 evidence-driven input contract.
 
         Args:
             repo: Repository identifier.
             pr_number: PR number.
             change_influence: Scored symbols + domains (Layer 1).
-            execution_paths: Hard truth propagation chains (Layer 2+3).
-            soft_edges: Weak adjacency edges (Layer 2, only if needed).
-            constraints: System rules (what is allowed/forbidden).
+            impact_evidence: Impact evidence list (Layer 2, legacy — prefer evidence_summary).
             risk_zones: Domain regions (checkout, invoice, tax, etc.).
             changed_symbols: List of modified symbols.
+            evidence_summary: Pre-synthesized evidence summary (Layer 2, primary signal).
 
         Returns:
             List of message dicts for the LLM API call.
@@ -396,9 +398,7 @@ class FailureSimulationLLM:
             "repo": repo,
             "pr_number": pr_number,
             "change_influence": change_influence or [],
-            "execution_paths": execution_paths or [],
-            "soft_edges": soft_edges or [],
-            "constraints": constraints or {},
+            "evidence_summary": evidence_summary or [],
             "risk_zones": risk_zones or [],
             "changed_symbols": changed_symbols or [],
         }
@@ -416,23 +416,21 @@ class FailureSimulationLLM:
         repo: str = "",
         pr_number: int = 0,
         change_influence: list[dict[str, Any]] | None = None,
-        execution_paths: list[dict[str, Any]] | None = None,
-        soft_edges: list[dict[str, Any]] | None = None,
-        constraints: dict[str, Any] | None = None,
+        impact_evidence: list[dict[str, Any]] | None = None,
         risk_zones: list[str] | None = None,
         changed_symbols: list[str] | None = None,
+        evidence_summary: list[dict[str, Any]] | None = None,
     ) -> FailureSimulationOutput:
-        """Generate failure simulation from V5 minimal causal truth input contract.
+        """Generate failure simulation from V6 evidence-driven input contract.
 
         Args:
             repo: Repository identifier.
             pr_number: PR number.
             change_influence: Scored symbols + domains (Layer 1).
-            execution_paths: Hard truth propagation chains (Layer 2+3).
-            soft_edges: Weak adjacency edges (Layer 2, only if needed).
-            constraints: System rules (what is allowed/forbidden).
+            impact_evidence: Impact evidence list (Layer 2, legacy — prefer evidence_summary).
             risk_zones: Domain regions (checkout, invoice, tax, etc.).
             changed_symbols: List of modified symbols.
+            evidence_summary: Pre-synthesized evidence summary (Layer 2, primary signal).
 
         Returns:
             FailureSimulationOutput with verdict and scenarios.
@@ -453,11 +451,10 @@ class FailureSimulationLLM:
                 repo=repo,
                 pr_number=pr_number,
                 change_influence=change_influence,
-                execution_paths=execution_paths,
-                soft_edges=soft_edges,
-                constraints=constraints,
+                impact_evidence=impact_evidence,
                 risk_zones=risk_zones,
                 changed_symbols=changed_symbols,
+                evidence_summary=evidence_summary,
             ),
             extra_headers=headers,
             extra_body=extra_body,

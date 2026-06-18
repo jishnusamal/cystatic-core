@@ -26,10 +26,14 @@ from core_engine.change_influence import (
     extract_changed_symbols,
     ChangeInfluence,
 )
-from core_engine.soft_propagation import (
-    build_soft_propagation_graph,
+from core_engine.impact_evidence import (
+    build_impact_evidence,
     extract_existing_edges_from_graph,
-    SoftEdge,
+    ImpactEvidence,
+    EvidenceCluster,
+    EvidenceSummary,
+    synthesize_evidence,
+    synthesize_evidence_summary,
 )
 from core_engine.llm_packet_compressor import build_llm_packet
 from typing import Any
@@ -502,18 +506,9 @@ class BaseOrchestrator:
         failure_simulation: dict | list | None = None,
         compressed_for_llm: dict | None = None,
         change_influence: list[dict] | None = None,
-        execution_paths: dict | None = None,
-        soft_edges: list[dict] | None = None,
-        system_constraints: dict | None = None,
+        impact_evidence: list[dict] | None = None,
         risk_zones: list[str] | None = None,
         changed_symbols: list[str] | None = None,
-        behavior_deltas: list | None = None,
-        behavior_diffs: list | None = None,
-        reachability_results: dict | None = None,
-        side_effect_results: dict | None = None,
-        causal_graph: Any | None = None,
-        system_behavior_deltas: list | None = None,
-        matched_failure_templates: list | None = None,
     ) -> dict:
         failure_simulation = self._normalize_failure_simulation(failure_simulation)
         pr_risk_score = self._calculate_pr_risk_score(enriched_files)
@@ -537,30 +532,13 @@ class BaseOrchestrator:
         return {
             "repo": repo,
             "pr_number": pr_number,
-            "analysis_mode": analysis_mode.value,
-            "failure_simulation": failure_simulation,
-            
-            # 1. CHANGE SIGNAL (Layer 1)
-            "change_influence": change_influence or [],
-            # 2. PROPAGATION (Layer 2 + 3)
-            "execution_paths": execution_paths or {},
-            "soft_edges": soft_edges or [],
-            # 3. SYSTEM RULES
-            "constraints": system_constraints or {},
-            # 4. CONTEXT FILTER (VERY SMALL)
-            "risk_zones": risk_zones or ["general"],
-            # optional tiny hint
-            "changed_symbols": changed_symbols or [],
-            "compressed_for_llm": compressed_for_llm or {},
             "verdict": final_verdict,
-            # Analysis artifacts
-            # "behavior_deltas": [d.__dict__ for d in (behavior_deltas or [])],
-            # "behavior_diffs": [{"symbol": d.symbol, "before": d.before, "after": d.after} for d in (behavior_diffs or [])],
-            # "reachability": {k: v.__dict__ for k, v in (reachability_results or {}).items()},
-            # "side_effects": {k: v.__dict__ for k, v in (side_effect_results or {}).items()},
-            # "causal_graph": causal_graph.to_dict() if causal_graph else {},
-            # "system_behavior_deltas": [d.to_dict() for d in (system_behavior_deltas or [])],
-            # "matched_failure_templates": matched_failure_templates or [],
+            "change_influence": change_influence or [],
+            "impact_evidence": impact_evidence or [],
+            "risk_zones": risk_zones or ["general"],
+            "changed_symbols": changed_symbols or [],
+            "failure_simulation": failure_simulation,
+            "compressed_for_llm": compressed_for_llm or {},
         }
 
     def _build_repo_index(
@@ -658,6 +636,27 @@ class BaseOrchestrator:
 
         return causal_graph, template_matches, system_deltas, directly_changed
 
+    def _build_impact_evidence(
+        self,
+        changed_symbols_list: list[dict[str, str]],
+        causal_graph: CausalGraph | None = None,
+    ) -> list[dict[str, Any]]:
+        """Build impact evidence from changed symbols.
+
+        Args:
+            changed_symbols_list: List of {symbol, file} dicts.
+            causal_graph: Optional causal graph to avoid duplicating edges.
+
+        Returns:
+            List of impact evidence dicts.
+        """
+        existing_edges = extract_existing_edges_from_graph(causal_graph)
+        evidence_list = build_impact_evidence(
+            all_changed_symbols=changed_symbols_list,
+            existing_edges=existing_edges,
+        )
+        return [ev.to_dict() for ev in evidence_list]
+
     def _run_llm_with_causal_context(
         self,
         compressed_for_llm: dict[str, Any],
@@ -667,7 +666,7 @@ class BaseOrchestrator:
         enriched_files: list[dict] | None = None,
         risk_patterns: list | None = None,
     ) -> dict:
-        """Call LLM with the V5 token-efficient LLM payload."""
+        """Call LLM with the V6 evidence-driven LLM payload."""
         assert self.failure_simulation_llm is not None, (
             "failure_simulation_llm must be set before calling _run_llm_with_causal_context"
         )
@@ -688,30 +687,26 @@ class BaseOrchestrator:
         )
         change_influence = [entry.to_dict() for entry in change_influence_entries]
 
-        # Layer 2: soft_edges — weak adjacency
-        existing_edges = extract_existing_edges_from_graph(causal_graph)
-        soft_edges_list = build_soft_propagation_graph(
-            all_changed_symbols=changed_symbols_list,
-            existing_edges=existing_edges,
+        # Layer 2: impact_evidence — evidence connecting changed symbols
+        impact_evidence = self._build_impact_evidence(
+            changed_symbols_list=changed_symbols_list,
+            causal_graph=causal_graph,
         )
-        soft_edges = [edge.to_dict() for edge in soft_edges_list]
 
-        # Layer 3: constraints — system rules
-        constraints = system_constraints.to_dict() if system_constraints else {}
+        # Layer 2a: synthesize evidence summary for LLM (clusters, not raw N×M evidence)
+        evidence_summary = self._synthesize_evidence_summary(impact_evidence)
 
-        # Layer 4: risk_zones — domain regions
+        # Layer 3: risk_zones — domain regions
         risk_zones = self._build_minimal_system_context(
             enriched_files=enriched_files,
             risk_patterns=risk_patterns,
             causal_graph=causal_graph,
         ).get("regions", ["general"])
 
-        # Build token-efficient LLM packet
+        # Build token-efficient LLM packet (evidence_summary replaces raw impact_evidence)
         packet = build_llm_packet(
             change_influence=change_influence,
-            execution_paths=[],
-            soft_edges=soft_edges,
-            constraints=constraints,
+            impact_evidence=evidence_summary,
             risk_zones=risk_zones,
             changed_symbols=changed_symbols,
             repo=compressed_for_llm.get("repo", ""),
@@ -814,6 +809,46 @@ class BaseOrchestrator:
             risk_patterns=risk_patterns,
         )
 
+    def _synthesize_evidence_summary(
+        self,
+        impact_evidence: list[dict],
+    ) -> list[dict]:
+        """Synthesize evidence into summary clusters for the LLM packet.
+
+        Instead of N×M raw evidence records, produce synthesized evidence
+        summaries grouped by theme. The deterministic engine answers
+        "what appears involved?" before the LLM sees anything.
+        """
+        # Convert dicts back to ImpactEvidence objects for the synthesizer
+        from core_engine.impact_evidence import ImpactEvidence as ImpactEvidenceClass
+        evidence_objects = []
+        for ev in impact_evidence:
+            evidence_objects.append(ImpactEvidenceClass(
+                source_symbol=ev.get("source_symbol", ""),
+                target_symbol=ev.get("target_symbol", ""),
+                evidence_type=ev.get("evidence_type", "canonical_flow"),
+                confidence=ev.get("confidence", 0.2),
+                explanation=ev.get("explanation", ""),
+            ))
+
+        # Synthesize into summaries
+        summaries = synthesize_evidence_summary(evidence_objects)
+        return [s.to_dict() for s in summaries]
+
+    def _build_compressed_for_llm_with_evidence(
+        self,
+        compressed_for_llm: dict,
+        impact_evidence: list[dict],
+    ) -> dict:
+        """Add evidence_summary (synthesized clusters) to the LLM packet.
+
+        Instead of raw evidence, the LLM gets pre-synthesized summaries
+        that answer: "what appears involved?" before it has to reason.
+        """
+        result = dict(compressed_for_llm)
+        result["evidence_summary"] = self._synthesize_evidence_summary(impact_evidence)
+        return result
+
 
 class Orchestrator(BaseOrchestrator):
     """Repo-aware orchestrator using GitHub PR diff + full file snapshots."""
@@ -894,21 +929,12 @@ class Orchestrator(BaseOrchestrator):
             entry_points_affected=entry_points_affected,
         )
 
-        # Extract system constraints
-        system_constraints = extract_constraints(
-            enriched_files=enriched_files,
-            risk_patterns=risk_patterns,
-            behavior_diffs=behavior_diffs,
-            causal_graph=causal_graph,
-        )
-
         try:
             if self.failure_simulation_llm:
                 print("Calling LLM...")
                 failure_simulation = self._run_llm_with_causal_context(
                     compressed_for_llm=compressed_for_llm,
                     causal_graph=causal_graph,
-                    system_constraints=system_constraints,
                     behavior_diffs=behavior_diffs,
                     enriched_files=enriched_files,
                     risk_patterns=risk_patterns,
@@ -941,7 +967,7 @@ class Orchestrator(BaseOrchestrator):
             failure_simulation["system_behavior_deltas"] = [d.to_dict() for d in system_deltas]
             failure_simulation["matched_failure_templates"] = template_matches
 
-        # Pre-compute V5 causal signals for _build_result
+        # Pre-compute causal signals for _build_result
         changed_symbols_list = extract_changed_symbols(
             behavior_diffs=behavior_diffs,
             enriched_files=enriched_files,
@@ -954,17 +980,21 @@ class Orchestrator(BaseOrchestrator):
             all_changed_symbols=changed_symbols_list,
         )
         change_influence = [entry.to_dict() for entry in change_influence_entries]
-        existing_edges = extract_existing_edges_from_graph(causal_graph)
-        soft_edges_list = build_soft_propagation_graph(
-            all_changed_symbols=changed_symbols_list,
-            existing_edges=existing_edges,
+        impact_evidence = self._build_impact_evidence(
+            changed_symbols_list=changed_symbols_list,
+            causal_graph=causal_graph,
         )
-        soft_edges = [edge.to_dict() for edge in soft_edges_list]
         risk_zones = self._build_minimal_system_context(
             enriched_files=enriched_files,
             risk_patterns=risk_patterns,
             causal_graph=causal_graph,
         ).get("regions", ["general"])
+
+        # Add compressed impact_evidence to the LLM packet
+        compressed_for_llm = self._build_compressed_for_llm_with_evidence(
+            compressed_for_llm=compressed_for_llm,
+            impact_evidence=impact_evidence,
+        )
 
         data = self._build_result(
             repo=request.repo, pr_number=request.pr_number,
@@ -973,18 +1003,9 @@ class Orchestrator(BaseOrchestrator):
             enriched_files=enriched_files, risk_patterns=risk_patterns,
             compressed_for_llm=compressed_for_llm,
             change_influence=change_influence,
-            execution_paths={},
-            soft_edges=soft_edges,
-            system_constraints=system_constraints.to_dict(),
+            impact_evidence=impact_evidence,
             risk_zones=risk_zones,
             changed_symbols=changed_symbols,
-            behavior_deltas=behavior_deltas,
-            behavior_diffs=behavior_diffs,
-            reachability_results=reachability_results,
-            side_effect_results=side_effect_results,
-            causal_graph=causal_graph,
-            system_behavior_deltas=system_deltas,
-            matched_failure_templates=template_matches,
         )
 
         return data
@@ -1067,21 +1088,12 @@ class DiffOrchestrator(BaseOrchestrator):
             entry_points_affected=entry_points_affected,
         )
 
-        # Extract system constraints
-        system_constraints = extract_constraints(
-            enriched_files=enriched_files,
-            risk_patterns=risk_patterns,
-            behavior_diffs=behavior_diffs,
-            causal_graph=causal_graph,
-        )
-
         try:
             if self.failure_simulation_llm:
-                print("Calling LLM with V5 minimal causal truth contract...")
+                print("Calling LLM with V6 evidence-driven input contract...")
                 failure_simulation = self._run_llm_with_causal_context(
                     compressed_for_llm=compressed_for_llm,
                     causal_graph=causal_graph,
-                    system_constraints=system_constraints,
                     behavior_diffs=behavior_diffs,
                     enriched_files=enriched_files,
                     risk_patterns=risk_patterns,
@@ -1114,7 +1126,7 @@ class DiffOrchestrator(BaseOrchestrator):
             failure_simulation["system_behavior_deltas"] = [d.to_dict() for d in system_deltas]
             failure_simulation["matched_failure_templates"] = template_matches
 
-        # Pre-compute V5 causal signals for _build_result
+        # Pre-compute causal signals for _build_result
         changed_symbols_list = extract_changed_symbols(
             behavior_diffs=behavior_diffs,
             enriched_files=enriched_files,
@@ -1127,17 +1139,21 @@ class DiffOrchestrator(BaseOrchestrator):
             all_changed_symbols=changed_symbols_list,
         )
         change_influence = [entry.to_dict() for entry in change_influence_entries]
-        existing_edges = extract_existing_edges_from_graph(causal_graph)
-        soft_edges_list = build_soft_propagation_graph(
-            all_changed_symbols=changed_symbols_list,
-            existing_edges=existing_edges,
+        impact_evidence = self._build_impact_evidence(
+            changed_symbols_list=changed_symbols_list,
+            causal_graph=causal_graph,
         )
-        soft_edges = [edge.to_dict() for edge in soft_edges_list]
         risk_zones = self._build_minimal_system_context(
             enriched_files=enriched_files,
             risk_patterns=risk_patterns,
             causal_graph=causal_graph,
         ).get("regions", ["general"])
+
+        # Add compressed impact_evidence to the LLM packet
+        compressed_for_llm = self._build_compressed_for_llm_with_evidence(
+            compressed_for_llm=compressed_for_llm,
+            impact_evidence=impact_evidence,
+        )
 
         data = self._build_result(
             repo=request.get("repo", "example/repo"),
@@ -1147,18 +1163,9 @@ class DiffOrchestrator(BaseOrchestrator):
             enriched_files=enriched_files, risk_patterns=risk_patterns,
             compressed_for_llm=compressed_for_llm,
             change_influence=change_influence,
-            execution_paths={},
-            soft_edges=soft_edges,
-            system_constraints=system_constraints.to_dict(),
+            impact_evidence=impact_evidence,
             risk_zones=risk_zones,
             changed_symbols=changed_symbols,
-            behavior_deltas=behavior_deltas,
-            behavior_diffs=behavior_diffs,
-            reachability_results=reachability_results,
-            side_effect_results=side_effect_results,
-            causal_graph=causal_graph,
-            system_behavior_deltas=system_deltas,
-            matched_failure_templates=template_matches,
         )
 
         return data

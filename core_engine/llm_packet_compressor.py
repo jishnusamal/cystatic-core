@@ -11,7 +11,7 @@ from typing import Any
 
 from core_engine.symbol_table import SymbolTable
 from core_engine.path_compressor import compress_paths
-from core_engine.soft_edge_compressor import compress_soft_edges
+from core_engine.soft_edge_compressor import compress_impact_evidence, compress_evidence_summary
 from core_engine.change_influence_compressor import compress_change_influence
 from core_engine.constraint_compressor import compress_constraints
 
@@ -28,19 +28,18 @@ def prune_lowest_confidence_items(packet: dict[str, Any]) -> None:
     """Prune lowest-confidence items to reduce token count.
 
     Priority order (drop in this order):
-    1. Soft edges (lowest confidence first)
+    1. Evidence summary (lowest confidence first)
     2. Low-risk zones
-    3. Execution paths (lowest confidence first)
-    4. Cap symbol count (30 → 20 → 15 fallback)
+    3. Cap symbol count (30 → 20 → 15 fallback)
 
     Modifies packet in place.
     """
-    # 1. Drop soft edges first (up to 50%)
-    if "soft_edges" in packet and packet["soft_edges"]:
-        current = len(packet["soft_edges"])
+    # 1. Drop evidence summary items (lowest confidence first)
+    if "evidence_summary" in packet and packet["evidence_summary"]:
+        current = len(packet["evidence_summary"])
         target = max(current // 2, 0)
         # Already sorted by confidence desc, so drop from end
-        packet["soft_edges"] = packet["soft_edges"][:target]
+        packet["evidence_summary"] = packet["evidence_summary"][:target]
 
     # 2. Drop low-risk zones (keep only high-impact domains)
     if "risk_zones" in packet and packet["risk_zones"]:
@@ -52,19 +51,7 @@ def prune_lowest_confidence_items(packet: dict[str, Any]) -> None:
         if filtered:
             packet["risk_zones"] = filtered
 
-    # 3. Drop execution paths (lowest confidence first)
-    if "execution_paths" in packet and packet["execution_paths"]:
-        current = len(packet["execution_paths"])
-        target = max(current // 2, 1)
-        # Sort by confidence desc, keep top half
-        paths = sorted(
-            packet["execution_paths"],
-            key=lambda x: x.get("confidence", 0.0),
-            reverse=True,
-        )
-        packet["execution_paths"] = paths[:target]
-
-    # 4. Cap symbol count (30 → 20 → 15 fallback)
+    # 3. Cap symbol count (30 → 20 → 15 fallback)
     if "symbols" in packet and packet["symbols"]:
         current_symbols = len(packet["symbols"])
         if current_symbols > 15:
@@ -79,9 +66,7 @@ def prune_lowest_confidence_items(packet: dict[str, Any]) -> None:
 
 def build_llm_packet(
     change_influence: list[dict[str, Any]] | None,
-    execution_paths: dict[str, Any] | None,
-    soft_edges: list[dict[str, Any]] | None,
-    constraints: dict[str, Any] | None,
+    impact_evidence: list[dict[str, Any]] | None,
     risk_zones: list[str] | None,
     changed_symbols: list[str] | None,
     repo: str = "",
@@ -93,9 +78,7 @@ def build_llm_packet(
 
     Args:
         change_influence: Raw change influence list.
-        execution_paths: Raw execution paths dict.
-        soft_edges: Raw soft edges list.
-        constraints: Raw constraints dict.
+        impact_evidence: Raw impact evidence list.
         risk_zones: List of risk zone strings.
         changed_symbols: List of changed symbol names.
         repo: Repository name.
@@ -117,33 +100,15 @@ def build_llm_packet(
         max_symbols=30,
     )
 
-    # Layer 2: Compress execution paths
-    compressed_paths = compress_paths(
-        execution_paths,
-        symbol_table=symbol_table,
-        max_paths=5,
-        max_nodes=8,
-    )
-
-    # Layer 2: Compress soft edges
-    compressed_edges = compress_soft_edges(
-        soft_edges,
-        symbol_table=symbol_table,
-        min_confidence=0.25,
-        max_edges=25,
-    )
-
-    # Layer 4: Compress constraints
-    compressed_constraints = compress_constraints(constraints)
+    # Layer 2: Build evidence summary (synthesized clusters, not raw evidence)
+    evidence_summary = compress_evidence_summary(impact_evidence, max_items=10)
 
     # Build initial packet (keys match LLM.generate() signature)
     packet = {
         "repo": repo,
         "pr_number": pr_number,
         "change_influence": compressed_influence,
-        "execution_paths": compressed_paths,
-        "soft_edges": compressed_edges,
-        "constraints": compressed_constraints,
+        "evidence_summary": evidence_summary,
         "risk_zones": risk_zones or ["general"],
         "changed_symbols": changed_symbols or [],
     }
@@ -169,9 +134,7 @@ def build_llm_packet(
             "repo": repo,
             "pr_number": pr_number,
             "change_influence": [],
-            "execution_paths": [],
-            "soft_edges": [],
-            "constraints": compressed_constraints,
+            "evidence_summary": [],
             "risk_zones": (risk_zones or ["general"])[:3],
             "changed_symbols": (changed_symbols or [])[:10],
         }
