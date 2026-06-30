@@ -167,9 +167,7 @@ class DeterministicAnalyzerOutput(TimestampedFields, models.Model):
     edge_count = fields.IntField(null=True)
     impacted_auth_nodes_count = fields.IntField(null=True)
     service_boundary_count = fields.IntField(null=True)
-    changed_execution_path_count = fields.IntField(null=True)
     impacted_services = fields.JSONField(default=list)
-    execution_paths = fields.JSONField(default=list)
     auth_boundary_changes = fields.JSONField(default=list)
     dataflow_changes = fields.JSONField(default=list)
     deleted_guards = fields.JSONField(default=list)
@@ -231,7 +229,6 @@ class RiskFinding(TimestampedFields, models.Model):
     confidence = fields.FloatField(null=True)
     evidence = fields.JSONField(default=dict)
     affected_components = fields.JSONField(default=list)
-    inferred_blast_radius = fields.JSONField(default=list)
     code_locations = fields.JSONField(default=list)
     summary = fields.TextField(default="")
 
@@ -602,11 +599,6 @@ async def persist_analysis_result(result: dict[str, Any]) -> None:
                 if isinstance(ntype, str) and "service" in ntype.lower():
                     service_boundary_count += 1
 
-    changed_execution_path_count = (
-        len(compressed_for_llm.get("execution_paths", []))
-        if compressed_for_llm.get("execution_paths") is not None
-        else 0
-    )
 
     await DeterministicAnalyzerOutput.create(
         analysis_run=analysis_run,
@@ -621,9 +613,7 @@ async def persist_analysis_result(result: dict[str, Any]) -> None:
         edge_count=edge_count,
         impacted_auth_nodes_count=impacted_auth_nodes_count,
         service_boundary_count=service_boundary_count,
-        changed_execution_path_count=changed_execution_path_count,
         impacted_services=impacted_services,
-        execution_paths=compressed_for_llm.get("execution_paths", []) or [],
         auth_boundary_changes=compressed_for_llm.get("auth_boundary_changes", []) or [],
         dataflow_changes=compressed_for_llm.get("dataflow_changes", []) or [],
         deleted_guards=compressed_for_llm.get("deleted_guards", []) or [],
@@ -662,9 +652,6 @@ async def persist_analysis_result(result: dict[str, Any]) -> None:
             },
             affected_components=[
                 str(item) for item in system_areas if str(item).strip()
-            ],
-            inferred_blast_radius=[
-                str(item) for item in system_impact if str(item).strip()
             ],
             code_locations=code_locations,
             summary=str(risk.get("reason") or risk.get("trigger") or category),

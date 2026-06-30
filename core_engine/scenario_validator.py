@@ -208,14 +208,11 @@ class ScenarioScorer:
             score.issues.append("No supported_by evidence cited — weak grounding")
         
         # 2. Production reachability score
-        execution_path = scenario.get("execution_path", "")
         merge_risk_level = scenario.get("merge_risk_level", "MEDIUM")
-        
-        path_entities = self._extract_path_entities(execution_path) if execution_path else []
         
         if merge_risk_level in ("HIGH", "CRITICAL"):
             # For high-risk scenarios, check production reachability
-            combined_entities = list(supported_by) + path_entities
+            combined_entities = list(supported_by)
             if combined_entities:
                 reachable_count = sum(1 for e in combined_entities if self._is_production_reachable(e))
                 score.production_reachability_score = reachable_count / len(combined_entities)
@@ -277,16 +274,6 @@ class ScenarioScorer:
             if symbol in stored or stored in symbol:
                 return True
         return False
-    
-    def _extract_path_entities(self, execution_path: str) -> list[str]:
-        """Extract function/service entities from execution path string."""
-        entities = []
-        for part in execution_path.split("→"):
-            part = part.strip()
-            part = part.replace("function ", "").replace("method ", "").strip()
-            if part and len(part) > 2:
-                entities.append(part)
-        return entities
     
     def _is_production_reachable(self, symbol: str) -> bool:
         """Check if a symbol is production reachable."""

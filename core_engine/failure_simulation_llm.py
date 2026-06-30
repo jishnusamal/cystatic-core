@@ -51,52 +51,48 @@ from schemas.failure_simulation import FailureSimulationOutput
 USER_PROMPT_TEMPLATE = """
 You are a causal reasoning engine analyzing production risk in a codebase.
 
-You receive ONLY change signals, pre-synthesized evidence summaries, and risk context. Everything else is noise.
+You receive ONLY change signals, risk hypotheses, and risk context. Everything else is noise.
 
 RULES:
 
-1. Every failure scenario MUST originate from evidence_summary.
+1. Every failure scenario MUST originate from risk_hypotheses.
 2. You may NOT create new chains or new flows.
 3. You may only use:
    - change_influence (what changed + where it matters)
-   - evidence_summary (pre-synthesized evidence clusters — the deterministic engine has already answered "what appears involved?")
+   - risk_hypotheses (pre-synthesized risk hypotheses — the deterministic engine has already identified likely propagation areas)
    - risk_zones (domain regions: checkout, invoice, tax, etc.)
    - changed_symbols (list of modified symbols)
 
 4. IMPORTANT PRIORITY ORDER:
-   evidence_summary > change_influence > risk_zones
+   risk_hypotheses > change_influence > risk_zones
 
 5. change_influence tells you WHAT changed and HOW MUCH it matters.
    It does NOT create risk by itself.
 
-6. evidence_summary is the PRIMARY signal. Each item contains:
-   - risk_area: the themed risk area (e.g., "tax_to_invoice")
-   - confidence: how confident the engine is in this connection (0.0–1.0)
-   - evidence_strength: "STRONG" | "MEDIUM" | "WEAK"
-     - STRONG (0.7–0.95): shared_class, shared_module, import_reference, ast_reference, symbol_reference
-     - MEDIUM (0.5–0.7): shared_business_object, shared_domain, risk_tag_association
-     - WEAK (0.2–0.4): canonical_flow, naming_similarity, shared_file
-   - evidence: pre-written claims about what appears connected
-   - supporting_symbols: symbols involved in this risk area
+6. risk_hypotheses is the PRIMARY signal. Each hypothesis contains:
+   - area: the themed risk area (e.g., "tax_to_invoice")
+   - strength: "STRONG" | "MEDIUM" | "WEAK" — how reliable the connection is
+   - symbols: symbols involved in this risk area
+   - possible_failures: failure archetypes that could manifest in this area
 
-7. evidence_strength tells you how reliable the connection is:
+7. strength tells you how reliable the connection is:
    - STRONG: high confidence, treat as near-certain
    - MEDIUM: moderate confidence, treat as likely
    - WEAK: low confidence, treat as a signal worth investigating but not proof
 
 8. risk_zones tell you WHERE it matters — checkout, invoice, tax, etc.
 
-9. If no evidence_summary items exist:
+9. If no risk_hypotheses exist:
    return NO_SIGNIFICANT_PROPAGATION_FOUND
 
 10. SAFE is ONLY allowed if:
-    - no evidence summary connects changed symbols to downstream risk
+    - no risk hypothesis connects changed symbols to downstream risk
 
 11. NEVER default to SAFE.
 
 12. Prefer 1–3 high-confidence failures over none.
 
-13. When writing failure_scenarios, reference the evidence_summary items that support each scenario.
+13. When writing failure_scenarios, reference the risk_hypotheses that support each scenario.
 
 ────────────────────────────────────────────────────────────────────────────────
 # INPUT STRUCTURE
@@ -117,11 +113,11 @@ Return STRICT JSON only:
     {{
       "title": "specific, concrete failure (not generic)",
       "trigger": "exact condition that activates the failure",
-      "execution_path": "function → function → system outcome",
+      # "execution_path" removed - graph-dependent propagation deprecated
       "evidence_type": "direct | inferred | structural_pattern | inferred_bridge",
       "production_impact": "real-world consequence (money, data, users, ops)",
       "confidence": 0.0,
-      "hop_confidence": 0.0,
+      # "hop_confidence" removed - graph-dependent propagation deprecated
       "causal_chain": "symbol → symbol → symbol (with confidence at each hop)",
       "failure_class": "idempotency_break | double_charge_double_write | null_propagation | stale_cache | partial_update_drift | silent_fallback_activation | auth_bypass_chain | tax_billing_mismatch | logic_negation_flip | data_validation_removed | async_event_mismatch | state_inconsistency | other",
 
@@ -163,43 +159,42 @@ Return STRICT JSON only:
 SYSTEM_PROMPT = """
 You are a causal reasoning engine analyzing production risk in a codebase.
 
-You receive ONLY change signals, pre-synthesized evidence summaries, and risk context. Everything else is noise.
+You receive ONLY change signals, risk hypotheses, and risk context. Everything else is noise.
 
 RULES:
 
-1. Every failure scenario MUST originate from evidence_summary.
+1. Every failure scenario MUST originate from risk_hypotheses.
 2. You may NOT create new chains or new flows.
 3. You may only use:
    - change_influence (what changed + where it matters)
-   - evidence_summary (pre-synthesized evidence clusters — the deterministic engine has already answered "what appears involved?")
+   - risk_hypotheses (pre-synthesized risk hypotheses — the deterministic engine has already identified likely propagation areas)
    - risk_zones (domain regions: checkout, invoice, tax, etc.)
    - changed_symbols (list of modified symbols)
 
 4. IMPORTANT PRIORITY ORDER:
-   evidence_summary > change_influence > risk_zones
+   risk_hypotheses > change_influence > risk_zones
 
 5. change_influence tells you WHAT changed and HOW MUCH it matters.
    It does NOT create risk by itself.
 
-6. evidence_summary is the PRIMARY signal. Each item contains:
-   - risk_area: the themed risk area
-   - confidence: how confident the engine is in this connection
-   - evidence_strength: "STRONG" | "MEDIUM" | "WEAK"
-   - evidence: pre-written claims about what appears connected
-   - supporting_symbols: symbols involved in this risk area
+6. risk_hypotheses is the PRIMARY signal. Each hypothesis contains:
+   - area: the themed risk area
+   - strength: "STRONG" | "MEDIUM" | "WEAK"
+   - symbols: symbols involved in this risk area
+   - possible_failures: failure archetypes that could manifest in this area
 
-7. evidence_strength tells you how reliable the connection is:
+7. strength tells you how reliable the connection is:
    - STRONG: high confidence, treat as near-certain
    - MEDIUM: moderate confidence, treat as likely
    - WEAK: low confidence, treat as a signal worth investigating but not proof
 
 8. risk_zones tell you WHERE it matters — checkout, invoice, tax, etc.
 
-9. If no evidence_summary items exist:
+9. If no risk_hypotheses exist:
    return NO_SIGNIFICANT_PROPAGATION_FOUND
 
 10. SAFE is ONLY allowed if:
-    - no evidence summary connects changed symbols to downstream risk
+    - no risk hypothesis connects changed symbols to downstream risk
 
 11. NEVER default to SAFE.
 
@@ -232,7 +227,6 @@ def sanitize_llm_json(raw_output: dict[str, Any]) -> dict[str, Any]:
         "final_question",
         "system_behavior_deltas",
         "matched_failure_templates",
-        "blast_radius",
     }
 
     for key, value in raw_output.items():
@@ -307,7 +301,7 @@ def sanitize_llm_json_string(json_string: str) -> str:
                 "failure_scenarios", "hidden_impact_chain", "checked_risk_areas",
                 "missing_critical_tests", "broken_assumptions", "silent_failure_summary",
                 "merge_risk_statement", "verdict_rationale", "verdict", "final_question",
-                "system_behavior_deltas", "matched_failure_templates", "blast_radius",
+                "system_behavior_deltas", "matched_failure_templates",
             ]
             matched_field = None
             for part in parts:
@@ -398,7 +392,7 @@ class FailureSimulationLLM:
             "repo": repo,
             "pr_number": pr_number,
             "change_influence": change_influence or [],
-            "evidence_summary": evidence_summary or [],
+            "risk_hypotheses": evidence_summary or [],
             "risk_zones": risk_zones or [],
             "changed_symbols": changed_symbols or [],
         }

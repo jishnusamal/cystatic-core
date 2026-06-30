@@ -4,7 +4,6 @@ Schemas for the failure simulation pipeline.
 Key changes from previous version:
 - New verdicts: LOW_RISK, UNCERTAIN_IMPACT, NO_SIGNIFICANT_PROPAGATION_FOUND
 - SAFE is no longer the default — it's a rare, strong verdict
-- Added hop_confidence for causal chain confidence propagation
 - Added failure_class (from templates) to scenarios
 - Added system_behavior_deltas
 """
@@ -13,16 +12,13 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class FailureScenario(BaseModel):
-    """A single failure scenario with propagation confidence."""
+    """A single failure scenario."""
     title: str = Field(min_length=8)
     trigger: str = Field(min_length=12)
-    execution_path: str = Field(min_length=12)
     evidence_type: Literal["direct", "inferred", "structural_pattern", "inferred_bridge"] = "inferred"
     production_impact: str = Field(min_length=12)
     confidence: float = Field(ge=0.0, le=1.0)
-    # NEW: Confidence propagation through causal chain
-    hop_confidence: float = Field(ge=0.0, le=1.0, default=1.0)
-    causal_chain: str = ""  # "symbol → symbol → symbol" with confidence at each hop
+    causal_chain: str = ""  # "symbol → symbol → symbol"
     # NEW: Failure class from templates
     failure_class: str = ""  # "idempotency_break | double_charge_double_write | null_propagation | ..."
     # Existing fields
@@ -61,8 +57,6 @@ class FailureSimulationOutput(BaseModel):
     system_behavior_deltas: list[dict] = Field(default_factory=list, max_length=5)
     # NEW: Matched failure templates
     matched_failure_templates: list[dict] = Field(default_factory=list)
-    # NEW: Blast radius summary
-    blast_radius: dict = Field(default_factory=dict)
 
     @field_validator("missing_critical_tests", "broken_assumptions", "hidden_impact_chain")
     @classmethod

@@ -405,7 +405,7 @@ def _generate_cluster_explanation(
     for et in evidence_types:
         type_counts[et] = type_counts.get(et, 0) + 1
 
-    dominant_types = sorted(type_counts, key=type_counts.get, reverse=True)[:2]
+    dominant_types = sorted(type_counts, key=lambda k: type_counts[k], reverse=True)[:2]
 
     parts = theme.split("_to_")
     if len(parts) == 2:
@@ -461,7 +461,7 @@ def synthesize_evidence(
         type_counts: dict[str, int] = {}
         for et in data["evidence_types"]:
             type_counts[et] = type_counts.get(et, 0) + 1
-        dominant_type = max(type_counts, key=type_counts.get)
+        dominant_type = max(type_counts, key=lambda k: type_counts[k])
         strength = get_evidence_strength(dominant_type)
 
         explanation = _generate_cluster_explanation(

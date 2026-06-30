@@ -35,7 +35,9 @@ from core_engine.impact_evidence import (
     synthesize_evidence,
     synthesize_evidence_summary,
 )
+from core_engine.failure_archetype_engine import build_risk_hypotheses
 from core_engine.llm_packet_compressor import build_llm_packet
+from core_engine.risk_compressor import compress_risk_hypotheses
 from typing import Any
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -217,7 +219,6 @@ def _build_domain_risk_priors(
 
 # failure_templates is an OPTIONAL hypothesis layer — imported lazily to allow
 # graceful degradation if the module is unavailable or takes too long.
-# Core signals (blast radius, causal graph, impact tree) do NOT depend on it.
 try:
     from core_engine.failure_templates import match_failure_templates
     _HAS_FAILURE_TEMPLATES = True
@@ -296,7 +297,6 @@ class BaseOrchestrator:
             "final_question": "",
             "system_behavior_deltas": [],
             "matched_failure_templates": [],
-            "blast_radius": {},
         }
 
     def _normalize_failure_scenario(self, scenario: dict) -> dict:
@@ -309,7 +309,6 @@ class BaseOrchestrator:
         normalized_scenario.setdefault("false_confidence_reason", "")
         normalized_scenario.setdefault("why_it_slips_through", "")
         normalized_scenario.setdefault("merge_confidence_trap", "")
-        normalized_scenario.setdefault("hop_confidence", 1.0)
         normalized_scenario.setdefault("causal_chain", "")
         normalized_scenario.setdefault("failure_class", "")
         return normalized_scenario
@@ -379,7 +378,6 @@ class BaseOrchestrator:
             "final_question",
             "system_behavior_deltas",
             "matched_failure_templates",
-            "blast_radius",
         }
 
         for key, value in raw_output.items():
@@ -509,36 +507,28 @@ class BaseOrchestrator:
         impact_evidence: list[dict] | None = None,
         risk_zones: list[str] | None = None,
         changed_symbols: list[str] | None = None,
+        risk_hypotheses: list[dict] | None = None,
+        risk_anchors: list[dict] | None = None,
+        side_effects: list[dict] | None = None,
+        constraints: list[dict] | None = None,
+        business_objects: list[dict] | None = None,
     ) -> dict:
-        failure_simulation = self._normalize_failure_simulation(failure_simulation)
-        pr_risk_score = self._calculate_pr_risk_score(enriched_files)
-        pr_risk_level = self._classify_risk(pr_risk_score)
-
-        # Accept the full new verdict set
-        llm_verdict = None
-        if isinstance(failure_simulation, dict):
-            llm_verdict = failure_simulation.get("verdict")
-
-        allowed_llm_verdicts = {
-            "SAFE", "LOW_RISK", "UNCERTAIN_IMPACT",
-            "NO_SIGNIFICANT_PROPAGATION_FOUND", "REVIEW_REQUIRED", "BLOCK_REVIEW",
-        }
-        final_verdict = (
-            llm_verdict
-            if llm_verdict in allowed_llm_verdicts
-            else self._get_verdict(pr_risk_level, risk_patterns=risk_patterns)
-        )
-
+        """Build result with only analyser outputs.
+        
+        Returns only the outputs from the evidence analyzers, not intermediate
+        processing data like failure_simulation or compressed_for_llm.
+        """
         return {
             "repo": repo,
             "pr_number": pr_number,
-            "verdict": final_verdict,
-            "change_influence": change_influence or [],
-            "impact_evidence": impact_evidence or [],
-            "risk_zones": risk_zones or ["general"],
             "changed_symbols": changed_symbols or [],
-            "failure_simulation": failure_simulation,
-            "compressed_for_llm": compressed_for_llm or {},
+            "risk_anchors": risk_anchors or [],
+            "impact_evidence": impact_evidence or [],
+            "side_effects": side_effects or [],
+            "constraints": constraints or [],
+            "business_objects": business_objects or [],
+            "change_influence": change_influence or [],
+            "risk_zones": risk_zones or ["general"],
         }
 
     def _build_repo_index(
@@ -693,7 +683,7 @@ class BaseOrchestrator:
             causal_graph=causal_graph,
         )
 
-        # Layer 2a: synthesize evidence summary for LLM (clusters, not raw N×M evidence)
+        # Layer 2a: synthesize evidence summary for risk hypotheses builder
         evidence_summary = self._synthesize_evidence_summary(impact_evidence)
 
         # Layer 3: risk_zones — domain regions
@@ -703,20 +693,31 @@ class BaseOrchestrator:
             causal_graph=causal_graph,
         ).get("regions", ["general"])
 
-        # Build token-efficient LLM packet (evidence_summary replaces raw impact_evidence)
-        packet = build_llm_packet(
+        # Layer 4: Build risk_hypotheses (unified replacement for both evidence_summary + failure_archetypes)
+        risk_hypotheses = build_risk_hypotheses(
             change_influence=change_influence,
-            impact_evidence=evidence_summary,
-            risk_zones=risk_zones,
-            changed_symbols=changed_symbols,
-            repo=compressed_for_llm.get("repo", ""),
-            pr_number=compressed_for_llm.get("pr_number", 0),
-            impact_propagation=None,
+            evidence_summary=evidence_summary,
         )
 
-        # Call LLM with compressed packet
-        llm_kwargs = {k: v for k, v in packet.items() if k != "impact_propagation"}
-        output = self.failure_simulation_llm.generate(**llm_kwargs)
+        # Compress risk hypotheses and add to compressed_for_llm
+        compressed_risk_hypotheses = compress_risk_hypotheses(
+            risk_hypotheses=risk_hypotheses,
+            top_n=3,
+            compress_for_llm=True,
+        )
+        compressed_for_llm["compressed_risk_hypotheses"] = compressed_risk_hypotheses
+
+        # Call LLM with ONLY the parameters it accepts
+        # Map compressed_for_llm content to LLM.generate() signature
+        output = self.failure_simulation_llm.generate(
+            repo=compressed_for_llm.get("repo", ""),
+            pr_number=compressed_for_llm.get("pr_number", 0),
+            change_influence=compressed_for_llm.get("change_influence"),
+            impact_evidence=compressed_for_llm.get("impact_evidence"),
+            risk_zones=compressed_for_llm.get("risk_zones"),
+            changed_symbols=compressed_for_llm.get("changed_symbols"),
+            evidence_summary=compressed_risk_hypotheses,  # compressed risk hypotheses as evidence_summary
+        )
         failure_simulation = output.model_dump()
 
         # Sanitize LLM output
@@ -835,21 +836,6 @@ class BaseOrchestrator:
         summaries = synthesize_evidence_summary(evidence_objects)
         return [s.to_dict() for s in summaries]
 
-    def _build_compressed_for_llm_with_evidence(
-        self,
-        compressed_for_llm: dict,
-        impact_evidence: list[dict],
-    ) -> dict:
-        """Add evidence_summary (synthesized clusters) to the LLM packet.
-
-        Instead of raw evidence, the LLM gets pre-synthesized summaries
-        that answer: "what appears involved?" before it has to reason.
-        """
-        result = dict(compressed_for_llm)
-        result["evidence_summary"] = self._synthesize_evidence_summary(impact_evidence)
-        return result
-
-
 class Orchestrator(BaseOrchestrator):
     """Repo-aware orchestrator using GitHub PR diff + full file snapshots."""
 
@@ -950,7 +936,7 @@ class Orchestrator(BaseOrchestrator):
                 failure_simulation = self._default_failure_simulation()
                 failure_scenario_lines = FailureSimulator().generate(risk_patterns, enriched_files)
                 failure_simulation["failure_scenarios"] = [
-                    {"title": line, "evidence_type": "inferred", "silent_failure": True, "merge_risk_level": "MEDIUM", "hop_confidence": 1.0}
+                    {"title": line, "evidence_type": "inferred", "silent_failure": True, "merge_risk_level": "MEDIUM"}
                     for line in failure_scenario_lines
                 ]
                 failure_simulation["system_behavior_deltas"] = [d.to_dict() for d in system_deltas]
@@ -961,7 +947,7 @@ class Orchestrator(BaseOrchestrator):
             failure_simulation = self._default_failure_simulation()
             failure_scenario_lines = FailureSimulator().generate(risk_patterns, enriched_files)
             failure_simulation["failure_scenarios"] = [
-                {"title": line, "evidence_type": "inferred", "silent_failure": True, "merge_risk_level": "MEDIUM", "hop_confidence": 1.0}
+                {"title": line, "evidence_type": "inferred", "silent_failure": True, "merge_risk_level": "MEDIUM"}
                 for line in failure_scenario_lines
             ]
             failure_simulation["system_behavior_deltas"] = [d.to_dict() for d in system_deltas]
@@ -990,22 +976,34 @@ class Orchestrator(BaseOrchestrator):
             causal_graph=causal_graph,
         ).get("regions", ["general"])
 
-        # Add compressed impact_evidence to the LLM packet
-        compressed_for_llm = self._build_compressed_for_llm_with_evidence(
-            compressed_for_llm=compressed_for_llm,
-            impact_evidence=impact_evidence,
+        # Build unified risk_hypotheses from impact evidence and change influence
+        evidence_summary = self._synthesize_evidence_summary(impact_evidence)
+        risk_hypotheses = build_risk_hypotheses(
+            change_influence=change_influence,
+            evidence_summary=evidence_summary,
         )
 
+        # Compress risk hypotheses into families for LLM context
+        compressed_risk_hypotheses = compress_risk_hypotheses(
+            risk_hypotheses=risk_hypotheses,
+            top_n=3,
+            compress_for_llm=True,
+        )
+        compressed_for_llm["compressed_risk_hypotheses"] = compressed_risk_hypotheses
+
         data = self._build_result(
-            repo=request.repo, pr_number=request.pr_number,
+            repo=request.repo,
+            pr_number=request.pr_number,
             analysis_mode=AnalysisMode.FULL_FILE,
-            failure_simulation=failure_simulation,
-            enriched_files=enriched_files, risk_patterns=risk_patterns,
-            compressed_for_llm=compressed_for_llm,
-            change_influence=change_influence,
-            impact_evidence=impact_evidence,
-            risk_zones=risk_zones,
+            enriched_files=enriched_files,
             changed_symbols=changed_symbols,
+            risk_anchors=[rp.model_dump() if hasattr(rp, "model_dump") else rp for rp in risk_patterns],
+            impact_evidence=impact_evidence,
+            side_effects=side_effect_results if side_effect_results else [],
+            constraints=[],
+            business_objects=[],
+            change_influence=change_influence,
+            risk_zones=risk_zones,
         )
 
         return data
@@ -1109,7 +1107,7 @@ class DiffOrchestrator(BaseOrchestrator):
                 failure_simulation = self._default_failure_simulation()
                 failure_scenario_lines = FailureSimulator().generate(risk_patterns, enriched_files)
                 failure_simulation["failure_scenarios"] = [
-                    {"title": line, "evidence_type": "inferred", "silent_failure": True, "merge_risk_level": "MEDIUM", "hop_confidence": 1.0}
+                    {"title": line, "evidence_type": "inferred", "silent_failure": True, "merge_risk_level": "MEDIUM"}
                     for line in failure_scenario_lines
                 ]
                 failure_simulation["system_behavior_deltas"] = [d.to_dict() for d in system_deltas]
@@ -1120,7 +1118,7 @@ class DiffOrchestrator(BaseOrchestrator):
             failure_simulation = self._default_failure_simulation()
             failure_scenario_lines = FailureSimulator().generate(risk_patterns, enriched_files)
             failure_simulation["failure_scenarios"] = [
-                {"title": line, "evidence_type": "inferred", "silent_failure": True, "merge_risk_level": "MEDIUM", "hop_confidence": 1.0}
+                {"title": line, "evidence_type": "inferred", "silent_failure": True, "merge_risk_level": "MEDIUM"}
                 for line in failure_scenario_lines
             ]
             failure_simulation["system_behavior_deltas"] = [d.to_dict() for d in system_deltas]
@@ -1149,23 +1147,34 @@ class DiffOrchestrator(BaseOrchestrator):
             causal_graph=causal_graph,
         ).get("regions", ["general"])
 
-        # Add compressed impact_evidence to the LLM packet
-        compressed_for_llm = self._build_compressed_for_llm_with_evidence(
-            compressed_for_llm=compressed_for_llm,
-            impact_evidence=impact_evidence,
+        # Build unified risk_hypotheses from impact evidence and change influence
+        evidence_summary = self._synthesize_evidence_summary(impact_evidence)
+        risk_hypotheses = build_risk_hypotheses(
+            change_influence=change_influence,
+            evidence_summary=evidence_summary,
         )
+
+        # Compress risk hypotheses into families for LLM context
+        compressed_risk_hypotheses = compress_risk_hypotheses(
+            risk_hypotheses=risk_hypotheses,
+            top_n=3,
+            compress_for_llm=True,
+        )
+        compressed_for_llm["compressed_risk_hypotheses"] = compressed_risk_hypotheses
 
         data = self._build_result(
             repo=request.get("repo", "example/repo"),
             pr_number=request.get("pr_number", 1),
             analysis_mode=AnalysisMode.DIFF_ONLY,
-            failure_simulation=failure_simulation,
-            enriched_files=enriched_files, risk_patterns=risk_patterns,
-            compressed_for_llm=compressed_for_llm,
-            change_influence=change_influence,
-            impact_evidence=impact_evidence,
-            risk_zones=risk_zones,
+            enriched_files=enriched_files,
             changed_symbols=changed_symbols,
+            risk_anchors=[rp.model_dump() if hasattr(rp, "model_dump") else rp for rp in risk_patterns],
+            impact_evidence=impact_evidence,
+            side_effects=side_effect_results if side_effect_results else [],
+            constraints=[],
+            business_objects=[],
+            change_influence=change_influence,
+            risk_zones=risk_zones,
         )
 
         return data

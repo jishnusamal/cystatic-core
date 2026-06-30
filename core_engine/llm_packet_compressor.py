@@ -10,8 +10,7 @@ import json
 from typing import Any
 
 from core_engine.symbol_table import SymbolTable
-from core_engine.path_compressor import compress_paths
-from core_engine.soft_edge_compressor import compress_impact_evidence, compress_evidence_summary
+from core_engine.soft_edge_compressor import compress_impact_evidence, compress_evidence_summary, compress_risk_hypotheses
 from core_engine.change_influence_compressor import compress_change_influence
 from core_engine.constraint_compressor import compress_constraints
 
@@ -28,17 +27,22 @@ def prune_lowest_confidence_items(packet: dict[str, Any]) -> None:
     """Prune lowest-confidence items to reduce token count.
 
     Priority order (drop in this order):
-    1. Evidence summary (lowest confidence first)
+    1. Risk hypotheses (lowest strength first)
     2. Low-risk zones
     3. Cap symbol count (30 → 20 → 15 fallback)
 
     Modifies packet in place.
     """
-    # 1. Drop evidence summary items (lowest confidence first)
-    if "evidence_summary" in packet and packet["evidence_summary"]:
+    # 1. Drop risk hypotheses items (weakest first)
+    if "risk_hypotheses" in packet and packet["risk_hypotheses"]:
+        current = len(packet["risk_hypotheses"])
+        target = max(current // 2, 0)
+        # Already sorted by strength desc, so drop from end (weakest)
+        packet["risk_hypotheses"] = packet["risk_hypotheses"][:target]
+    # Legacy: also prune evidence_summary if present
+    elif "evidence_summary" in packet and packet["evidence_summary"]:
         current = len(packet["evidence_summary"])
         target = max(current // 2, 0)
-        # Already sorted by confidence desc, so drop from end
         packet["evidence_summary"] = packet["evidence_summary"][:target]
 
     # 2. Drop low-risk zones (keep only high-impact domains)
@@ -100,21 +104,26 @@ def build_llm_packet(
         max_symbols=30,
     )
 
-    # Layer 2: Build evidence summary (synthesized clusters, not raw evidence)
-    evidence_summary = compress_evidence_summary(impact_evidence, max_items=10)
+    # Layer 2: Build risk hypotheses (unified reasoning packet)
+    # Uses impact_evidence as evidence_summary for the risk hypotheses builder
+    from core_engine.failure_archetype_engine import build_risk_hypotheses
+    risk_hypotheses = build_risk_hypotheses(
+        change_influence=change_influence,
+        evidence_summary=impact_evidence,
+    )
+    compressed_hypotheses = compress_risk_hypotheses(risk_hypotheses, max_items=10)
 
     # Build initial packet (keys match LLM.generate() signature)
     packet = {
         "repo": repo,
         "pr_number": pr_number,
         "change_influence": compressed_influence,
-        "evidence_summary": evidence_summary,
+        "risk_hypotheses": compressed_hypotheses,
         "risk_zones": risk_zones or ["general"],
         "changed_symbols": changed_symbols or [],
     }
 
-    # Include Impact Propagation Kernel output as additional context
-    # (compact dict with risk_summary, failure_simulation, blast_radius)
+    # Include Impact Propagation Kernel output as additional context (if provided)
     if impact_propagation:
         packet["impact_propagation"] = impact_propagation
 
@@ -134,7 +143,7 @@ def build_llm_packet(
             "repo": repo,
             "pr_number": pr_number,
             "change_influence": [],
-            "evidence_summary": [],
+            "risk_hypotheses": [],
             "risk_zones": (risk_zones or ["general"])[:3],
             "changed_symbols": (changed_symbols or [])[:10],
         }

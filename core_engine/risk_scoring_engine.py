@@ -47,7 +47,7 @@ _MONEY_FLOW_MULTIPLIER: float = 1.8
 _TAX_FLOW_MULTIPLIER: float = 1.6
 _CROSS_DOMAIN_MULTIPLIER: float = 1.4
 
-# Tag categories used for centrality and fanout estimation
+# Tag categories used for centrality estimation
 _FLOW_TAGS: set[str] = {
     "payment", "charge", "refund", "payout", "transaction",
     "invoice", "receipt", "debit", "credit",
@@ -68,23 +68,6 @@ _STATE_MUTATION_TAGS: set[str] = {
     "save", "persist", "commit", "flush",
 }
 
-# Global fanout estimation — how many other symbols typically depend on
-# each category of symbol. These are priors, not per-file counts.
-_FANOUT_PRIORS: dict[str, int] = {
-    "payment_processor": 12,
-    "tax_calculator": 8,
-    "discount_engine": 6,
-    "checkout_flow": 10,
-    "order_creator": 8,
-    "invoice_generator": 6,
-    "auth_middleware": 15,
-    "price_service": 9,
-    "shipping_calculator": 5,
-    "notification_sender": 4,
-    "cache_service": 20,
-    "default": 3,
-}
-
 
 @dataclass
 class RiskScoreResult:
@@ -95,7 +78,6 @@ class RiskScoreResult:
     flow_centrality: float
     state_mutation_penalty: float
     cross_domain_factor: float
-    fanout_estimate: int
     risk_score: float
     signals: dict[str, Any] = field(default_factory=dict)
 
@@ -107,7 +89,6 @@ class RiskScoreResult:
             "flow_centrality": round(self.flow_centrality, 3),
             "state_mutation_penalty": round(self.state_mutation_penalty, 3),
             "cross_domain_factor": round(self.cross_domain_factor, 3),
-            "fanout_estimate": self.fanout_estimate,
             "risk_score": round(self.risk_score, 4),
             "signals": self.signals,
         }
@@ -189,15 +170,6 @@ def _has_state_mutation(tags: list[str], symbol: str, hunks: list[dict] | None =
     return False
 
 
-def _compute_fanout(symbol: str, tags: list[str], file_path: str) -> int:
-    """Estimate how many other symbols depend on this symbol."""
-    combined = f"{symbol.lower()} {file_path.lower()}"
-    for pattern, fanout in _FANOUT_PRIORS.items():
-        if pattern in combined:
-            return fanout
-    return _FANOUT_PRIORS["default"]
-
-
 def _compute_cross_domain_factor(tags: list[str]) -> float:
     """Compute cross-domain factor: how many distinct domains does this touch?"""
     domains_touched: set[str] = set()
@@ -226,9 +198,6 @@ def compute_risk_score(
 
     risk_score = impact_weight × flow_centrality × state_mutation_penalty × cross_domain_factor
 
-    The fanout estimate is returned as metadata (not part of the product)
-    so the caller can use it for downstream weighting.
-
     Args:
         symbol: The symbol name (e.g., function name).
         file_path: Full file path for domain inference.
@@ -247,7 +216,6 @@ def compute_risk_score(
     has_mutation = _has_state_mutation(tags, symbol, hunks)
     state_mutation_penalty = _STATE_MUTATION_MULTIPLIER if has_mutation else 1.0
     cross_domain_factor = _compute_cross_domain_factor(tags)
-    fanout_estimate = _compute_fanout(symbol, tags, file_path)
 
     risk_score = impact_weight * flow_centrality * state_mutation_penalty * cross_domain_factor
 
@@ -265,7 +233,6 @@ def compute_risk_score(
         flow_centrality=flow_centrality,
         state_mutation_penalty=state_mutation_penalty,
         cross_domain_factor=cross_domain_factor,
-        fanout_estimate=fanout_estimate,
         risk_score=risk_score,
         signals=signals,
     )
@@ -599,7 +566,6 @@ def compute_risk_summary(
             "flow_centrality": 0.0,
             "state_mutation_penalty": 0.0,
             "cross_domain_factor": 0.0,
-            "fanout_estimate": 0,
             "risk_score": anchor.risk_score,
             "signals": {"domain": anchor.domain},
         })

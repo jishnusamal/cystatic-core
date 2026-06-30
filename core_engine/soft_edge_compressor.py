@@ -2,10 +2,10 @@
 Layer 2 — Impact Evidence Compressor
 
 Compresses impact evidence / evidence summaries into compact format for LLM payload.
-Replaced raw evidence compression with evidence summary compression.
+Now also supports risk_hypotheses compression.
 
 The deterministic engine now sends "what appears involved?" as pre-synthesized
-evidence summaries, so the LLM writes reasons rather than infers connections.
+risk hypotheses, so the LLM writes reasons rather than infers connections.
 """
 from __future__ import annotations
 
@@ -48,6 +48,44 @@ def compress_evidence_summary(
     return compressed
 
 
+def compress_risk_hypotheses(
+    risk_hypotheses: list[dict[str, Any]] | None,
+    max_items: int = 10,
+) -> list[dict[str, Any]]:
+    """Compress risk hypotheses for LLM payload.
+
+    Risk hypotheses are the unified replacement for both evidence_summary
+    and failure_archetypes. Each hypothesis is:
+      {
+        "area": "tax_to_invoice",
+        "strength": "WEAK",
+        "symbols": [...],
+        "possible_failures": [...]
+      }
+
+    Args:
+        risk_hypotheses: List of risk hypothesis dicts from build_risk_hypotheses().
+        max_items: Maximum number of hypotheses to include.
+
+    Returns:
+        List of compressed risk hypothesis dicts.
+    """
+    if not risk_hypotheses:
+        return []
+
+    # Already sorted by strength desc, take top items
+    compressed = []
+    for item in risk_hypotheses[:max_items]:
+        compressed.append({
+            "area": item.get("area", "unknown"),
+            "strength": item.get("strength", "WEAK"),
+            "symbols": item.get("symbols", [])[:8],                      # max 8 symbols
+            "possible_failures": item.get("possible_failures", [])[:6],   # max 6 failure archetypes
+        })
+
+    return compressed
+
+
 def compress_impact_evidence(
     impact_evidence: list[dict[str, Any]] | None,
     symbol_table: Any | None = None,
@@ -56,7 +94,7 @@ def compress_impact_evidence(
 ) -> list[list[Any]]:
     """Compress impact evidence for LLM payload (legacy format, kept for backward compat).
 
-    Prefer compress_evidence_summary() for new pipeline — it produces richer,
+    Prefer compress_risk_hypotheses() for new pipeline — it produces richer,
     pre-synthesized clusters that the LLM doesn't need to reason about.
 
     Args:

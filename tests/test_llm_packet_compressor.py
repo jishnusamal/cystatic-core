@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from core_engine.llm_packet_compressor import build_llm_packet, estimate_tokens
 from core_engine.symbol_table import SymbolTable
-from core_engine.path_compressor import compress_paths
 from core_engine.soft_edge_compressor import compress_impact_evidence, compress_evidence_summary
 from core_engine.change_influence_compressor import compress_change_influence
 from core_engine.constraint_compressor import compress_constraints
@@ -20,19 +19,6 @@ def test_symbol_table():
     symbols = table.to_dict()
     assert "T1" in symbols["symbols"]
     print("✓ Symbol table test passed")
-
-
-def test_path_compressor():
-    execution_paths = {"paths": [{"nodes": ["process_payment", "validate_card"], "path_confidence": 0.85, "key_risk_points": [{"risk_type": "transaction_boundary"}]}]}
-    table = SymbolTable(max_symbols=30)
-    table.build([
-        {"symbol": "process_payment", "domain": "money_movement", "influence_score": 0.9, "risk_tags": []},
-        {"symbol": "validate_card", "domain": "money_movement", "influence_score": 0.8, "risk_tags": []},
-    ])
-    compressed = compress_paths(execution_paths, symbol_table=table)
-    assert len(compressed) == 1
-    assert compressed[0]["nodes"] == ["T1", "T2"]
-    print("✓ Path compressor test passed")
 
 
 def test_impact_evidence_compressor():
@@ -157,7 +143,7 @@ def test_constraint_compressor():
 
 
 def test_build_llm_packet_with_evidence_summary():
-    """Test that build_llm_packet produces evidence_summary instead of raw impact_evidence."""
+    """Test that build_llm_packet produces risk_hypotheses instead of raw impact_evidence."""
     change_influence = [
         {"symbol": "process_payment", "domain": "money_movement", "influence_score": 0.9, "risk_tags": ["money_flow"]},
     ]
@@ -171,7 +157,7 @@ def test_build_llm_packet_with_evidence_summary():
             "supporting_symbols": ["_build_numeral_tax_breakdown", "create_payout_invoice"],
         },
     ]
-    
+
     packet = build_llm_packet(
         change_influence=change_influence,
         impact_evidence=evidence_summary,
@@ -180,15 +166,22 @@ def test_build_llm_packet_with_evidence_summary():
         repo="test/repo",
         pr_number=123,
     )
-    
+
     assert "repo" in packet
     assert "change_influence" in packet
-    assert "evidence_summary" in packet
-    assert "impact_evidence" not in packet, "packet should use evidence_summary, not raw impact_evidence"
+    assert "risk_hypotheses" in packet
+    assert "impact_evidence" not in packet, "packet should use risk_hypotheses, not raw impact_evidence"
     assert packet["repo"] == "test/repo"
-    assert len(packet["evidence_summary"]) == 1
-    assert packet["evidence_summary"][0]["risk_area"] == "tax_to_invoice"
-    assert packet["evidence_summary"][0]["evidence_strength"] == "WEAK"
+    # build_risk_hypotheses merges evidence_summary areas + tag-derived hypotheses
+    assert len(packet["risk_hypotheses"]) >= 1
+    areas = [h["area"] for h in packet["risk_hypotheses"]]
+    assert "tax_to_invoice" in areas
+    # Each hypothesis must have area, strength, symbols, possible_failures
+    for hyp in packet["risk_hypotheses"]:
+        assert "area" in hyp
+        assert "strength" in hyp
+        assert "symbols" in hyp
+        assert "possible_failures" in hyp
     tokens = estimate_tokens(packet)
     assert tokens <= 8000
     print(f"✓ Build LLM packet with evidence summary test passed (tokens: {tokens})")
@@ -198,15 +191,15 @@ def test_build_llm_packet_empty_evidence():
     """Test that build_llm_packet handles empty evidence gracefully."""
     packet = build_llm_packet(
         change_influence=[],
-        impact_evidence=[],
-        risk_zones=["general"],
+        impact_evidence=None,
+        risk_zones=[],
         changed_symbols=[],
         repo="test/repo",
-        pr_number=123,
+        pr_number=1,
     )
-    
-    assert "evidence_summary" in packet
-    assert packet["evidence_summary"] == []
+
+    assert "risk_hypotheses" in packet
+    assert packet["risk_hypotheses"] == []
     tokens = estimate_tokens(packet)
     assert tokens <= 8000
     print("✓ Build LLM packet empty evidence test passed")
@@ -214,7 +207,6 @@ def test_build_llm_packet_empty_evidence():
 
 if __name__ == "__main__":
     test_symbol_table()
-    test_path_compressor()
     test_impact_evidence_compressor()
     test_evidence_summary_compressor()
     test_evidence_summary_compressor_empty()

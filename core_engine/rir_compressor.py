@@ -31,7 +31,7 @@ class RIRCompressor:
         
         NOTE: This is NOT the LLM input. The LLM receives the V5 minimal causal truth
         contract built by the orchestrator from individual components:
-        - change_influence, execution_paths, soft_edges, constraints, risk_zones, changed_symbols
+        - change_influence, soft_edges, constraints, risk_zones, changed_symbols
         """
         diffs = behavior_diffs if behavior_diffs is not None else build_behavior_diffs(enriched_files)
         
@@ -70,12 +70,6 @@ class RIRCompressor:
                     "tags": tags,
                 })
         
-        # Build execution paths (placeholder - will be populated by orchestrator)
-        execution_paths: list[dict[str, Any]] = []
-        
-        # Build path overlays (placeholder - will be populated by orchestrator)
-        path_overlays: list[dict[str, Any]] = []
-        
         # Collect system context (minimal - just regions)
         regions: set[str] = set()
         domain_regions = (
@@ -98,9 +92,7 @@ class RIRCompressor:
         }
         
         return {
-            "execution_paths": execution_paths,
             "change_anchors": change_anchors[:20],
-            "path_overlays": path_overlays,
             "system_context": system_context,
         }
 
@@ -242,43 +234,6 @@ class RIRCompressor:
             indicator in symbol_lower or indicator in file_lower
             for indicator in high_risk_indicators
         )
-
-    def _build_execution_path_hint(
-        self,
-        flows: list[str],
-        risk_events: list[dict[str, Any]],
-        changed_functions: list[str],
-    ) -> list[str]:
-        steps: list[str] = []
-
-        def add(step: str) -> None:
-            if step not in steps:
-                steps.append(step)
-
-        joined_functions = " ".join(changed_functions).lower()
-        event_types = {str(evt.get("type", "")) for evt in risk_events}
-
-        if "authentication_flow" in flows or "AUTH_BYPASS" in event_types:
-            add("authentication")
-            add("session handling")
-
-        if "payment_processing" in flows:
-            add("checkout")
-            add("payment processing")
-
-        if any(evt in event_types for evt in ("TAX_CALCULATION_CHANGE", "FINANCIAL_LOGIC_CHANGE")):
-            add("tax calculation")
-
-        if "order" in joined_functions:
-            add("order creation")
-
-        if any(evt in event_types for evt in ("INVOICE_RENDERING_CHANGE",)) or "invoice" in joined_functions:
-            add("invoice generation")
-
-        if not steps:
-            add("core business flow")
-
-        return steps
 
     def _build_change_summaries(self, enriched_files: list[dict]) -> list[dict[str, str]]:
         summaries: list[dict[str, str]] = []
