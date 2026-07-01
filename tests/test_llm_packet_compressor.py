@@ -205,6 +205,209 @@ def test_build_llm_packet_empty_evidence():
     print("✓ Build LLM packet empty evidence test passed")
 
 
+def test_build_llm_packet_with_deterministic_scenarios():
+    """Test that build_llm_packet produces evidence graph format when given scenarios."""
+    change_influence = [
+        {"symbol": "process_payment", "domain": "money_movement", "influence_score": 0.9, "risk_tags": ["money_flow"]},
+    ]
+    evidence_summary = [
+        {
+            "risk_area": "tax_to_invoice",
+            "confidence": 0.68,
+            "evidence_strength": "WEAK",
+            "evidence": ["Tax-related symbols appear connected to invoice generation."],
+            "supporting_symbols": ["_build_numeral_tax_breakdown", "create_payout_invoice"],
+        },
+    ]
+    
+    # Deterministic scenarios from inference pipeline
+    deterministic_scenarios = [
+        {
+            "title": "Order lifecycle inconsistency",
+            "narrative": "Order state may diverge from invoice state",
+            "confidence": 0.84,
+            "impact_type": "domain_coupling",
+            "source_symbol": "update_order",
+            "target_symbol": "generate_invoice",
+            "description": "Order updates may not propagate to invoices",
+            "reasoning": "Shared Order aggregate with transaction boundary",
+            "affected_business_objects": ["Order", "Invoice", "Wallet"],
+            "affected_domains": ["Billing", "Payments", "Orders"],
+            "operational_impact": "Customers see mismatched order and invoice states",
+            "silent_failure": True,
+            "first_observable_signal": "Customer complaint about order status",
+            "merge_risk_level": "HIGH",
+            "ci_would_catch": False,
+            "causal_chain": "update_order → OrderService → InvoiceService → generate_invoice",
+            "failure_class": "state_inconsistency",
+            "supported_by": ["update_order", "generate_invoice", "OrderService"],
+        },
+    ]
+    
+    business_objects = [
+        {"name": "Order", "domain": "Orders"},
+        {"name": "Invoice", "domain": "Billing"},
+    ]
+    
+    constraints = [
+        {"idempotency_enabled": True, "transaction_support": True},
+    ]
+
+    packet = build_llm_packet(
+        change_influence=change_influence,
+        impact_evidence=evidence_summary,
+        risk_zones=["payment", "tax", "invoice"],
+        changed_symbols=["process_payment"],
+        repo="test/repo",
+        pr_number=123,
+        deterministic_scenarios=deterministic_scenarios,
+        business_objects=business_objects,
+        domains=["payment", "billing", "order"],
+        constraints=constraints,
+    )
+
+    # Legacy format still present
+    assert "repo" in packet
+    assert "change_influence" in packet
+    assert "risk_hypotheses" in packet
+    
+    # New evidence graph format
+    assert "scenarios" in packet, "packet should include evidence graph scenarios"
+    assert "summary" in packet, "packet should include summary"
+    
+    # Check evidence graph scenario structure
+    assert len(packet["scenarios"]) == 1
+    scenario = packet["scenarios"][0]
+    assert scenario["title"] == "Order lifecycle inconsistency"
+    assert scenario["confidence"] == 0.84
+    assert "Order" in scenario["business_objects"]
+    assert "Invoice" in scenario["business_objects"]
+    assert "Billing" in scenario["domains"]
+    assert len(scenario["evidence"]) > 0
+    assert len(scenario["counter_evidence"]) >= 0
+    assert len(scenario["causal_chain"]) > 0
+    
+    # Check summary structure
+    assert packet["summary"]["changed_symbols_count"] == 1
+    assert packet["summary"]["risk_patterns_count"] >= 0
+    assert "payment" in packet["summary"]["domains"]
+    
+    tokens = estimate_tokens(packet)
+    assert tokens <= 8000
+    print(f"✓ Build LLM packet with deterministic scenarios test passed (tokens: {tokens})")
+
+
+def test_build_evidence_graph_scenarios_edge_cases():
+    """Test _build_evidence_graph_scenarios with edge cases."""
+    from core_engine.llm_packet_compressor import _build_evidence_graph_scenarios
+    
+    # Empty scenarios
+    result = _build_evidence_graph_scenarios(
+        deterministic_scenarios=[],
+        compressed_hypotheses=[],
+        business_objects=[],
+        domains=[],
+        risk_zones=[],
+        constraints=[],
+    )
+    assert result == []
+    
+    # Scenario with missing fields
+    result = _build_evidence_graph_scenarios(
+        deterministic_scenarios=[{"title": "Test"}],
+        compressed_hypotheses=[],
+        business_objects=[],
+        domains=[],
+        risk_zones=[],
+        constraints=[],
+    )
+    assert len(result) == 1
+    assert result[0]["title"] == "Test"
+    assert result[0]["confidence"] == 0.5  # default
+    
+    # Scenario with list causal_chain
+    result = _build_evidence_graph_scenarios(
+        deterministic_scenarios=[{
+            "title": "Test",
+            "causal_chain": ["A", "→", "B", "→", "C"],
+        }],
+        compressed_hypotheses=[],
+        business_objects=[],
+        domains=[],
+        risk_zones=[],
+        constraints=[],
+    )
+    assert result[0]["causal_chain"] == ["A", "→", "B", "→", "C"]
+    
+    # Max 5 scenarios enforced
+    scenarios = [{"title": f"Scenario {i}"} for i in range(10)]
+    result = _build_evidence_graph_scenarios(
+        deterministic_scenarios=scenarios,
+        compressed_hypotheses=[],
+        business_objects=[],
+        domains=[],
+        risk_zones=[],
+        constraints=[],
+    )
+    assert len(result) == 5
+    
+    print("✓ Build evidence graph scenarios edge cases test passed")
+
+
+def test_schema_allows_review_required_without_scenarios():
+    """Test that REVIEW_REQUIRED verdict is valid with executive_summary but no scenarios.
+    
+    This is the hybrid architecture: LLM acts as reviewer, not scenario generator.
+    It provides executive_summary, missing_evidence, etc. without generating scenarios.
+    """
+    from schemas.failure_simulation import FailureSimulationOutput
+    
+    # LLM reviewer output: REVIEW_REQUIRED with executive_summary but no scenarios
+    output = FailureSimulationOutput(
+        verdict="REVIEW_REQUIRED",
+        failure_scenarios=[],
+        executive_summary="The PR touches a large cluster of tax-related symbols that span checkout, order creation, and invoice generation. There is a concrete risk of tax drift in production.",
+        verdict_rationale="REVIEW_REQUIRED because the modified symbols form a dense tax computation graph that spans multiple transaction boundaries.",
+        final_question="Can you add an end-to-end test that verifies tax consistency?",
+        missing_evidence=["Runtime call graph", "Integration tests"],
+    )
+    
+    assert output.verdict == "REVIEW_REQUIRED"
+    assert len(output.failure_scenarios) == 0
+    assert len(output.executive_summary) >= 50
+    print("✓ Schema allows REVIEW_REQUIRED without scenarios (hybrid architecture)")
+
+
+def test_schema_requires_substantive_output_for_block_review():
+    """Test that BLOCK_REVIEW requires either scenarios or substantive output."""
+    from schemas.failure_simulation import FailureSimulationOutput
+    from pydantic import ValidationError
+    
+    # Should fail: BLOCK_REVIEW with no scenarios and no substantive output
+    try:
+        output = FailureSimulationOutput(
+            verdict="BLOCK_REVIEW",
+            failure_scenarios=[],
+            executive_summary="",  # Too short
+            verdict_rationale="",  # Too short
+        )
+        assert False, "Should have raised ValidationError"
+    except ValidationError as e:
+        assert "requires either failure scenarios or substantive review output" in str(e)
+        print("✓ Schema correctly rejects BLOCK_REVIEW without scenarios or substantive output")
+    
+    # Should succeed: BLOCK_REVIEW with executive_summary
+    output = FailureSimulationOutput(
+        verdict="BLOCK_REVIEW",
+        failure_scenarios=[],
+        executive_summary="This PR introduces a critical security vulnerability in the authentication flow that could allow unauthorized access to user data.",
+        verdict_rationale="BLOCK_REVIEW because the change bypasses authentication checks.",
+        final_question="How do you plan to address the authentication bypass?",
+    )
+    assert output.verdict == "BLOCK_REVIEW"
+    print("✓ Schema allows BLOCK_REVIEW with executive_summary")
+
+
 if __name__ == "__main__":
     test_symbol_table()
     test_impact_evidence_compressor()
@@ -215,4 +418,6 @@ if __name__ == "__main__":
     test_constraint_compressor()
     test_build_llm_packet_with_evidence_summary()
     test_build_llm_packet_empty_evidence()
+    test_build_llm_packet_with_deterministic_scenarios()
+    test_build_evidence_graph_scenarios_edge_cases()
     print("\n✅ All tests passed!")

@@ -41,24 +41,65 @@ class BaseOrchestrator:
         Template method - subclasses only override _prepare_analysis_inputs().
         """
         # Stage 1: Input Preparation (mode-specific)
+        print("─" * 60)
+        print("STAGE 1: Input Preparation")
+        print("─" * 60)
         prepared = self._prepare_analysis_inputs()
         
         # Stage 2-5: Common pipeline execution
+        print("─" * 60)
+        print("STAGE 2: Change Understanding")
+        print("─" * 60)
         understanding = ChangeUnderstandingPipeline.run(
             enriched_files=prepared.enriched_files,
             diff_ir=prepared.diff_ir,
             repo_index=prepared.repo_index,
         )
 
+        print("─" * 60)
+        print("STAGE 3: Evidence Pipeline")
+        print("─" * 60)
         bundle = EvidencePipeline.run(understanding)
 
+        print("─" * 60)
+        print("STAGE 4: Inference Pipeline")
+        print("─" * 60)
         inference = InferencePipeline.run(bundle)
 
+        print("─" * 60)
+        print("STAGE 5: Review Pipeline")
+        print("─" * 60)
         review = ReviewPipeline.run(
             bundle=bundle,
             understanding=understanding,
             failure_simulation_llm=self.failure_simulation_llm,
         )
+
+        print("─" * 60)
+        print("PIPELINE COMPLETE — Final Object Summary")
+        print("─" * 60)
+        print(f"  enriched_files:     {len(prepared.enriched_files)}")
+        print(f"  excluded_files:     {len(prepared.excluded_files)}")
+        print(f"  risk_patterns:      {len(understanding.risk_patterns)}")
+        print(f"  changed_symbols:    {len(bundle.changed_symbols)}")
+        print(f"  risk_anchors:       {len(bundle.risk_anchors)}")
+        print(f"  impact_evidence:    {len(bundle.impact_evidence)}")
+        print(f"  side_effects:       {len(bundle.side_effects)}")
+        print(f"  constraints:        {len(bundle.constraints)}")
+        print(f"  business_objects:   {len(bundle.business_objects)}")
+        print(f"  domains:            {len(bundle.domains)}")
+        print(f"  confidence:         {bundle.confidence}")
+        print(f"  evidence_clusters:  {len(inference.evidence_clusters)}")
+        print(f"  hypotheses:         {len(inference.hypotheses)}")
+        print(f"  scenarios:          {len(inference.scenarios)}")
+        num_failure_scenarios = len(
+            review.failure_simulation.get("failure_scenarios", [])
+            if isinstance(review.failure_simulation, dict)
+            else []
+        )
+        print(f"  failure_scenarios:  {num_failure_scenarios}")
+        print(f"  verdict:            {review.verdict}")
+        print("─" * 60)
 
         return self._build_result(
             repo=self._get_repo(),

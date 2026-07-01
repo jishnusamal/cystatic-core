@@ -3,24 +3,50 @@
 **Verdict: {{ verdict }}**
 
 {% if failure_simulation.final_question %}
-### Merge blocker
+### ⚠️ Merge blocker
 
 > {{ failure_simulation.final_question }}
 {% endif %}
 
 ---
 
-{% if failure_simulation.failure_scenarios %}
-### Potential failure scenarios
+{% if failure_simulation.executive_summary %}
+### 📋 Executive Summary
+
+{{ failure_simulation.executive_summary }}
+{% endif %}
+
+---
+
+{% if failure_simulation.top_risks %}
+### 🎯 Top Risks (Ranked by Production Impact)
+
+{% for risk in failure_simulation.top_risks %}
+#### {{ risk.rank }}. {{ risk.title }}
+
+**Confidence:** {{ "%.0f"|format(risk.confidence * 100) }}%  
+**Validation:** {{ risk.validation_verdict }}  
+**Evidence quality:** {{ risk.evidence_quality }}
+
+**What could break**
+{{ risk.production_symptom }}
+
+**Why it matters**
+{{ risk.why_it_matters }}
+
+**Recommended action**
+{{ risk.recommended_action }}
+
+---
+{% endfor %}
+{% elif failure_simulation.failure_scenarios %}
+### ⚠️ Potential Failure Scenarios
 
 {% for scenario in failure_simulation.failure_scenarios %}
 #### {{ loop.index }}. {{ scenario.title }}
 
 **When this happens**
 {{ scenario.trigger }}
-
-**How it unfolds**
-`{{ scenario.execution_path }}`
 
 **Evidence**
 - Type: {{ scenario.evidence_type }}
@@ -29,26 +55,103 @@
 - CI would catch: {{ "yes" if scenario.ci_would_catch else "no" }}
 - Merge risk: {{ scenario.merge_risk_level }}
 
-**Confidence trap**
-- False confidence reason: {{ scenario.false_confidence_reason }}
-- Why it slips through: {{ scenario.why_it_slips_through }}
-- Merge confidence trap: {{ scenario.merge_confidence_trap }}
-
 **Confidence**
-{{ scenario.confidence }}
+{{ "%.0f"|format(scenario.confidence * 100) }}%
 
 **What breaks**
 {{ scenario.production_impact }}
 
+{% if scenario.reasoning %}
+**Reasoning**
+{{ scenario.reasoning }}
+{% endif %}
+
+---
 {% endfor %}
 {% else %}
-No high-confidence failure scenarios detected.
+✅ No high-confidence failure scenarios detected.
 {% endif %}
 
 ---
 
+{% if failure_simulation.scenario_validations %}
+### 🔍 LLM Validation Details
+
+{% for validation in failure_simulation.scenario_validations %}
+#### {{ validation.scenario_title }}
+
+**Verdict:** {{ validation.verdict }}  
+**Confidence calibration:** {{ validation.confidence_calibration }}  
+**CI catch probability:** {{ validation.ci_catch_probability }}
+
+**Production symptom**
+{{ validation.production_symptom }}
+
+**Strongest evidence**
+{{ validation.strongest_evidence }}
+
+**Weakest evidence**
+{{ validation.weakest_evidence }}
+
+{% if validation.additional_evidence_needed %}
+**Additional evidence needed**
+{% for evidence in validation.additional_evidence_needed %}
+- {{ evidence }}
+{% endfor %}
+{% endif %}
+
+**Reasoning**
+{{ validation.reasoning }}
+
+---
+{% endfor %}
+{% endif %}
+
+{% if failure_simulation.evidence_challenges %}
+### ⚡ Evidence Challenges
+
+{% for challenge in failure_simulation.evidence_challenges %}
+#### {{ challenge.scenario_title }}
+
+**Assumption:** {{ challenge.assumption }}  
+**Weakness:** {{ challenge.weakness }}  
+**Missing evidence:** {{ challenge.missing_evidence }}  
+**Confidence if validated:** {{ "%.0f"|format(challenge.confidence_if_validated * 100) }}%
+
+{% endfor %}
+{% endif %}
+
+{% if failure_simulation.missing_evidence %}
+### ❓ Missing Evidence
+
+The following evidence would increase confidence in the analysis:
+
+{% for evidence in failure_simulation.missing_evidence %}
+- {{ evidence }}
+{% endfor %}
+{% endif %}
+
+{% if failure_simulation.impact_explanations %}
+### 🏗️ Architectural Impact
+
+{% for explanation in failure_simulation.impact_explanations %}
+#### {{ explanation.scenario_title }}
+
+**Blast radius:** {{ explanation.blast_radius }}
+
+**Explanation**
+{{ explanation.explanation }}
+
+**Affected systems**
+{% for system in explanation.affected_systems %}
+- {{ system }}
+{% endfor %}
+
+{% endfor %}
+{% endif %}
+
 {% if failure_simulation.hidden_impact_chain %}
-### Hidden impact
+### 🔗 Hidden Impact Chain
 
 {% for chain in failure_simulation.hidden_impact_chain %}
 - {{ chain }}
@@ -56,7 +159,7 @@ No high-confidence failure scenarios detected.
 {% endif %}
 
 {% if failure_simulation.checked_risk_areas %}
-### Checked risk areas
+### ✅ Checked Risk Areas
 
 {% for area in failure_simulation.checked_risk_areas %}
 - {{ area }}
@@ -64,7 +167,7 @@ No high-confidence failure scenarios detected.
 {% endif %}
 
 {% if failure_simulation.missing_critical_tests %}
-### Missing tests
+### 🧪 Missing Critical Tests
 
 {% for test in failure_simulation.missing_critical_tests %}
 - {{ test }}
@@ -72,7 +175,7 @@ No high-confidence failure scenarios detected.
 {% endif %}
 
 {% if failure_simulation.broken_assumptions %}
-### Risky assumptions
+### ⚠️ Risky Assumptions
 
 {% for assumption in failure_simulation.broken_assumptions %}
 - {{ assumption }}
@@ -80,23 +183,23 @@ No high-confidence failure scenarios detected.
 {% endif %}
 
 {% if failure_simulation.silent_failure_summary %}
-### Silent failure summary
+### 🤫 Silent Failure Risk
 
 {{ failure_simulation.silent_failure_summary }}
 {% endif %}
 
 {% if failure_simulation.merge_risk_statement %}
-### Merge risk statement
+### ⚠️ Merge Risk Statement
 
 {{ failure_simulation.merge_risk_statement }}
 {% endif %}
 
 {% if failure_simulation.verdict_rationale %}
-### Verdict rationale
+### 📝 Verdict Rationale
 
 {{ failure_simulation.verdict_rationale }}
 {% endif %}
 
 ---
 
-<sub>Generated by Factor — validate before merging.</sub>
+<sub>Generated by Factor — hybrid deterministic + LLM analysis. Validate before merging.</sub>

@@ -51,6 +51,10 @@ def build_failure_simulation_llm() -> FailureSimulationLLM | None:
     settings = get_settings()
     api_key = settings.llm_api_key or settings.ai_api_key
 
+    print(f"LLM api key exists: {bool(api_key)}")
+    print(f"LLM model: {settings.llm_model}")
+    print(f"LLM base url: {settings.llm_base_url}")
+
     if not api_key:
         return None
 
