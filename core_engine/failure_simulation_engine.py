@@ -164,7 +164,7 @@ def _compute_tag_overlap(a_tags: set[str], b_tags: set[str]) -> float:
 def _compute_file_proximity(a_path: str, b_path: str) -> float:
     """Compute file proximity score (0.0–1.0) using weighted locality.
 
-    Phase 2 replacement for naive directory prefix matching:
+    Semantic replacement for naive directory prefix matching:
     - Same class (inferred from filename matching class patterns) → 0.9
     - Same module (same file) → 0.7
     - Same package (common parent directory) → 0.5
@@ -303,7 +303,7 @@ def _build_heuristic_edges_from_tags(nodes: list[SymbolNode]) -> list[InferredEd
     Creates an edge between any two symbols that share at least one
     flow-trigger tag (same_flow_tag edges with medium weight).
 
-    Phase 2: Uses weighted locality instead of directory prefix.
+    Semantic: Uses weighted locality instead of directory prefix.
     """
     edges: list[InferredEdge] = []
     seen: set[tuple[str, str]] = set()
@@ -327,7 +327,7 @@ def _build_heuristic_edges_from_tags(nodes: list[SymbolNode]) -> list[InferredEd
             file_proximity = _compute_file_proximity(a.file_path, b.file_path)
             domain_sim = _compute_domain_similarity(a.domain, b.domain)
 
-            # Phase 2: Weighted locality scoring
+            # Semantic: Weighted locality scoring
             # class_similarity * 0.4 + module_similarity * 0.3 + package_similarity * 0.2 + import_similarity * 0.1
             # Note: import_similarity is approximated via domain_similarity here
             # (full import graph detection would require AST analysis)
@@ -428,7 +428,7 @@ def infer_edges(
     - same domain → weak edge (weight 0.3)
     - causal:{type} → grounded edge (weight based on causal type + confidence)
 
-    Phase 2: Uses weighted locality (same class/module/package/import)
+    Semantic: Uses weighted locality (same class/module/package/import)
     instead of naive directory prefix matching.
 
     Args:
@@ -450,7 +450,7 @@ def infer_edges(
             file_proximity = _compute_file_proximity(a.file_path, b.file_path)
             domain_sim = _compute_domain_similarity(a.domain, b.domain)
 
-            # Phase 2: Weighted locality scoring per spec
+            # Semantic: Weighted locality scoring per spec
             # Score = class_similarity * 0.4 + module_similarity * 0.3 +
             #         package_similarity * 0.2 + import_similarity * 0.1
             # Note: import_similarity is approximated via domain_similarity
@@ -506,7 +506,7 @@ def infer_edges(
                 edge_type=edge_type,
             ))
 
-    # ── Phase 2: Causal graph edges (grounded, directed) ──
+    # ── Semantic: Causal graph edges (grounded, directed) ──
     if causal_edges:
         causal_inferred = _convert_causal_edges(causal_edges)
         # Deduplicate: causal edges override heuristic edges for the same (from, to)

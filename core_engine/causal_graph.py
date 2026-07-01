@@ -83,7 +83,7 @@ class EvidenceNode:
 class WeakEdge:
     """A weak causal edge with evidence tokens.
 
-    Phase 2 — evidence edges with confidence + type. Every edge MUST have
+    Evidence edges with confidence + type. Every edge MUST have
     at least 1 evidence string. This replaces LLM reasoning with grounded,
     probabilistic structure.
 
@@ -1579,7 +1579,7 @@ class CausalGraphBuilder:
 
 
     # -------------------------------------------------------------------------
-    # Phase 2 — Weak Causal Edges
+    # Weak Causal Edges
     # -------------------------------------------------------------------------
 
     _WEAK_NOISE: set[str] = {
@@ -1599,7 +1599,7 @@ class CausalGraphBuilder:
         enriched_files: list[dict],
         repo_index: "RepositorySymbolIndex | None" = None,
     ) -> list[dict]:
-        """Build weak causal edges with evidence tokens (Phase 2).
+        """Build weak causal edges with evidence tokens.
 
         Produces evidence edges with 5 types:
             CALLS, SHARES_STATE, DATA_FLOW, CONTROL_FLOW, CONTRACT_DEPENDENCY

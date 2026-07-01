@@ -125,6 +125,7 @@ class HypothesisGenerator:
             source, target, evidence_type, explanation
         )
         
+        from core_engine.models.entity_ref import EntityRef
         return ImpactHypothesis(
             hypothesis=description,
             source_symbol=source,
@@ -176,6 +177,7 @@ class HypothesisGenerator:
         else:
             business_domain = anchor.get("business_domain")
         
+        from core_engine.models.entity_ref import EntityRef
         return ImpactHypothesis(
             hypothesis=description,
             source_symbol=symbol,
@@ -217,6 +219,7 @@ class HypothesisGenerator:
         # Determine impact type
         impact_type = self._side_effect_type_to_impact_type(effect_type)
         
+        from core_engine.models.entity_ref import EntityRef
         return ImpactHypothesis(
             hypothesis=f"Side effect '{effect_type}' detected: {description}",
             source_symbol=symbol,

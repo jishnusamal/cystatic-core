@@ -1,4 +1,4 @@
-"""Tests for the V6 evidence-driven LLM packet compression pipeline."""
+"""Tests for the evidence-driven LLM packet compression pipeline."""
 from __future__ import annotations
 
 from core_engine.llm_packet_compressor import build_llm_packet, estimate_tokens

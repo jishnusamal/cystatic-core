@@ -1,5 +1,5 @@
 """
-PHASE 6 — LLM INPUT CONTRACT (FACTOR V6 — EVIDENCE-DRIVEN)
+LLM INPUT CONTRACT (EVIDENCE-DRIVEN)
 
 The LLM receives exactly 1 structure with 5 signal types:
   1. change_influence []       — ONLY scored symbols + domains (Layer 1)
@@ -374,7 +374,7 @@ class FailureSimulationLLM:
         changed_symbols: list[str] | None = None,
         evidence_summary: list[dict[str, Any]] | None = None,
     ) -> list[Any]:
-        """Build prompt with the V6 evidence-driven input contract.
+        """Build prompt with the evidence-driven input contract.
 
         Args:
             repo: Repository identifier.
@@ -415,7 +415,7 @@ class FailureSimulationLLM:
         changed_symbols: list[str] | None = None,
         evidence_summary: list[dict[str, Any]] | None = None,
     ) -> FailureSimulationOutput:
-        """Generate failure simulation from V6 evidence-driven input contract.
+        """Generate failure simulation from evidence-driven input contract.
 
         Args:
             repo: Repository identifier.

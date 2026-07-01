@@ -1,4 +1,4 @@
-"""Tests for Phase 2 — Weak Causal Edges.
+"""Tests for Weak Causal Edges.
 
 Verifies that build_weak_edges produces evidence edges with 5 types:
   CALLS, SHARES_STATE, DATA_FLOW, CONTROL_FLOW, CONTRACT_DEPENDENCY

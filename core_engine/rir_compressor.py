@@ -29,7 +29,7 @@ class RIRCompressor:
     ) -> dict[str, Any]:
         """Canonical Factor IR v3 — internal representation for validation and artifacts.
         
-        NOTE: This is NOT the LLM input. The LLM receives the V5 minimal causal truth
+        NOTE: This is NOT the LLM input. The LLM receives the minimal causal truth
         contract built by the orchestrator from individual components:
         - change_influence, soft_edges, constraints, risk_zones, changed_symbols
         """

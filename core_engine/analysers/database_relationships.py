@@ -1,160 +1,308 @@
 """
 Database Relationship Analyzer
 
-Discovers operational coupling through shared persistence.
-Produces evidence such as: Reads Same Table, Writes Same Table, Shared Model, Shared Collection
+Extracts database table relationships and access patterns.
+This connects otherwise unrelated code through shared persistence.
+
+Produces evidence types:
+- reads_table
+- writes_table
+- shares_table
+- shared_database_entity
 """
 from __future__ import annotations
 
 from typing import Any
 from core_engine.analysers.base import EvidenceAnalyzer, AnalyzerOutput
 from core_engine.analysers.analysis_context import AnalysisContext
+from core_engine.models.enums import EvidenceType
 
 
 class DatabaseRelationshipAnalyzer(EvidenceAnalyzer):
-    """Discover operational coupling through shared persistence.
+    """Extract database table relationships and access patterns.
     
     This analyzer:
-    - Identifies database table access patterns
-    - Detects shared models between changed symbols
+    - Identifies database tables referenced in code
+    - Detects read/write patterns
+    - Finds shared table access across functions
     - Never predicts failures
-    - Only extracts deterministic database relationship facts
+    - Only extracts deterministic database facts
     """
     
-    # Database operation patterns
+    # Common database table patterns
     TABLE_PATTERNS = {
-        "save": "write",
-        "update": "write",
-        "insert": "write",
-        "delete": "write",
-        "commit": "write",
-        "query": "read",
-        "filter": "read",
-        "get": "read",
-        "find": "read",
-        "select": "read",
+        # ORM model patterns
+        "orm_models": [
+            "Model",
+            "models.Model",
+            "Base",
+            "declarative_base",
+            "Schema",
+            "models.",
+        ],
+        # Query patterns
+        "query_patterns": [
+            ".objects.",
+            ".query.",
+            "select(",
+            "insert(",
+            "update(",
+            "delete(",
+            "filter(",
+            "get(",
+            "all(",
+            "first(",
+        ],
+        # Transaction patterns (already in transaction analyzer, but relevant here)
+        "db_operations": [
+            "save(",
+            "create(",
+            "update(",
+            "delete(",
+            "bulk_create",
+            "bulk_update",
+        ],
     }
     
-    # Common table/model name patterns
-    MODEL_PATTERNS = [
-        "model", "table", "schema", "entity",
-        "User", "Order", "Payment", "Invoice",
-        "Customer", "Product", "Subscription",
+    # Table name extraction patterns
+    TABLE_NAME_INDICATORS = [
+        "table_name",
+        "db_table",
+        "__tablename__",
+        "from ",
+        "into ",
+        "update ",
+        "join ",
     ]
     
     def analyze(self, context: AnalysisContext) -> AnalyzerOutput:
         """Extract database relationships from the analysis context.
         
         Args:
-            context: AnalysisContext containing enriched_files with hunks.
+            context: AnalysisContext containing enriched_files and changed functions.
             
         Returns:
-            AnalyzerOutput with impact_evidence for database relationships.
+            AnalyzerOutput with database relationship evidence.
         """
         output = AnalyzerOutput()
         
-        # Track tables/models accessed by each changed symbol
-        symbol_tables: dict[str, list[str]] = {}
+        # Track table access
+        table_access: dict[str, dict[str, list[str]]] = {}  # table -> {"reads": [...], "writes": [...]}
         
-        # Extract from enriched_files
+        # Extract from enriched files
         for file_data in context.enriched_files:
             file_path = file_data.get("file_path", "")
             changed_functions = file_data.get("changed_functions", [])
-            hunks = file_data.get("hunks", [])
+            keyword_signals = file_data.get("keyword_signals", [])
             
-            # Get added lines
-            added_lines = self._extract_added_lines(hunks)
-            
-            # For each changed function, detect database operations
+            # Check changed functions for database patterns
             for func in changed_functions:
                 func_name = self._get_func_name(func)
                 if not func_name:
                     continue
                 
-                symbol_key = f"{file_path}:{func_name}"
-                tables_accessed = []
+                func_text = self._get_func_text(func)
                 
-                # Check added lines for database operations
-                for line in added_lines:
-                    line_lower = line.lower()
+                # Detect database operations
+                db_ops = self._detect_database_operations(func_text, keyword_signals)
+                
+                for table_name, operations in db_ops.items():
+                    if table_name not in table_access:
+                        table_access[table_name] = {"reads": [], "writes": []}
                     
-                    # Detect table/model references
-                    for pattern in self.MODEL_PATTERNS:
-                        if pattern.lower() in line_lower:
-                            tables_accessed.append(pattern)
+                    # Add evidence for each operation
+                    for op in operations:
+                        if op == "read":
+                            evidence_type = "reads_table"
+                            table_access[table_name]["reads"].append(func_name)
+                        else:  # write
+                            evidence_type = "writes_table"
+                            table_access[table_name]["writes"].append(func_name)
+                        
+                        output.impact_evidence.append({
+                            "source_symbol": func_name,
+                            "target_symbol": table_name,
+                            "evidence_type": evidence_type,
+                            "confidence": 0.8,
+                            "explanation": f"Function {func_name} {op}s from {table_name} table",
+                            "metadata": {
+                                "file_path": file_path,
+                                "operation": op,
+                                "table_name": table_name,
+                            },
+                        })
+            
+            # Check keyword signals for database hints
+            for signal in keyword_signals:
+                signal_text = signal.keyword if hasattr(signal, "keyword") else str(signal)
+                tables = self._extract_table_names(signal_text)
+                for table_name in tables:
+                    if table_name not in table_access:
+                        table_access[table_name] = {"reads": [], "writes": []}
                     
-                    # Detect operation types
-                    for op_pattern, op_type in self.TABLE_PATTERNS.items():
-                        if op_pattern in line_lower:
-                            # Extract potential table name from the line
-                            table_name = self._extract_table_name(line, op_pattern)
-                            if table_name:
-                                tables_accessed.append(table_name)
-                
-                if tables_accessed:
-                    symbol_tables[symbol_key] = list(set(tables_accessed))
-        
-        # Generate impact evidence for shared tables
-        symbols = list(symbol_tables.keys())
-        for i, symbol1 in enumerate(symbols):
-            for symbol2 in symbols[i+1:]:
-                tables1 = set(symbol_tables[symbol1])
-                tables2 = set(symbol_tables[symbol2])
-                
-                shared_tables = tables1.intersection(tables2)
-                if shared_tables:
                     output.impact_evidence.append({
-                        "source_symbol": symbol1,
-                        "target_symbol": symbol2,
-                        "evidence_type": "shared_database_table",
-                        "confidence": 0.7,
-                        "explanation": f"Both symbols access shared database tables: {', '.join(shared_tables)}",
+                        "source_symbol": file_path,
+                        "target_symbol": table_name,
+                        "evidence_type": "reads_table",
+                        "confidence": 0.6,
+                        "explanation": f"Keyword signal suggests access to {table_name}",
                         "metadata": {
-                            "shared_tables": list(shared_tables),
-                            "symbol1_tables": list(tables1),
-                            "symbol2_tables": list(tables2),
+                            "keyword": signal_text,
+                            "file_path": file_path,
                         },
                     })
         
+        # Generate shared table evidence
+        # If multiple functions access the same table, they're connected
+        for table_name, access in table_access.items():
+            all_functions = access["reads"] + access["writes"]
+            
+            if len(all_functions) > 1:
+                # Remove duplicates while preserving order
+                unique_functions = list(dict.fromkeys(all_functions))
+                
+                for i, func1 in enumerate(unique_functions):
+                    for func2 in unique_functions[i+1:]:
+                        # Determine if they have different operation types
+                        func1_reads = func1 in access["reads"]
+                        func2_reads = func2 in access["reads"]
+                        func1_writes = func1 in access["writes"]
+                        func2_writes = func2 in access["writes"]
+                        
+                        if func1_reads and func2_writes:
+                            explanation = f"{func1} reads and {func2} writes to {table_name}"
+                        elif func1_writes and func2_reads:
+                            explanation = f"{func1} writes and {func2} reads from {table_name}"
+                        else:
+                            explanation = f"Both access {table_name} table"
+                        
+                        output.impact_evidence.append({
+                            "source_symbol": func1,
+                            "target_symbol": func2,
+                            "evidence_type": "shares_table",
+                            "confidence": 0.75,
+                            "explanation": explanation,
+                            "metadata": {
+                                "table_name": table_name,
+                                "func1_operations": {
+                                    "reads": func1_reads,
+                                    "writes": func1_writes,
+                                },
+                                "func2_operations": {
+                                    "reads": func2_reads,
+                                    "writes": func2_writes,
+                                },
+                            },
+                        })
+        
         return output
     
-    def _extract_added_lines(self, hunks: list[Any]) -> list[str]:
-        """Extract added lines from hunks."""
-        added_lines = []
+    def _detect_database_operations(self, func_text: str, keyword_signals: list) -> dict[str, list[str]]:
+        """Detect database operations in function text.
         
-        for hunk in hunks:
-            hunk_dict = self._to_dict(hunk)
-            lines = hunk_dict.get("lines", [])
+        Args:
+            func_text: Function source code or metadata
+            keyword_signals: List of keyword signals from analysis
             
-            for line in lines:
-                line_dict = self._to_dict(line)
-                if line_dict.get("line_type") == "added":
-                    content = str(line_dict.get("content", ""))
-                    if content.strip():
-                        added_lines.append(content)
+        Returns:
+            Dictionary mapping table names to list of operations ("read", "write")
+        """
+        table_operations: dict[str, list[str]] = {}
+        text_lower = func_text.lower() if func_text else ""
         
-        return added_lines
+        # Detect table names
+        table_names = self._extract_table_names(func_text)
+        
+        if not table_names:
+            return table_operations
+        
+        # Detect read operations
+        read_patterns = ["select(", "filter(", "get(", "all(", "first(", "find("]
+        has_read = any(pattern in text_lower for pattern in read_patterns)
+        
+        # Detect write operations
+        write_patterns = ["insert(", "update(", "delete(", "save(", "create(", "bulk_create"]
+        has_write = any(pattern in text_lower for pattern in write_patterns)
+        
+        # Check keyword signals for additional hints
+        for signal in keyword_signals:
+            signal_text = signal.keyword if hasattr(signal, "keyword") else str(signal)
+            signal_lower = signal_text.lower()
+            
+            if any(rp in signal_lower for rp in read_patterns):
+                has_read = True
+            if any(wp in signal_lower for wp in write_patterns):
+                has_write = True
+        
+        # Assign operations to tables
+        for table_name in table_names:
+            operations = []
+            if has_read:
+                operations.append("read")
+            if has_write:
+                operations.append("write")
+            
+            if operations:
+                table_operations[table_name] = operations
+        
+        return table_operations
     
-    def _extract_table_name(self, line: str, operation: str) -> str | None:
-        """Extract table name from a line containing a database operation."""
-        # Simple heuristic: look for capitalized words after the operation
-        # This is a simplified version - a real implementation would use AST parsing
-        line_lower = line.lower()
-        op_index = line_lower.find(operation)
-        if op_index == -1:
-            return None
+    def _extract_table_names(self, text: str) -> list[str]:
+        """Extract table names from text.
         
-        # Look for model/table names after the operation
-        remainder = line[op_index + len(operation):]
-        words = remainder.split()
+        Args:
+            text: Text to analyze
+            
+        Returns:
+            List of table names detected
+        """
+        if not text:
+            return []
         
-        for word in words[:5]:  # Check next 5 words
-            # Clean punctuation
-            clean_word = word.strip("(),'\".")
-            if clean_word and clean_word[0].isupper():
-                return clean_word
+        text_lower = text.lower()
+        table_names = []
         
-        return None
+        # Look for common table name patterns
+        # Pattern 1: Model class definitions (class Name(models.Model))
+        import re
+        model_pattern = r'class\s+(\w+)\s*\([^)]*Model[^)]*\)'
+        matches = re.findall(model_pattern, text, re.IGNORECASE)
+        for match in matches:
+            # Convert CamelCase to snake_case (typical table naming)
+            table_name = self._camel_to_snake(match)
+            table_names.append(table_name)
+        
+        # Pattern 2: Explicit table names
+        tablename_pattern = r'__tablename__\s*=\s*["\']([^"\']+)["\']'
+        matches = re.findall(tablename_pattern, text, re.IGNORECASE)
+        table_names.extend(matches)
+        
+        # Pattern 3: table_name attribute
+        table_attr_pattern = r'table_name\s*=\s*["\']([^"\']+)["\']'
+        matches = re.findall(table_attr_pattern, text, re.IGNORECASE)
+        table_names.extend(matches)
+        
+        # Pattern 4: FROM/JOIN clauses (SQL-like)
+        from_pattern = r'\bfrom\s+(\w+)'
+        matches = re.findall(from_pattern, text_lower)
+        table_names.extend(matches)
+        
+        join_pattern = r'\bjoin\s+(\w+)'
+        matches = re.findall(join_pattern, text_lower)
+        table_names.extend(matches)
+        
+        # Deduplicate and clean
+        table_names = list(set(table_names))
+        table_names = [name for name in table_names if len(name) > 2]  # Filter out very short names
+        
+        return table_names
+    
+    def _camel_to_snake(self, name: str) -> str:
+        """Convert CamelCase to snake_case."""
+        import re
+        # Insert underscore before uppercase letters and convert to lowercase
+        s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+        return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
     
     def _get_func_name(self, func: Any) -> str:
         """Extract function name from function object."""
@@ -166,10 +314,17 @@ class DatabaseRelationshipAnalyzer(EvidenceAnalyzer):
             return func.name
         return ""
     
-    def _to_dict(self, value: Any) -> dict[str, Any]:
-        """Convert value to dict."""
-        if isinstance(value, dict):
-            return value
-        if hasattr(value, "model_dump"):
-            return value.model_dump()
-        return {}
+    def _get_func_text(self, func: Any) -> str:
+        """Extract function text/code from function object."""
+        if isinstance(func, dict):
+            return func.get("text", "") or func.get("code", "") or func.get("name", "")
+        if hasattr(func, "model_dump"):
+            dump = func.model_dump()
+            return dump.get("text", "") or dump.get("code", "") or dump.get("name", "")
+        if hasattr(func, "text"):
+            return func.text
+        if hasattr(func, "code"):
+            return func.code
+        if hasattr(func, "name"):
+            return func.name
+        return ""
