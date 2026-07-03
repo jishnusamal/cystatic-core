@@ -5,6 +5,8 @@ Replaces the previous over-strict grounding validator.
 - Scores scenarios by their alignment with evidence
 - Does NOT hard-reject scenarios with unknown symbols
 - Produces confidence adjustments, not binary valid/invalid
+
+Supports both legacy (failure_scenarios) and new (primary_concern + additional_observations) formats.
 """
 from __future__ import annotations
 
@@ -162,7 +164,11 @@ class ScenarioScorer:
                     self.non_production_symbols.add(source)
     
     def score(self, failure_simulation: dict[str, Any]) -> ValidationScore:
-        """Score failure simulation scenarios (does NOT hard-reject)."""
+        """Score failure simulation output (does NOT hard-reject).
+        
+        Supports both new format (primary_concern, additional_observations) and
+        legacy format (failure_scenarios).
+        """
         result = ValidationScore()
         
         if not isinstance(failure_simulation, dict):
@@ -170,15 +176,50 @@ class ScenarioScorer:
             result.overall_confidence_adjustment = 0.5
             return result
         
-        scenarios = failure_simulation.get("failure_scenarios", [])
-
-        if not scenarios:
-            result.notes.append("No failure scenarios to validate")
-            return result
-
-        for i, scenario in enumerate(scenarios):
-            score = self._score_scenario(scenario, i)
-            result.scenarios.append(score)
+        # New format: primary_concern + additional_observations
+        all_items = []
+        primary = failure_simulation.get("primary_concern")
+        if primary and isinstance(primary, dict):
+            score = self._score_primary_concern(primary, 0)
+            if score:
+                result.scenarios.append(score)
+                all_items.append(primary)
+        
+        observations = failure_simulation.get("additional_observations", [])
+        for i, obs in enumerate(observations):
+            score = self._score_additional_observation(obs, i + 1)
+            if score:
+                result.scenarios.append(score)
+                all_items.append(obs)
+        
+        # Legacy format: architectural_observations, highest_production_risks
+        if not all_items:
+            observations = failure_simulation.get("architectural_observations", [])
+            risks = failure_simulation.get("highest_production_risks", [])
+            
+            for i, obs in enumerate(observations):
+                score = self._score_architectural_observation(obs, i)
+                if score:
+                    result.scenarios.append(score)
+                    all_items.append(obs)
+            
+            for i, risk in enumerate(risks):
+                score = self._score_production_risk(risk, i + len(observations))
+                if score:
+                    result.scenarios.append(score)
+                    all_items.append(risk)
+        
+        # Legacy format: failure_scenarios
+        if not all_items:
+            scenarios = failure_simulation.get("failure_scenarios", [])
+            if scenarios:
+                for i, scenario in enumerate(scenarios):
+                    score = self._score_legacy_scenario(scenario, i)
+                    if score:
+                        result.scenarios.append(score)
+            else:
+                result.notes.append("No scenarios or observations to validate")
+                return result
 
         # Calculate overall confidence adjustment
         if result.scenarios:
@@ -188,8 +229,202 @@ class ScenarioScorer:
 
         return result
     
-    def _score_scenario(self, scenario: dict[str, Any], index: int) -> ScenarioScore:
-        """Score a single scenario, returning a confidence adjustment."""
+    def _score_primary_concern(self, concern: dict[str, Any], index: int) -> ScenarioScore | None:
+        """Score a single primary concern (new format)."""
+        if not isinstance(concern, dict):
+            return None
+        
+        score = ScenarioScore(scenario_index=index)
+        
+        # 1. Evidence grounding score from execution_path symbols
+        execution_path = concern.get("execution_path", "")
+        # Extract symbols from execution path (e.g. "A → B → C")
+        path_symbols = re.findall(r'[a-zA-Z_][a-zA-Z0-9_.]*', execution_path)
+        if path_symbols:
+            found_count = sum(1 for sym in path_symbols if self._symbol_exists_in_ir(sym))
+            score.evidence_score = found_count / len(path_symbols)
+            
+            if found_count < len(path_symbols):
+                missing = [sym for sym in path_symbols if not self._symbol_exists_in_ir(sym)]
+                score.issues.append(f"Symbol(s) not found in IR: {', '.join(missing[:3])}")
+            if found_count > 0:
+                score.strengths.append(f"{found_count}/{len(path_symbols)} execution path symbols found in IR")
+        else:
+            score.evidence_score = 0.5
+            score.issues.append("No execution path symbols to validate")
+        
+        # 2. Production reachability
+        why_blocking = concern.get("why_blocking", "")
+        if len(why_blocking) > 100:
+            score.production_reachability_score = 0.9
+        elif len(why_blocking) > 50:
+            score.production_reachability_score = 0.7
+        else:
+            score.production_reachability_score = 0.5
+        
+        # 3. Specificity from title and required_validation
+        title = concern.get("title", "")
+        required_validation = concern.get("required_validation", "")
+        total_length = len(title) + len(required_validation)
+        if total_length > 100:
+            score.specificity_score = 0.8
+        elif total_length > 50:
+            score.specificity_score = 0.6
+        else:
+            score.specificity_score = 0.4
+        
+        # Calculate overall confidence adjustment
+        score.confidence_adjustment = (
+            score.evidence_score * 0.4 +
+            score.production_reachability_score * 0.3 +
+            score.specificity_score * 0.3
+        )
+        score.confidence_adjustment = max(0.1, score.confidence_adjustment)
+        
+        return score
+    
+    def _score_additional_observation(self, obs: dict[str, Any], index: int) -> ScenarioScore | None:
+        """Score a single additional observation (new format)."""
+        if not isinstance(obs, dict):
+            return None
+        
+        score = ScenarioScore(scenario_index=index)
+        
+        # 1. Evidence grounding score from symbols
+        symbols = obs.get("symbols", [])
+        if symbols:
+            found_count = sum(1 for sym in symbols if self._symbol_exists_in_ir(sym))
+            score.evidence_score = found_count / len(symbols)
+            
+            if found_count < len(symbols):
+                missing = [sym for sym in symbols if not self._symbol_exists_in_ir(sym)]
+                score.issues.append(f"Symbol(s) not found in IR: {', '.join(missing[:3])}")
+            if found_count > 0:
+                score.strengths.append(f"{found_count}/{len(symbols)} symbols found in IR")
+        else:
+            score.evidence_score = 0.3
+            score.issues.append("No symbols cited — weak grounding")
+        
+        # 2. Production reachability
+        score.production_reachability_score = 0.7
+        
+        # 3. Specificity from observation text
+        observation = obs.get("observation", "")
+        if len(observation) > 200:
+            score.specificity_score = 0.8
+        elif len(observation) > 100:
+            score.specificity_score = 0.6
+        else:
+            score.specificity_score = 0.4
+        
+        # Calculate overall confidence adjustment
+        score.confidence_adjustment = (
+            score.evidence_score * 0.4 +
+            score.production_reachability_score * 0.3 +
+            score.specificity_score * 0.3
+        )
+        score.confidence_adjustment = max(0.1, score.confidence_adjustment)
+        
+        return score
+    
+    def _score_architectural_observation(self, obs: dict[str, Any], index: int) -> ScenarioScore | None:
+        """Score a single architectural observation (legacy format)."""
+        if not isinstance(obs, dict):
+            return None
+        
+        score = ScenarioScore(scenario_index=index)
+        
+        # 1. Evidence grounding score from symbols
+        symbols = obs.get("symbols", [])
+        if symbols:
+            found_count = sum(1 for sym in symbols if self._symbol_exists_in_ir(sym))
+            score.evidence_score = found_count / len(symbols)
+            
+            if found_count < len(symbols):
+                missing = [sym for sym in symbols if not self._symbol_exists_in_ir(sym)]
+                score.issues.append(f"Symbol(s) not found in IR: {', '.join(missing[:3])}")
+            if found_count > 0:
+                score.strengths.append(f"{found_count}/{len(symbols)} symbols found in IR")
+        else:
+            score.evidence_score = 0.3
+            score.issues.append("No symbols cited — weak grounding")
+        
+        # 2. Production reachability from evidence_strength
+        evidence_strength = obs.get("evidence_strength", "Limited")
+        if evidence_strength == "Strong":
+            score.production_reachability_score = 0.9
+        elif evidence_strength == "Moderate":
+            score.production_reachability_score = 0.6
+        else:
+            score.production_reachability_score = 0.3
+        
+        # 3. Specificity from observation text
+        observation = obs.get("observation", "")
+        if len(observation) > 200:
+            score.specificity_score = 0.8
+        elif len(observation) > 100:
+            score.specificity_score = 0.6
+        else:
+            score.specificity_score = 0.4
+        
+        # Calculate overall confidence adjustment
+        score.confidence_adjustment = (
+            score.evidence_score * 0.4 +
+            score.production_reachability_score * 0.3 +
+            score.specificity_score * 0.3
+        )
+        score.confidence_adjustment = max(0.1, score.confidence_adjustment)
+        
+        return score
+    
+    def _score_production_risk(self, risk: dict[str, Any], index: int) -> ScenarioScore | None:
+        """Score a single production risk (legacy format)."""
+        if not isinstance(risk, dict):
+            return None
+        
+        score = ScenarioScore(scenario_index=index)
+        
+        # 1. Evidence grounding score from affected_symbols
+        symbols = risk.get("affected_symbols", [])
+        if symbols:
+            found_count = sum(1 for sym in symbols if self._symbol_exists_in_ir(sym))
+            score.evidence_score = found_count / len(symbols)
+            
+            if found_count < len(symbols):
+                missing = [sym for sym in symbols if not self._symbol_exists_in_ir(sym)]
+                score.issues.append(f"Symbol(s) not found in IR: {', '.join(missing[:3])}")
+            if found_count > 0:
+                score.strengths.append(f"{found_count}/{len(symbols)} symbols found in IR")
+        else:
+            score.evidence_score = 0.3
+            score.issues.append("No affected_symbols cited — weak grounding")
+        
+        # 2. Production reachability
+        score.production_reachability_score = 0.8  # Production risks are inherently production-reachable
+        
+        # 3. Specificity from description and suggested_validation
+        description = risk.get("description", "")
+        suggested_validation = risk.get("suggested_validation", "")
+        total_length = len(description) + len(suggested_validation)
+        if total_length > 200:
+            score.specificity_score = 0.8
+        elif total_length > 100:
+            score.specificity_score = 0.6
+        else:
+            score.specificity_score = 0.4
+        
+        # Calculate overall confidence adjustment
+        score.confidence_adjustment = (
+            score.evidence_score * 0.5 +
+            score.production_reachability_score * 0.25 +
+            score.specificity_score * 0.25
+        )
+        score.confidence_adjustment = max(0.1, score.confidence_adjustment)
+        
+        return score
+    
+    def _score_legacy_scenario(self, scenario: dict[str, Any], index: int) -> ScenarioScore:
+        """Score a single legacy scenario (old format)."""
         score = ScenarioScore(scenario_index=index)
         
         # 1. Evidence grounding score
@@ -285,7 +520,25 @@ class ScenarioScorer:
         return True
 
 
-def score_scenarios(failure_simulation: dict[str, Any], compressed_ir: dict[str, Any]) -> ValidationScore:
-    """Convenience function for scoring failure scenarios."""
+def score_scenarios(failure_simulation: dict[str, Any], normalized_facts_or_ir: Any) -> ValidationScore:
+    """Convenience function for scoring failure scenarios.
+    
+    Args:
+        failure_simulation: Failure simulation output from LLM or deterministic builder.
+        normalized_facts_or_ir: Either NormalizedReviewFacts or compressed IR dict.
+            If NormalizedReviewFacts, extracts compression stats for scoring.
+            If dict, uses directly as compressed IR.
+            
+    Returns:
+        ValidationScore with confidence adjustments and diagnostics.
+    """
+    # Extract compressed IR from normalized facts if needed
+    if hasattr(normalized_facts_or_ir, 'compression_stats'):
+        # It's NormalizedReviewFacts - extract compression stats
+        compressed_ir = normalized_facts_or_ir.compression_stats
+    else:
+        # It's already a dict (legacy behavior)
+        compressed_ir = normalized_facts_or_ir
+    
     scorer = ScenarioScorer(compressed_ir)
     return scorer.score(failure_simulation)

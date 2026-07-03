@@ -1,10 +1,10 @@
-# Factor — System Architecture
+# Factor — Active System Architecture
 
 ## What Factor Does
 
 Factor is a **blast-radius and refactor-risk analysis engine** for code changes. Given a PR (or raw diff), it determines which downstream services, endpoints, databases, and queues are impacted, assigns a confidence-weighted verdict, and posts a structured PR comment — all without requiring the reviewer to hold the full system in their head.
 
-The core design principle: **causal-graph propagation drives the verdict; the LLM is a contextual override; failure templates are optional hypotheses that never drive upgrades.**
+The core design principle: **evidence-based progressive compression drives the verdict; the LLM is an expert reviewer; failure scenarios are generated only from high-confidence hypotheses.**
 
 ---
 
@@ -14,38 +14,22 @@ The core design principle: **causal-graph propagation drives the verdict; the LL
 PR webhook / API request
   │
   ▼
-Source Adapter Layer         fetch diff + file snapshots
-  │                           (GitHub / GitLab)
-  ▼
-Language Adapter Layer       per-language static analysis
-  │                           (Python / TypeScript)
-  ▼
-Canonical IR + Compressor    normalize → compress for LLM budget
+InputPreparationPipeline        fetch diff + file snapshots (mode-dependent)
   │
   ▼
-Core Engine Pipeline
-  ├── Risk Pattern Detector         detect risky code shapes
-  ├── Entry Point Resolver          affected HTTP/event/CLI entry points
-  ├── Behavior Extractor            before/after behavior per symbol
-  ├── Behavior Diff Builder         symbol-level behavioral diffs
-  ├── Reachability Classifier       can each change be reached?
-  ├── Side Effect Detector          mutation / IO / state side effects
-  ├── Causal Graph Builder          symbol→symbol edges with confidence
-  ├── Repo-Wide Symbol Index        expand known symbols past diff boundary
-  ├── Propagation Engine            impact tree (≤5 hops, confidence-weighted)
-  ├── Failure Templates             optional hypothesis matching (lazy)
-  ├── System Behavior Deltas        system-level behavioral change summary
-  ├── Structured Hypotheses         testable claims on causal edges
-  └── Scenario Validator            score LLM failure scenarios
+ChangeUnderstandingPipeline     analyze the change itself
   │
   ▼
-LLM Failure Simulation       (optional — OpenAI, with fallback to rules)
+EvidencePipeline                generate semantic evidence from all analyzers
   │
   ▼
-Verdict Aggregation          blast radius primary, LLM secondary
+InferencePipeline               progressive compression → hypotheses → scenarios
   │
   ▼
-PR Comment (Jinja2)          + persisted run (Tortoise ORM → Postgres)
+ReviewPipeline                  LLM review (optional) + verdict aggregation
+  │
+  ▼
+Result                          PR comment + persisted run (Tortoise ORM → Postgres)
 ```
 
 ---
@@ -66,6 +50,71 @@ cystatic-core/
 │
 ├── core_engine/                analysis brain
 │   ├── orchestrator.py         BaseOrchestrator + Orchestrator + DiffOrchestrator
+│   │
+│   ├── pipelines/              modular pipeline implementations
+│   │   ├── __init__.py         pipeline documentation
+│   │   ├── input_preparation.py  InputPreparationPipeline
+│   │   ├── change_understanding.py  ChangeUnderstandingPipeline
+│   │   ├── evidence.py         EvidencePipeline
+│   │   ├── inference.py        InferencePipeline
+│   │   └── review.py           ReviewPipeline
+│   │
+│   ├── analysers/              semantic analyzers (10 analyzers)
+│   │   ├── analysis_context.py     AnalysisContext
+│   │   ├── base.py                 BaseAnalyzer
+│   │   ├── business_object_analyzer.py
+│   │   ├── business_objects.py
+│   │   ├── cache_dependencies.py
+│   │   ├── changed_symbols.py
+│   │   ├── constraints.py
+│   │   ├── database_relationships.py
+│   │   ├── domain_hub.py
+│   │   ├── domain_relationships.py
+│   │   ├── endpoint_relationships.py
+│   │   ├── event_relationships_analyzer.py
+│   │   ├── event_relationships.py
+│   │   ├── evidence_registry.py    EvidenceRegistry
+│   │   ├── external_dependencies.py
+│   │   ├── import_relationships.py
+│   │   ├── naming_similarity.py
+│   │   ├── operational_constraints.py
+│   │   ├── ownership.py
+│   │   ├── registry.py
+│   │   ├── risk_anchors.py
+│   │   ├── service_relationships.py
+│   │   ├── side_effects.py
+│   │   └── transaction_boundary.py
+│   │
+│   ├── evidence/               evidence compression pipeline
+│   │   ├── compression_pipeline.py  CompressionPipeline (progressive compression)
+│   │   ├── deduplicator.py          EvidenceDeduplicator
+│   │   ├── clusterer.py             EvidenceClusterer
+│   │   ├── scoring.py               EvidenceScorer
+│   │   ├── causal_chain.py          CausalChainVerifier
+│   │   └── pruner.py                EvidencePruner
+│   │
+│   ├── hypothesis/             hypothesis generation
+│   │   ├── generator.py        HypothesisGenerator
+│   │   ├── confidence.py       ConfidenceCalculator
+│   │   └── confidence_aggregator.py
+│   │
+│   ├── models/                 Pydantic data models
+│   │   ├── change_understanding.py  ChangeUnderstanding
+│   │   ├── evidence_bundle.py       EvidenceBundle
+│   │   ├── changed_symbol.py        ChangedSymbol
+│   │   ├── risk_anchor.py           RiskAnchor
+│   │   ├── impact_evidence.py       ImpactEvidence
+│   │   ├── side_effect.py           SideEffect
+│   │   ├── constraint.py            Constraint
+│   │   ├── business_object.py       BusinessObject
+│   │   ├── impact_hypothesis.py     ImpactHypothesis
+│   │   ├── failure_scenario.py      FailureScenario
+│   │   ├── entity_ref.py            EntityRef
+│   │   └── enums.py                 Enumerations
+│   │
+│   ├── scenarios/              failure scenario generation
+│   │   └── generator.py        FailureScenarioGenerator
+│   │
 │   ├── causal_graph.py         CausalGraph, CausalEdge, EvidenceNode, WeakEdge,
 │   │                           RepositorySymbolIndex, build_causal_graph
 │   ├── propagation_engine.py   ImpactTree, ImpactNode, PropagationEngine
@@ -77,13 +126,18 @@ cystatic-core/
 │   ├── behavior_delta_system.py build_system_behavior_deltas, SystemBehaviorDelta
 │   ├── reachability_classifier.py ReachabilityClassifier
 │   ├── side_effect_detector.py SideEffectDetector
-│   ├── rir_compressor.py       RIRCompressor (legacy + v3)
-│   ├── factor_ir_v3.py         IR schema definitions
+│   ├── constraint_extractor.py extract_constraints
+│   ├── constraint_types.py     ConstraintSet, ConstraintType, etc.
+│   ├── change_influence.py     build_change_influence, extract_changed_symbols
+│   ├── impact_evidence.py      build_impact_evidence
+│   ├── llm_input_builder.py    build_llm_input (reviewer-ready facts)
+│   ├── llm_packet_compressor.py RIRCompressor (legacy + v3)
 │   ├── failure_templates.py    match_failure_templates (optional, lazy)
 │   ├── failure_simulation_llm.py LLM-based failure simulation
 │   ├── failure_simulator.py    rules-based fallback simulator
 │   ├── scenario_validator.py   score_scenarios, ValidationScore
-│   └── file_exclusion.py       FileExclusionService
+│   ├── file_exclusion.py       FileExclusionService
+│   └── risk_compressor.py      compress_risk_hypotheses
 │
 ├── language_adapters/          per-language static analysis
 │   ├── python/python_adapter.py  Python adapter (DIFF_ONLY + FULL_FILE)
@@ -91,22 +145,14 @@ cystatic-core/
 │   └── interfaces/              adapter protocol definitions (WIP)
 │
 ├── source_adapters/            source-control integration
-│   ├── github_adapter.py       legacy GitHub adapter
-│   ├── gitlab_adapter.py       GitLab adapter
-│   └── github/                 full GitHub integration
-│       ├── github_client.py    fetch diffs, file snapshots, SHAs
-│       ├── auth.py             installation auth, JWT, token exchange
-│       ├── bot.py              post comments to PRs
-│       ├── event_handler.py    dispatch webhook events to jobs
-│       ├── comment_formatter.py render PR comments
-│       └── webhook.py          webhook parsing + signature validation
-│
-├── github_app/                 GitHub App layer (alternative entrypoint)
-│   ├── webhook.py
-│   ├── auth.py
-│   ├── github_client.py
-│   ├── event_handler.py
-│   └── comment_formatter.py
+│   ├── github/                 full GitHub integration
+│   │   ├── github_client.py    fetch diffs, file snapshots, SHAs
+│   │   ├── auth.py             installation auth, JWT, token exchange
+│   │   ├── bot.py              post comments to PRs
+│   │   ├── event_handler.py    dispatch webhook events to jobs
+│   │   ├── comment_formatter.py render PR comments
+│   │   └── webhook.py          webhook parsing + signature validation
+│   └── gitlab/                 GitLab adapter (stub)
 │
 ├── schemas/                    Pydantic models
 │   ├── api.py                  AnalyzeRequest, etc.
@@ -124,15 +170,18 @@ cystatic-core/
 │   └── github/pr_comment.md.j2 PR comment Jinja2 template
 │
 ├── tests/                      pytest suite
-│   ├── core_engine_tests.py    causal graph + propagation
-│   ├── test_evidence_graph.py  evidence graph construction
-│   ├── test_weak_edges.py      weak edge detection
-│   ├── test_shared_state_resource_model.py  shared-state coupling
-│   ├── test_repo_symbol_index.py  repo-wide symbol index
-│   ├── github_webhook_tests.py webhook parsing + dispatch
-│   ├── github_worker_tests.py  worker + orchestrator integration
+│   ├── core_engine_tests.py
+│   ├── test_evidence_graph.py
+│   ├── test_weak_edges.py
+│   ├── test_shared_state_resource_model.py
+│   ├── test_repo_symbol_index.py
+│   ├── github_webhook_tests.py
+│   ├── github_worker_tests.py
 │   ├── language_adapter_tests.py
 │   ├── source_adapter_tests.py
+│   ├── test_evidence_driven_pipeline.py
+│   ├── test_llm_packet_compressor.py
+│   ├── test_risk_compressor.py
 │   └── test_webhook.py
 │
 └── utils/
@@ -141,225 +190,526 @@ cystatic-core/
 
 ---
 
-## Core Engine — In Detail
+## Pipeline Architecture (Active)
 
-### Orchestrator (`orchestrator.py`)
+Factor uses a **5-stage modular pipeline architecture**. Each pipeline has a single responsibility and produces a well-defined output that becomes the input to the next stage.
 
-The orchestrator is the pipeline spine. Two concrete strategies share the same `BaseOrchestrator` backbone:
+### Pipeline Flow
 
-| Strategy | Mode | Repo Access | When to Use |
-|---|---|---|---|
-| `Orchestrator` | `FULL_FILE` | Fetches diff + full file snapshots at head SHA | Production (GitHub App, API) |
-| `DiffOrchestrator` | `DIFF_ONLY` | Raw diff text only, no repo snapshots | Demo / sandbox / CI without repo token |
+```
+InputPreparationPipeline
+    ↓ produces: PreparedInputs
+ChangeUnderstandingPipeline
+    ↓ produces: ChangeUnderstanding
+EvidencePipeline
+    ↓ produces: EvidenceBundle
+InferencePipeline
+    ↓ produces: InferenceResult
+ReviewPipeline
+    ↓ produces: Review
+```
 
-Both run the same shared pipeline (`_run_causal_pipeline`) and the same verdict aggregation logic.
+### Orchestrator Coordination
 
-**`Orchestrator.run_pr_analysis()` step by step:**
+The `BaseOrchestrator` coordinates pipeline execution using the **template method pattern**:
 
-1. Fetch the PR diff via the source adapter.
-2. Apply file exclusions (`FileExclusionService`).
-3. Fetch full file snapshots at head SHA for each changed file.
-4. Run language adapter in `FULL_FILE` mode: extract changed functions, endpoints, keyword signals.
-5. Collect `(file_path, content)` pairs for repo-wide symbol indexing (zero extra HTTP calls — reuses already-fetched snapshots).
-6. Enrich each file (risk score, flows, endpoint mapping).
-7. Build `RepositorySymbolIndex` from collected snapshots (expands `known_symbols` past the diff boundary).
-8. Detect risk patterns, resolve entry points, extract behavior deltas and diffs.
-9. Classify reachability, detect side effects.
-10. Compress IR (legacy + v3) for LLM budget.
-11. Run the **causal pipeline**: causal graph → impact tree → failure templates → system deltas → structured hypotheses.
-12. Call LLM with causal context (or fall back to rules-based simulator).
-13. Score scenarios via `scenario_validator`.
-14. Aggregate verdict (blast radius primary, LLM secondary).
-15. Build and return the result dict.
-16. (Async) Persist via `persist_analysis_result`.
+- **`Orchestrator`**: Production mode (FULL_FILE) — fetches diff + full file snapshots
+- **`DiffOrchestrator`**: Demo/sandbox mode (DIFF_ONLY) — raw diff text only, no repo access
 
-`DiffOrchestrator` follows the same steps but skips snapshot fetching and repo-index construction (steps 3, 5, 7). The pipeline degrades gracefully — propagation stays diff-bound.
+Both share the same 5-stage pipeline execution in `BaseOrchestrator.run_pr_analysis()`.
 
 ---
 
-### Causal Graph (`causal_graph.py`)
+## Stage 1: InputPreparationPipeline
 
-The causal graph is the **non-negotiable core primitive**. It turns "diff understanding" into "system simulation" by modeling symbol-to-symbol relationships with typed, confidence-weighted edges.
+**File:** `core_engine/pipelines/input_preparation.py`
 
-**Node types** (`CausalNode.node_type`):
+**Purpose:** Prepare analysis inputs based on the analysis mode (FULL_FILE vs DIFF_ONLY).
 
-| Type | Represents |
-|---|---|
-| `symbol` | A function/method in the diff or repo |
-| `endpoint` | An HTTP route, CLI entry point, or event handler |
-| `service` | An external service boundary |
-| `database` | A datastore (Postgres, Redis, etc.) |
-| `queue` | A message queue / event bus |
-| `shared_state` | A named resource (e.g. `cache:user`, `redis:cart`, `session:token`) |
+**Output:** `PreparedInputs` dataclass containing:
+- `enriched_files`: List of enriched file data from the language adapter
+- `diff_ir`: The diff IR from the source adapter
+- `repo_index`: Optional repository symbol index (FULL_FILE mode only)
+- `excluded_files`: List of files excluded from analysis
 
-**Edge types** (`CausalEdge.edge_type`):
+**Steps:**
+1. Fetch diff from source adapter
+2. Apply file exclusions (lockfiles, generated code, assets)
+3. Extract changed files using language adapter
+4. **FULL_FILE mode:**
+   - Fetch full file snapshots at head SHA
+   - Enrich files with functions, endpoints, keyword signals
+   - Build `RepositorySymbolIndex` from snapshots
+5. **DIFF_ONLY mode:**
+   - Enrich files from diff hunks only
+   - No repo access, no file snapshots
 
-| Type | Meaning |
-|---|---|
-| `data_flow` | Result flows from one symbol to another |
-| `control_flow` | One symbol gates execution of another |
-| `shared_state` | Shared state coupling (cache/redis/session) |
-| `async_event` | Event emitted between symbols |
-| `db_dependency` | Database read/write dependency |
-| `transaction_boundary` | Shared transaction boundary |
-
-Each `CausalEdge` carries **evidence grounding**: `evidence_type` (function_call, assignment, return, shared_access, db_operation, async_emit, transaction_boundary, import_reference), `evidence_location` (file:line), and `evidence_snippet` (the actual code line).
-
-**Weak edges** (`WeakEdge`) are a Phase 2 concept — evidence edges with a different type taxonomy (CALLS, SHARES_STATE, DATA_FLOW, CONTROL_FLOW, CONTRACT_DEPENDENCY). Every `WeakEdge` must have ≥1 evidence string. These feed into the evidence graph layer.
-
-**Evidence nodes** (`EvidenceNode`) carry `SymbolSignals` — lightweight behavioral signals extracted via static heuristics: `is_entrypoint`, `is_io`, `writes_state`, `reads_state`, `calls`, `called_by`, `imports`. This is the "evidence token" layer that makes the causal graph actionable.
-
-**`build_causal_graph()`** constructs the full graph from enriched files, behavior diffs, and an optional `RepositorySymbolIndex`. The repo index expands `known_symbols` to include every defined function in the repo and registers all endpoints — not just the ones in the diff. This unlocks richer blast-radius propagation that reaches past the diff boundary.
+**Key Design:** Zero extra HTTP calls for repo index — reuses snapshots already fetched for the diff.
 
 ---
 
-### Repository-Wide Symbol Index
+## Stage 2: ChangeUnderstandingPipeline
 
-Pre-scans the entire repository (when available) and indexes:
-- All function/method definitions (the set of "known" symbols)
-- All route definitions (endpoints) across all files
-- Which file each symbol lives in
+**File:** `core_engine/pipelines/change_understanding.py`
 
-This is built from the snapshots already fetched for the diff — zero extra HTTP calls. When `None` (DIFF_ONLY mode), the pipeline falls back to diff-only behavior.
+**Purpose:** Analyze the PR change itself — extract symbols, detect risks, build causal graph.
 
----
+**Output:** `ChangeUnderstanding` model containing:
+- `changed_symbols`: All symbols modified by the change
+- `risk_anchors`: Changes known to increase downstream uncertainty
+- `behavior_diffs`: Behavior-level deltas from the change
+- `side_effects`: Side effects introduced or affected
+- `constraints`: Constraints that apply to the change
+- `business_objects`: Business objects referenced
+- `enriched_files`: Enriched file data
+- `risk_patterns`: Detected risk patterns
+- `entry_points_affected`: Entry points affected by the change
+- `causal_graph`: Causal graph built from the change
+- `system_deltas`: System-level behavior deltas
 
-### Propagation Engine (`propagation_engine.py`)
+**Steps:**
+1. Detect risk patterns (`RiskPatternDetector`)
+2. Resolve entry points (`EntryPointResolver`)
+3. Extract behavior deltas and diffs
+4. Classify reachability (`ReachabilityClassifier`)
+5. Detect side effects (`SideEffectDetector`)
+6. Extract constraints (`ConstraintExtractor`)
+7. Extract changed symbols
+8. Build causal graph (`build_causal_graph`)
+9. Build impact evidence
+10. Build change influence
+11. Build system behavior deltas
+12. Extract business objects from constraints
 
-Given a causal graph and a set of changed symbols, computes: *"if X changes → what downstream nodes are impacted and with what confidence?"*
-
-**Strategy:**
-1. Start from directly changed symbols (roots).
-2. Traverse downstream through the causal graph.
-3. Propagate confidence: `confidence_child = confidence_parent × edge.confidence`.
-4. Aggregate repeated paths by taking max confidence.
-5. Cap at `max_hops=5` (configurable).
-
-**Output:** `ImpactTree` containing:
-- `roots`: directly changed `ImpactNode`s
-- `all_nodes`: every reachable `ImpactNode` keyed by symbol
-- `get_blast_radius()`: summary with impacted services, endpoints, databases, queues, shared-state resources, downstream symbols, critical paths, max/avg confidence.
-
-Each `ImpactNode` carries: `symbol`, `confidence`, `hop_distance`, `incoming_edges` (list of `CausalEdge`), `is_direct_change`, `impacted_systems`, `node_type`, `evidence_location`, `evidence_snippet`.
-
----
-
-### Risk Detection
-
-**`RiskPatternDetector`** scans enriched files for risky code shapes — authentication changes, payment logic, transaction boundaries, validation removal, financial data model changes, schema migrations, etc. Each risk has a `RiskEventType` (from `risk_flags.py`), a confidence, file path, trigger, and reason.
-
-**`detect_flows()`** annotates each enriched file with data-flow patterns (e.g. auth-gated flows, payment flows).
-
-**`EntryPointResolver`** identifies which HTTP/event/CLI entry points are affected by the detected risk patterns, and resolves system-level impact (`SystemImpact` — which services/areas are at risk).
+**Key Design:** This is the deterministic analysis core. All static analysis happens here before any semantic evidence generation.
 
 ---
 
-### Behavior Analysis
+## Stage 3: EvidencePipeline
 
-| Module | Purpose |
-|---|---|
-| `behavior_extractor.py` → `extract_behavior_deltas()` | Produces per-symbol before/after behavioral descriptions (what the function *does*, not just what changed) |
-| `behavior_diff_builder.py` → `build_behavior_diffs()` | Produces structured `BehaviorDiff(symbol, before, after)` for each changed function |
-| `behavior_delta_system.py` → `build_system_behavior_deltas()` | Aggregates symbol-level deltas into system-level behavioral change summaries (`SystemBehaviorDelta`) |
+**File:** `core_engine/pipelines/evidence.py`
 
-These feed into the causal graph, the LLM prompt, and the structured hypotheses.
+**Purpose:** Generate semantic evidence from change understanding by running all analyzers.
 
----
+**Output:** `EvidenceBundle` model containing:
+- `changed_symbols`: All symbols modified by the change
+- `risk_anchors`: Changes known to increase downstream uncertainty
+- `impact_evidence`: Deterministic facts connecting entities
+- `side_effects`: Side effects introduced or affected
+- `constraints`: Constraints that apply to the change
+- `business_objects`: Business objects referenced
+- `domains`: Business domains touched by the change
+- `confidence`: Overall confidence in this evidence bundle (0.0–1.0)
 
-### Supporting Analysis Modules
+**Steps:**
+1. Extract changed symbols and risk anchors from change understanding
+2. Build `AnalysisContext` (enriched files + risk patterns)
+3. Create `EvidenceRegistry`
+4. Run all 10 semantic analyzers:
+   - `DomainHubAnalyzer` — domain boundaries and hubs
+   - `BusinessObjectAnalyzer` — business object relationships
+   - `TransactionBoundaryAnalyzer` — transaction boundaries
+   - `DatabaseRelationshipAnalyzer` — database relationships
+   - `EventRelationshipAnalyzer` — event-driven relationships
+   - `OperationalConstraintAnalyzer` — operational constraints
+   - `ServiceRelationshipAnalyzer` — service-to-service relationships
+   - `CacheDependencyAnalyzer` — cache dependencies
+   - `ExternalDependencyAnalyzer` — external API dependencies
+   - `OwnershipAnalyzer` — code ownership
+5. Build initial evidence bundle from registry
+6. Build final evidence bundle with all data
 
-| Module | Purpose |
-|---|---|
-| `ReachabilityClassifier` | Classifies whether each changed symbol is reachable from production entry points |
-| `SideEffectDetector` | Detects mutation, IO, and state side effects in changed code |
-| `RIRCompressor` | Compresses enriched files into a token-budgeted IR for the LLM (legacy `compress` + v3 `compress_v3`) |
-| `factor_ir_v3.py` | IR schema definitions for the canonical representation |
-| `FileExclusionService` | Excludes lockfiles, generated code, assets, etc. from analysis |
-
----
-
-### Failure Templates (`failure_templates.py`)
-
-An **optional hypothesis layer** — lazy-imported, gracefully degrading. Matches known failure patterns (e.g. "auth bypass", "silent data loss", "missing rollback") against risk patterns, enriched files, and behavior diffs. Returns a list of matched template dicts.
-
-**Critical design rule:** failure templates are treated as optional hypotheses, not core signals. They do NOT drive verdict upgrades. Only blast-radius propagation does.
-
----
-
-### LLM Failure Simulation
-
-**`FailureSimulationLLM`** (`failure_simulation_llm.py`) calls OpenAI with:
-- Compressed IR
-- Causal graph (serialized)
-- Impact tree blast radius
-- Failure template matches
-- System behavior deltas
-
-Returns a structured `FailureSimulation` (Pydantic model) with failure scenarios, hidden impact chains, verdict, verdict rationale, etc.
-
-**`FailureSimulator`** (`failure_simulator.py`) is the rules-based fallback when the LLM is unavailable or fails. Generates failure scenario lines from risk patterns and enriched files.
-
-Both outputs are normalized and sanitized (`_sanitize_llm_output`, `_normalize_failure_simulation`) — defensive parsing of LLM output per the project's LLM-handling rule.
+**Key Design:** The EvidencePipeline owns ALL evidence generation. The orchestrator doesn't even know analyzers exist. Each analyzer is independent and gracefully degrades on failure.
 
 ---
 
-### Scenario Validation (`scenario_validator.py`)
+## Stage 4: InferencePipeline
 
-`score_scenarios()` evaluates each LLM-generated failure scenario against the compressed IR. Produces `ValidationScore` containing:
-- Per-scenario `ScenarioScore` with `confidence_adjustment` multiplier and `issues` list
-- Top-level `warnings` and `notes`
+**File:** `core_engine/pipelines/inference.py`
 
-Validation is **soft scoring, not hard rejection** — confidence is adjusted downward for unsupported scenarios, but nothing is discarded outright.
+**Purpose:** Generate hypotheses and scenarios from evidence using progressive compression.
 
----
+**Output:** `InferenceResult` containing:
+- `hypotheses`: Generated impact hypotheses (merged, ranked)
+- `scenarios`: Generated failure scenarios (high-confidence only)
+- `evidence_clusters`: Aggregated and pruned evidence clusters
+- `compression`: Compression statistics from the pipeline
 
-### Structured Hypotheses
+**Progressive Compression Pipeline:**
 
-`_build_structured_hypotheses()` (on the orchestrator) attaches testable claims to specific causal edges in the graph. For each impacted symbol with an incoming causal edge, it generates a hypothesis template based on edge type (e.g. "If {from} changes, {to} may receive unexpected input through data flow"). Hypotheses are cross-referenced with failure template matches for confidence boosting. Capped at 20, sorted by confidence.
+```
+Changed Symbols → Raw Evidence → Deduplicate → Evidence Clusters
+→ Score + Causal Chain Check → Prune → Candidate Hypotheses
+→ Merge → Rank + Filter → Failure Scenarios → Review → Verdict
+```
 
----
+**Steps:**
+1. **Deduplicate** equivalent evidence items
+2. **Cluster** by business object / domain / flow
+3. **Score** each cluster (confidence, impact, reachability)
+4. **Verify causal chains** (are the connections valid?)
+5. **Prune** low-quality clusters (configurable thresholds)
+6. **Generate hypotheses** (one per cluster)
+7. **Merge** similar hypotheses
+8. **Select high-confidence hypotheses** for simulation (threshold: 0.60)
+9. **Generate failure scenarios** ONLY from high-confidence hypotheses
 
-### Verdict Aggregation
+**Key Design:** Progressive compression reduces thousands of evidence items into a small number of high-confidence scenarios. The pipeline never discards evidence outright — it compresses it.
 
-`BaseOrchestrator._aggregate_verdict()` makes the final call:
-
-1. **If blast radius exists** (impacted services/endpoints/databases): base verdict = `LOW_RISK`, promoted to `UNCERTAIN_IMPACT` (confidence ≥ 0.25) or `REVIEW_REQUIRED` (≥ 0.6).
-2. **LLM override** (only strong verdicts `SAFE` or `BLOCK_REVIEW`): the LLM sees code context the graph can't — it may override the blast-radius verdict.
-3. **No propagation + silent LLM**: `NO_SIGNIFICANT_PROPAGATION_FOUND`.
-
-**Allowed final verdict set:**
-`SAFE` · `LOW_RISK` · `UNCERTAIN_IMPACT` · `NO_SIGNIFICANT_PROPAGATION_FOUND` · `REVIEW_REQUIRED` · `BLOCK_REVIEW`
-
----
-
-## Source & Language Adapters
-
-### Source Adapters
-
-| Adapter | Status | Capabilities |
-|---|---|---|
-| `source_adapters/github/` | Production | Full integration: `GitHubClient` (fetch diff, file snapshots, SHAs), `GitHubBot` (post comments), auth (installation JWT, token exchange), webhook parsing + signature validation, event handler (dispatch to jobs) |
-| `github_app/` | Alternative entrypoint | Same capabilities, separate package for GitHub App lifecycle |
-| `github_adapter.py` | Legacy | Simpler interface, used by `DiffOrchestrator` |
-| `gitlab_adapter.py` | Stub | `fetch_not_implemented` — placeholder for future work |
-
-### Language Adapters
-
-| Adapter | Capabilities |
-|---|---|
-| `python/python_adapter.py` | `extract_changed_files`, `extract_changed_functions` (FULL_FILE + DIFF_ONLY modes), `extract_endpoints` (FastAPI, Flask, Django), `extract_keyword_signals_from_diff`. Uses AST analysis for function extraction. |
-| `ts_adapter.py` | TypeScript equivalent (regex/heuristic-based) |
-
-Both adapters produce `enriched_files` dicts consumed by the core engine.
+**Compression Statistics Tracked:**
+- Raw evidence count
+- Deduplicated group count
+- Cluster count
+- Pruned cluster count
+- Hypothesis count
+- Merged hypothesis count
+- Simulation count
+- Compression ratio
 
 ---
 
-## Data Model (Tortoise ORM → Postgres)
+## Stage 5: ReviewPipeline
+
+**File:** `core_engine/pipelines/review.py`
+
+**Purpose:** Perform LLM review (optional) and aggregate final verdict.
+
+**Output:** `Review` containing:
+- `failure_simulation`: LLM-generated review output (or deterministic fallback)
+- `validation_score`: Scenario validation scores
+- `verdict`: Aggregated verdict (APPROVE, REVIEW_REQUIRED, BLOCK)
+
+**Architecture:**
+```
+Deterministic engine → llm_input_builder → LLM (expert reviewer) → Review
+```
+
+The LLM never sees internal implementation artifacts — only reviewer-ready facts.
+
+**Steps:**
+1. Run inference pipeline to generate deterministic scenarios
+2. Build reviewer-ready facts for the LLM (`llm_input_builder`)
+3. **Run LLM if available:**
+   - Call LLM with reviewer-ready facts
+   - Sanitize LLM output (defensive parsing)
+4. **If no LLM:** Build review output from deterministic scenarios
+5. Apply deterministic validation scores (`score_scenarios`)
+6. Aggregate verdict from LLM output and risk patterns
+
+**Verdict Aggregation Logic:**
+1. Accept LLM verdict if present
+2. Fall back to risk pattern-based verdict:
+   - HIGH severity → BLOCK
+   - MEDIUM/LOW severity → REVIEW_REQUIRED
+   - No risk patterns → APPROVE
+
+**LLM Output Format (Reviewer-Ready):**
+```json
+{
+  "verdict": "BLOCK" | "REVIEW_REQUIRED" | "APPROVE",
+  "executive_summary": "High-level summary of the risk",
+  "primary_concern": {
+    "title": "Main concern title",
+    "why_blocking": "Why this blocks the PR",
+    "execution_path": "How this could happen in production",
+    "customer_or_business_impact": "Business impact",
+    "why_existing_tests_miss_it": "Test coverage gap",
+    "confidence_rationale": "Why we're confident",
+    "required_validation": "What tests are needed"
+  },
+  "additional_observations": [...],
+  "required_tests": [...],
+  "reviewer_questions": [...],
+  "merge_recommendation": "Safe to merge / Requires review / Blocked by..."
+}
+```
+
+**Key Design:** The LLM is an expert reviewer, not a signal generator. It writes an engineering review from deterministic findings. Defensive LLM handling sanitizes unicode-escape artifacts, stray quotes, and backfills required schema fields.
+
+---
+
+## Data Models
+
+### ChangeUnderstanding
+
+**File:** `core_engine/models/change_understanding.py`
+
+The output of ChangeUnderstandingPipeline and input to EvidencePipeline. Contains all deterministic analysis of the change itself.
+
+**Fields:**
+- `changed_symbols`: All symbols modified by the change
+- `risk_anchors`: Changes known to increase downstream uncertainty
+- `behavior_diffs`: Behavior-level deltas from the change
+- `side_effects`: Side effects introduced or affected
+- `constraints`: Constraints that apply to the change
+- `business_objects`: Business objects referenced
+- `enriched_files`: Enriched file data from the analysis
+- `risk_patterns`: Detected risk patterns
+- `entry_points_affected`: Entry points affected by the change
+- `causal_graph`: Causal graph built from the change
+- `system_deltas`: System-level behavior deltas
+
+### EvidenceBundle
+
+**File:** `core_engine/models/evidence_bundle.py`
+
+The single semantic representation consumed by downstream reasoning (hypothesis generation, scenario construction). Replaces propagation output as the primary reasoning input.
+
+**Fields:**
+- `changed_symbols`: All symbols modified by the change
+- `risk_anchors`: Changes known to increase downstream uncertainty
+- `impact_evidence`: Deterministic facts connecting entities
+- `side_effects`: Side effects introduced or affected
+- `constraints`: Constraints that apply to the change
+- `business_objects`: Business objects referenced
+- `domains`: Business domains touched by the change
+- `confidence`: Overall confidence in this evidence bundle (0.0–1.0)
+
+### InferenceResult
+
+**File:** `core_engine/pipelines/inference.py`
+
+The output of InferencePipeline containing compressed evidence and generated scenarios.
+
+**Fields:**
+- `hypotheses`: Generated impact hypotheses (merged, ranked)
+- `scenarios`: Generated failure scenarios (high-confidence only)
+- `evidence_clusters`: Aggregated and pruned evidence clusters
+- `compression`: Compression statistics from the pipeline
+
+### Review
+
+**File:** `core_engine/pipelines/review.py`
+
+The output of ReviewPipeline containing the final verdict.
+
+**Fields:**
+- `failure_simulation`: LLM-generated review output (or deterministic fallback)
+- `validation_score`: Scenario validation scores
+- `verdict`: Aggregated verdict (APPROVE, REVIEW_REQUIRED, BLOCK)
+
+---
+
+## Semantic Analyzers (EvidencePipeline)
+
+The EvidencePipeline runs 10 independent semantic analyzers, each contributing to the EvidenceBundle:
+
+### 1. DomainHubAnalyzer
+**File:** `core_engine/analysers/domain_hub.py`
+
+Identifies domain boundaries and hub symbols that connect multiple domains. Detects when changes touch shared domain hubs that could have cross-domain impact.
+
+### 2. BusinessObjectAnalyzer
+**File:** `core_engine/analysers/business_object_analyzer.py`
+
+Analyzes business object relationships and dependencies. Identifies critical business objects (e.g., Payment, Order, User) and their relationships.
+
+### 3. TransactionBoundaryAnalyzer
+**File:** `core_engine/analysers/transaction_boundary.py`
+
+Detects transaction boundaries and potential transaction-related risks (e.g., missing rollbacks, distributed transaction issues).
+
+### 4. DatabaseRelationshipAnalyzer
+**File:** `core_engine/analysers/database_relationships.py`
+
+Maps database relationships and dependencies. Identifies which tables/collections are affected by the change and their relationships.
+
+### 5. EventRelationshipAnalyzer
+**File:** `core_engine/analysers/event_relationships_analyzer.py`
+
+Analyzes event-driven relationships in the codebase. Detects event producers, consumers, and potential event schema changes.
+
+### 6. OperationalConstraintAnalyzer
+**File:** `core_engine/analysers/operational_constraints.py`
+
+Identifies operational constraints (e.g., rate limits, circuit breakers, retry policies) that may be affected by the change.
+
+### 7. ServiceRelationshipAnalyzer
+**File:** `core_engine/analysers/service_relationships.py`
+
+Maps service-to-service relationships and dependencies. Identifies which services call which, and potential impact chains.
+
+### 8. CacheDependencyAnalyzer
+**File:** `core_engine/analysers/cache_dependencies.py`
+
+Analyzes cache dependencies and invalidation patterns. Detects cache keys, TTLs, and potential cache-related issues.
+
+### 9. ExternalDependencyAnalyzer
+**File:** `core_engine/analysers/external_dependencies.py`
+
+Identifies external API dependencies and integrations. Maps external service calls and potential failure modes.
+
+### 10. OwnershipAnalyzer
+**File:** `core_engine/analysers/ownership.py`
+
+Analyzes code ownership and team boundaries. Identifies which teams own which components for review routing.
+
+**Analyzer Output:** Each analyzer produces structured output that is ingested by the `EvidenceRegistry` and aggregated into the `EvidenceBundle`.
+
+---
+
+## Evidence Compression Pipeline
+
+**File:** `core_engine/evidence/compression_pipeline.py`
+
+The progressive compression pipeline is the core inference mechanism. It transforms thousands of raw evidence items into a small number of high-confidence hypotheses and scenarios.
+
+### Compression Stages
+
+```
+1. Raw Evidence (thousands of items)
+   ↓ Deduplicate
+2. Deduplicated Groups (hundreds of groups)
+   ↓ Cluster
+3. Evidence Clusters (tens of clusters)
+   ↓ Score + Causal Chain Verification
+4. Scored Clusters (filtered by confidence)
+   ↓ Prune
+5. Pruned Clusters (high-quality only)
+   ↓ Generate Hypotheses
+6. Candidate Hypotheses (one per cluster)
+   ↓ Merge
+7. Merged Hypotheses (deduplicated)
+   ↓ Rank + Filter
+8. Ranked Hypotheses (sorted by confidence)
+   ↓ Select for Simulation
+9. Simulation Candidates (high-confidence only, threshold: 0.60)
+   ↓ Generate Scenarios
+10. Failure Scenarios (testable claims)
+```
+
+### Key Components
+
+**EvidenceDeduplicator** (`core_engine/evidence/deduplicator.py`)
+- Groups equivalent evidence items
+- Reduces redundancy in the evidence set
+
+**EvidenceClusterer** (`core_engine/evidence/clusterer.py`)
+- Clusters evidence by business object, domain, or flow
+- Creates semantic groups of related evidence
+
+**EvidenceScorer** (`core_engine/evidence/scoring.py`)
+- Scores each cluster based on:
+  - Confidence (how certain are we?)
+  - Impact (how severe is the potential issue?)
+  - Reachability (how many systems are affected?)
+
+**CausalChainVerifier** (`core_engine/evidence/causal_chain.py`)
+- Verifies that causal chains in evidence are valid
+- Ensures impact paths are logically sound
+
+**EvidencePruner** (`core_engine/evidence/pruner.py`)
+- Prunes low-quality clusters based on configurable thresholds
+- Configurable via `PruningConfig`:
+  - `min_confidence`: Minimum confidence threshold (default: 0.3)
+  - `min_impact`: Minimum impact score (default: 0.2)
+  - `min_reachability`: Minimum reachability score (default: 0.1)
+  - `simulation_confidence_threshold`: Threshold for simulation (default: 0.60)
+
+**HypothesisGenerator** (`core_engine/hypothesis/generator.py`)
+- Generates one hypothesis per cluster
+- Hypotheses are testable claims about potential impact
+
+**FailureScenarioGenerator** (`core_engine/scenarios/generator.py`)
+- Generates failure scenarios ONLY from high-confidence hypotheses
+- Scenarios are concrete, testable failure modes
+
+---
+
+## Language Adapters
+
+**Directory:** `language_adapters/`
+
+Language adapters perform per-language static analysis to extract changed files, functions, endpoints, and signals from diffs.
+
+### Python Adapter
+
+**File:** `language_adapters/python/python_adapter.py`
+
+**Capabilities:**
+- `extract_changed_files()`: Extract changed files from diff IR
+- `extract_changed_functions()`: Extract changed functions (FULL_FILE + DIFF_ONLY modes)
+- `extract_endpoints()`: Extract FastAPI, Flask, Django endpoints
+- `extract_keyword_signals_from_diff()`: Extract keyword signals from diff
+
+**Modes:**
+- `FULL_FILE`: Uses AST analysis on full file snapshots
+- `DIFF_ONLY`: Uses regex/heuristic analysis on diff hunks only
+
+### TypeScript Adapter
+
+**File:** `language_adapters/ts_adapter.py`
+
+TypeScript equivalent of the Python adapter. Uses regex/heuristic-based analysis.
+
+**Key Design:** Both adapters produce `enriched_files` dicts consumed by the core engine. The adapters are language-specific but produce a language-agnostic output format.
+
+---
+
+## Source Adapters
+
+**Directory:** `source_adapters/`
+
+Source adapters integrate with source control systems to fetch diffs, file snapshots, and PR metadata.
+
+### GitHub Integration
+
+**Directory:** `source_adapters/github/`
+
+**Components:**
+- **`github_client.py`**: Fetches diffs, file snapshots, SHAs from GitHub API
+- **`auth.py`**: Handles installation auth, JWT, token exchange
+- **`bot.py`**: Posts comments to PRs
+- **`event_handler.py`**: Dispatches webhook events to jobs
+- **`comment_formatter.py`**: Renders PR comments
+- **`webhook.py`**: Parses webhooks + signature validation
+
+**Capabilities:**
+- Fetch PR diff
+- Fetch file snapshots at specific SHA
+- Post PR comments
+- Handle webhook events
+- Authenticate with GitHub App installation
+
+### GitLab Adapter
+
+**Directory:** `source_adapters/gitlab/`
+
+**Status:** Stub — `fetch_not_implemented` placeholder for future work.
+
+---
+
+## API Layer
+
+**Directory:** `api/`
+
+**Framework:** FastAPI + Uvicorn/Gunicorn
+
+**ORM:** Tortoise ORM on asyncpg (Neon Postgres)
+
+**Entrypoint:** `api/main.py` (uvicorn api.main:app)
+
+**Routers:**
+- `api/admin/urls.py`: Admin API routes
+- `api/user/urls.py`: User-facing API routes
+
+**Configuration:**
+- `api/settings.py`: pydantic-settings configuration
+- `api/db.py`: Tortoise config (runtime, pooled Neon URL)
+- `api/db_migrations.py`: Aerich migration config (direct Neon URL)
+
+**Key Design:** Schema generation is disabled at runtime (`generate_schemas=False`).
+
+---
+
+## Data Persistence (Tortoise ORM → Postgres)
+
+**File:** `api/models.py`
 
 11 runtime tables + 1 eval-harness table:
 
 | Table | Purpose |
-|---|---|
+|-------|---------|
 | `organizations` | Tenant (installation id, org login, plan, billing, onboarding) |
 | `repositories` | Repo metadata, language breakdown, framework hints, last-analysis pointers |
 | `pull_requests` | PR header (SHAs, state, changed files, factor verdict) |
@@ -373,49 +723,166 @@ Both adapters produce `enriched_files` dicts consumed by the core engine.
 | `feedback_signals` | Explicit user feedback / thumbs |
 | `evaluation_cases` | Eval harness cases (expected verdict, expected findings, historical misses) |
 
-**Persistence flow:** `Orchestrator.log_run()` → `persist_analysis_result()` writes all 11 tables in a single call. The entire orchestrator result dict is also dumped into `AnalysisRun.analysis_snapshot` as JSON — nothing is lost.
+**Persistence Flow:** `Orchestrator.log_run()` → `persist_analysis_result()` writes all 11 tables in a single call. The entire orchestrator result dict is also dumped into `AnalysisRun.analysis_snapshot` as JSON — nothing is lost.
 
 ---
 
 ## Workers & Queue
 
-- **Broker:** Dramatiq on Redis (`workers/queue.py`). URL resolution: `REDIS_URL` → derived `rediss://` from `UPSTASH_REDIS_REST_*` → `localhost`.
-- **Worker:** `workers/analyze_pr.py` — receives a job, runs `Orchestrator.run_pr_analysis()`, posts the comment, persists the result.
-- **Dedup:** `delivery_id` on both `AnalysisRun` and `AnalysisJob` prevents double-runs on webhook retries. `AnalysisJob.idempotency_key` is unique.
+**Directory:** `workers/`
 
----
+**Broker:** Dramatiq on Redis (`workers/queue.py`)
 
-## API
+**URL Resolution:**
+- `REDIS_URL` → derived `rediss://` from `UPSTASH_REDIS_REST_*` → `localhost`
 
-- **Framework:** FastAPI + Uvicorn/Gunicorn
-- **ORM:** Tortoise ORM on asyncpg (Neon Postgres)
-- **Routers:** `api/admin/urls.py` (admin routes) + `api/user/urls.py` (user routes)
-- **Settings:** pydantic-settings (`api/settings.py`)
-- **DB config:** `api/db.py` (runtime, pooled Neon URL) + `api/db_migrations.py` (Aerich, direct Neon URL)
-- **Schema generation:** disabled at runtime (`generate_schemas=False`)
+**Worker:** `workers/analyze_pr.py`
+- Receives a job
+- Runs `Orchestrator.run_pr_analysis()`
+- Posts the comment
+- Persists the result
+
+**Deduplication:**
+- `delivery_id` on both `AnalysisRun` and `AnalysisJob` prevents double-runs on webhook retries
+- `AnalysisJob.idempotency_key` is unique
 
 ---
 
 ## Observability
 
-- **Sentry** middleware attached to the FastAPI app (`instrumentation/sentry/sentry.py`).
-- Per-request context helpers (`instrumentation/sentry/contexts.py`) attach repo, PR number, analysis run ID, etc. to Sentry events.
+**Directory:** `instrumentation/sentry/`
+
+**Sentry Integration:**
+- Middleware attached to the FastAPI app (`instrumentation/sentry/sentry.py`)
+- Per-request context helpers (`instrumentation/sentry/contexts.py`) attach:
+  - Repository
+  - PR number
+  - Analysis run ID
+  - Other relevant context to Sentry events
 
 ---
 
 ## PR Comment
 
-Rendered by `_render_pr_comment()` against `templates/github/pr_comment.md.j2` (Jinja2). Variables include `verdict`, `failure_simulation` (normalized), and the full analysis result. The rendered body is stored in `analysis_comments.body` and linked back to the run via `AnalysisRun.canonical_comment`.
+**Template:** `templates/github/pr_comment.md.j2`
+
+**Rendering:** `_render_pr_comment()` in `BaseOrchestrator`
+
+**Variables:**
+- `verdict`: Final verdict (APPROVE, REVIEW_REQUIRED, BLOCK)
+- `failure_simulation`: Normalized LLM output (or deterministic fallback)
+- Full analysis result
+
+**Storage:** Rendered comment body is stored in `analysis_comments.body` and linked back to the run via `AnalysisRun.canonical_comment`.
 
 ---
 
 ## Key Design Decisions
 
-1. **Blast radius is the primary signal.** The causal graph propagation — not the LLM, not the templates — drives the verdict.
-2. **LLM is a contextual override.** It may upgrade or downgrade the verdict only with strong signals (`SAFE` or `BLOCK_REVIEW`).
-3. **Failure templates are optional hypotheses.** They never drive verdict upgrades. The pipeline runs without them if the module is unavailable.
-4. **Defensive LLM handling.** `_sanitize_llm_output` and `_normalize_failure_simulation` clean unicode-escape artifacts, stray quotes, and backfill required schema fields. LLM output is never trusted directly.
-5. **Full-blob persistence.** The entire orchestrator result is dumped into `AnalysisRun.analysis_snapshot` as JSON. Structured tables above are pre-extracted, indexed projections.
-6. **Repo-wide symbol index reuses fetched snapshots.** Zero extra HTTP calls — the index is built from data already fetched for the diff.
-7. **Two execution paths.** Synchronous (API) and asynchronous (Dramatiq workers) share the same orchestrator and persistence logic.
-8. **Graceful degradation.** Every optional module (failure templates, LLM, repo index) degrades to a fallback. The core blast-radius signal never depends on them.
+1. **Evidence-based progressive compression.** The compression pipeline — not the LLM, not causal graph propagation alone — drives the verdict. Thousands of evidence items are compressed into high-confidence scenarios.
+
+2. **LLM is an expert reviewer.** It writes an engineering review from deterministic findings. It never sees internal implementation artifacts — only reviewer-ready facts from `llm_input_builder`.
+
+3. **5-stage modular pipeline.** Each pipeline has a single responsibility. The orchestrator coordinates but doesn't implement analysis logic.
+
+4. **10 independent semantic analyzers.** Each analyzer is independent and gracefully degrades on failure. The EvidencePipeline owns ALL evidence generation.
+
+5. **Defensive LLM handling.** `_sanitize_llm_output` and `_normalize_failure_simulation` clean unicode-escape artifacts, stray quotes, and backfill required schema fields. LLM output is never trusted directly.
+
+6. **Full-blob persistence.** The entire orchestrator result is dumped into `AnalysisRun.analysis_snapshot` as JSON. Structured tables are pre-extracted, indexed projections.
+
+7. **Two execution paths.** Synchronous (API) and asynchronous (Dramatiq workers) share the same orchestrator and pipeline logic.
+
+8. **Graceful degradation.** Every optional module (LLM, analyzers, compression stages) degrades to a fallback. The core evidence-based signal never depends on them.
+
+9. **Zero extra HTTP calls for repo index.** The repository symbol index is built from snapshots already fetched for the diff.
+
+10. **Progressive compression never discards evidence.** It compresses evidence into clusters, hypotheses, and scenarios. Nothing is lost — it's just aggregated.
+
+---
+
+## Active vs. Legacy Components
+
+### Active (Current) Architecture
+
+The active architecture uses the **5-stage pipeline**:
+
+1. **InputPreparationPipeline** — mode-dependent input preparation
+2. **ChangeUnderstandingPipeline** — deterministic change analysis
+3. **EvidencePipeline** — semantic evidence generation (10 analyzers)
+4. **InferencePipeline** — progressive compression → hypotheses → scenarios
+5. **ReviewPipeline** — LLM review + verdict aggregation
+
+**Key Models:**
+- `ChangeUnderstanding` — output of stage 2
+- `EvidenceBundle` — output of stage 3, input to stage 4
+- `InferenceResult` — output of stage 4
+- `Review` — output of stage 5
+
+### Legacy Components (Still Present but Not Primary)
+
+The following components exist in the codebase but are not part of the primary pipeline flow:
+
+- **`causal_graph.py`** — Legacy causal graph implementation (still used in ChangeUnderstandingPipeline)
+- **`propagation_engine.py`** — Legacy propagation engine (not used in primary pipeline)
+- **`llm_packet_compressor.py`** — Legacy IR compression (replaced by evidence compression pipeline)
+- **`failure_templates.py`** — Optional failure template matching (lazy-loaded, not core)
+- **`failure_simulation_llm.py`** — Legacy LLM simulation (replaced by ReviewPipeline)
+- **`failure_simulator.py`** — Rules-based fallback (replaced by deterministic scenarios)
+- **`scenario_validator.py`** — Used in ReviewPipeline for validation scoring
+- **`rir_compressor.py`** — Legacy compressor (not used in primary pipeline)
+
+**Migration Path:** The legacy components are being phased out in favor of the evidence-based pipeline. They remain in the codebase for backward compatibility but are not part of the primary execution path.
+
+---
+
+## Testing
+
+**Directory:** `tests/`
+
+**Test Files:**
+- `core_engine_tests.py` — causal graph + propagation (legacy)
+- `test_evidence_driven_pipeline.py` — evidence-driven pipeline (active)
+- `test_evidence_graph.py` — evidence graph construction
+- `test_weak_edges.py` — weak edge detection
+- `test_shared_state_resource_model.py` — shared-state coupling
+- `test_repo_symbol_index.py` — repo-wide symbol index
+- `test_llm_packet_compressor.py` — legacy compressor tests
+- `test_risk_compressor.py` — risk compression tests
+- `github_webhook_tests.py` — webhook parsing + dispatch
+- `github_worker_tests.py` — worker + orchestrator integration
+- `language_adapter_tests.py` — language adapter tests
+- `source_adapter_tests.py` — source adapter tests
+- `test_webhook.py` — webhook tests
+- `test_constraint_extractor.py` — constraint extraction tests
+
+**Test Strategy:** Run the narrowest possible test. Preferred order:
+1. Single failing test
+2. Relevant test file
+3. Relevant test suite
+4. Full test suite only when necessary
+
+---
+
+## Configuration
+
+**File:** `pyproject.toml`, `requirements.txt`, `pylock.toml`
+
+**Key Dependencies:**
+- FastAPI + Uvicorn/Gunicorn (API layer)
+- Tortoise ORM + asyncpg (database)
+- Dramatiq + Redis (queue)
+- Pydantic (data models)
+- Jinja2 (template rendering)
+- OpenAI API (LLM, optional)
+- Sentry (observability)
+
+**Settings:** `api/settings.py` (pydantic-settings)
+
+---
+
+## Summary
+
+Factor's active architecture is a **5-stage evidence-based pipeline** that progressively compresses thousands of evidence items into high-confidence failure scenarios. The LLM acts as an expert reviewer, not a signal generator. The system is designed for graceful degradation — every optional component can fail without breaking the core analysis.
+
+**The pipeline never discards evidence — it compresses it.** This ensures that no potential risk is lost during analysis, even if it doesn't make it to the final scenarios.

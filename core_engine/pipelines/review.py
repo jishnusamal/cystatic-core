@@ -2,20 +2,22 @@
 ReviewPipeline — performs LLM review and verdict aggregation.
 
 This pipeline is responsible for:
-  - Compressing evidence for LLM consumption
-  - Running LLM with causal context
+  - Building reviewer-ready facts from deterministic evidence
+  - Running LLM with reviewer-ready facts
   - Validating scenarios
   - Aggregating verdict from LLM and risk patterns
 
 Output: Review
+
+Architecture:
+  Deterministic engine -> llm_input_builder -> LLM (expert reviewer) -> Review
+  The LLM never sees internal implementation artifacts.
 """
 from __future__ import annotations
 
 from typing import Any
 
-from core_engine.llm_packet_compressor import build_llm_packet
 from core_engine.models.evidence_bundle import EvidenceBundle
-from core_engine.risk_compressor import compress_risk_hypotheses
 from core_engine.scenario_validator import score_scenarios, ValidationScore
 
 
@@ -23,9 +25,9 @@ class Review:
     """Result of the review pipeline.
     
     Attributes:
-        failure_simulation: LLM-generated failure simulation.
+        failure_simulation: LLM-generated review output.
         validation_score: Scenario validation scores.
-        verdict: Aggregated verdict (BLOCK_REVIEW, REVIEW_REQUIRED, etc.).
+        verdict: Aggregated verdict (BLOCK, REVIEW_REQUIRED, APPROVE).
     """
     
     def __init__(
@@ -62,17 +64,18 @@ class ReviewPipeline:
         """Run the review pipeline.
         
         Hybrid deterministic + LLM architecture:
-        - Deterministic engine: fact generator (evidence, hypotheses, scenarios)
-        - LLM: expert reviewer (validates, ranks, explains, challenges)
+        - Deterministic engine: fact generator (evidence, findings, scenarios)
+        - Normalization layer: converts internal artifacts to reviewer-ready facts
+        - LLM: expert reviewer (writes engineering review from findings)
         
         Args:
             bundle: EvidenceBundle from EvidencePipeline.
             understanding: ChangeUnderstanding from ChangeUnderstandingPipeline.
-            failure_simulation_llm: Optional LLM instance for failure simulation.
-            compressed_for_llm: Optional pre-compressed LLM packet.
+            failure_simulation_llm: Optional LLM instance for review.
+            compressed_for_llm: Optional pre-compressed LLM packet (legacy, unused).
             
         Returns:
-            Review containing failure simulation and verdict.
+            Review containing review output and verdict.
         """
         print("Running review pipeline...")
         
@@ -82,109 +85,36 @@ class ReviewPipeline:
         inference_result = InferencePipeline.run(bundle)
         deterministic_scenarios = inference_result.scenarios
         
-        # Step 2: Build LLM packet with evidence graph format
-        print("Building LLM packet with evidence graph...")
-        # Build the parameters that build_llm_packet actually accepts
-        changed_symbols_list = [cs.symbol for cs in bundle.changed_symbols]
-        influence = []
-        for cs in bundle.changed_symbols:
-            influence.append({
-                "symbol": cs.symbol,
-                "domain": "general",
-                "influence_score": 0.5,
-            })
-        impact_evidence = [ev.model_dump() for ev in bundle.impact_evidence]
-        risk_zones = bundle.domains if bundle.domains else ["general"]
-        
-        # Convert business objects to dicts
-        business_objects = []
-        for bo in bundle.business_objects:
-            if hasattr(bo, "model_dump"):
-                business_objects.append(bo.model_dump())
-            elif isinstance(bo, dict):
-                business_objects.append(bo)
-        
-        # Convert constraints to dicts
-        constraints = []
-        for c in bundle.constraints:
-            if hasattr(c, "model_dump"):
-                constraints.append(c.model_dump())
-            elif isinstance(c, dict):
-                constraints.append(c)
-        
-        # Extract additional context for evidence graph
-        entry_points = [ep.symbol if hasattr(ep, 'symbol') else str(ep) for ep in understanding.entry_points_affected] if understanding.entry_points_affected else []
-        
-        side_effects = [se.model_dump() if hasattr(se, "model_dump") else se for se in bundle.side_effects]
-        
-        transaction_boundaries = []
-        for c in bundle.constraints:
-            if hasattr(c, 'constraint_type'):
-                if 'transaction' in c.constraint_type.value.lower():
-                    transaction_boundaries.append(c.symbol)
-            elif isinstance(c, dict) and 'transaction' in str(c.get('constraint_type', '')).lower():
-                transaction_boundaries.append(c.get('symbol', ''))
-        
-        external_dependencies = []
-        for se in bundle.side_effects:
-            if hasattr(se, 'effect_type'):
-                if 'external' in se.effect_type.lower() or 'http' in se.effect_type.lower():
-                    external_dependencies.append(se.symbol)
-            elif isinstance(se, dict) and ('external' in str(se.get('effect_type', '')).lower() or 'http' in str(se.get('effect_type', '')).lower()):
-                external_dependencies.append(se.get('symbol', ''))
-        
-        compressed_for_llm = build_llm_packet(
-            change_influence=influence,
-            impact_evidence=impact_evidence,
-            risk_zones=risk_zones,
-            changed_symbols=changed_symbols_list,
-            deterministic_scenarios=deterministic_scenarios,
-            business_objects=business_objects,
-            domains=bundle.domains,
-            constraints=constraints,
-            entry_points=entry_points,
-            side_effects=side_effects,
-            transaction_boundaries=transaction_boundaries,
-            external_dependencies=external_dependencies,
+        # Step 2: Normalize evidence into reviewer-ready facts
+        print("Normalizing evidence into reviewer-ready facts...")
+        from core_engine.pipelines.normalization import EvidenceNormalizationPipeline
+        normalized_facts = EvidenceNormalizationPipeline.run(
+            inference_result=inference_result,
+            bundle=bundle,
         )
         
-        # Step 3: Build risk hypotheses for LLM context (legacy support)
-        from core_engine.failure_archetype_engine import build_risk_hypotheses
-        from core_engine.impact_evidence import synthesize_evidence_summary, ImpactEvidence as OldImpactEvidence
+        # Step 3: Build reviewer-ready facts for the LLM from normalized facts
+        print("Building reviewer-ready facts for LLM...")
+        repo = ""
+        pr_number = 0
+        if hasattr(understanding, 'enriched_files') and understanding.enriched_files:
+            for f in understanding.enriched_files:
+                if isinstance(f, dict):
+                    repo = f.get("repo", repo)
+                    pr_number = f.get("pr_number", pr_number)
         
-        # Convert Pydantic ImpactEvidence to old dataclass format for synthesize_evidence_summary
-        old_style_evidence = []
-        for ev in bundle.impact_evidence:
-            old_style_evidence.append(OldImpactEvidence(
-                source_symbol=ev.source.name if hasattr(ev.source, 'name') else str(ev.source),
-                target_symbol=ev.target.name if hasattr(ev.target, 'name') else str(ev.target),
-                evidence_type=ev.evidence_type.value if hasattr(ev.evidence_type, 'value') else str(ev.evidence_type),
-                confidence=ev.confidence,
-                explanation=ev.explanation,
-                metadata=ev.metadata,
-            ))
-        evidence_summary = synthesize_evidence_summary(old_style_evidence)
-        # Convert EvidenceSummary dataclass objects to dicts for build_risk_hypotheses
-        evidence_summary_dicts = [es.to_dict() for es in evidence_summary]
-        risk_hypotheses = build_risk_hypotheses(
-            change_influence=[],  # Not needed for LLM context
-            evidence_summary=evidence_summary_dicts,
+        from core_engine.normalized_llm_input_builder import build_normalized_llm_input
+        llm_input = build_normalized_llm_input(
+            normalized_facts=normalized_facts,
+            repo=repo,
+            pr_number=pr_number,
         )
         
-        # Compress risk hypotheses
-        compressed_risk_hypotheses = compress_risk_hypotheses(
-            risk_hypotheses=risk_hypotheses,
-            top_n=3,
-            compress_for_llm=True,
-        )
-        compressed_for_llm["compressed_risk_hypotheses"] = compressed_risk_hypotheses
-        
-        # Step 4: Run LLM if available
+        # Step 3: Run LLM if available
         if failure_simulation_llm:
-            print("Calling LLM for validation and ranking...")
+            print("Calling LLM for review...")
             failure_simulation = ReviewPipeline._run_llm(
-                compressed_for_llm=compressed_for_llm,
-                bundle=bundle,
+                llm_input=llm_input,
                 failure_simulation_llm=failure_simulation_llm,
             )
         else:
@@ -193,9 +123,9 @@ class ReviewPipeline:
                 deterministic_scenarios=deterministic_scenarios,
             )
         
-        # Step 5: Apply deterministic validation scores
+        # Step 4: Apply deterministic validation scores
         print("Validating scenarios...")
-        validation_score = score_scenarios(failure_simulation, compressed_for_llm)
+        validation_score = score_scenarios(failure_simulation, normalized_facts)
         
         if validation_score.warnings:
             for warning in validation_score.warnings:
@@ -204,19 +134,7 @@ class ReviewPipeline:
             for note in validation_score.notes:
                 print(f"Scenario validation note: {note}")
         
-        # Step 6: Apply confidence adjustments from deterministic validation
-        for score in validation_score.scenarios:
-            if score.scenario_index < len(failure_simulation.get("failure_scenarios", [])):
-                scenario = failure_simulation["failure_scenarios"][score.scenario_index]
-                orig_confidence = scenario.get("confidence", 0.7)
-                scenario["confidence"] = round(orig_confidence * score.confidence_adjustment, 3)
-                if score.issues:
-                    scenario["reasoning"] = (
-                        scenario.get("reasoning", "") +
-                        f"\n[Validation: {'; '.join(score.issues)}]"
-                    )
-        
-        # Step 7: Aggregate verdict
+        # Step 5: Aggregate verdict
         print("Aggregating verdict...")
         risk_patterns = understanding.risk_patterns
         verdict = ReviewPipeline._aggregate_verdict(
@@ -237,135 +155,133 @@ class ReviewPipeline:
     def _build_failure_simulation_from_deterministic(
         deterministic_scenarios: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        """Build failure simulation dict from deterministic scenarios (no LLM).
+        """Build review output from deterministic scenarios (no LLM).
         
         Used when LLM is not available. Converts deterministic scenarios
-        to the expected output format.
+        to the new reviewer-ready output format.
         
         Args:
             deterministic_scenarios: Scenarios from deterministic pipeline.
             
         Returns:
-            Failure simulation dict.
+            Review output dict in the new format.
         """
-        failure_scenarios = []
-        for scenario in deterministic_scenarios:
+        has_scenarios = bool(deterministic_scenarios)
+        
+        if not has_scenarios:
+            return {
+                "verdict": "APPROVE",
+                "executive_summary": "No significant propagation detected. The change is contained and does not affect downstream systems.",
+                "primary_concern": None,
+                "additional_observations": [],
+                "required_tests": [],
+                "reviewer_questions": [],
+                "merge_recommendation": "Safe to merge.",
+            }
+        
+        # Build primary concern from the highest-confidence scenario
+        top_scenario = deterministic_scenarios[0] if deterministic_scenarios else {}
+        primary_concern = None
+        if isinstance(top_scenario, dict):
+            title = top_scenario.get("title", top_scenario.get("narrative", "Unknown risk"))[:80]
+            description = top_scenario.get("description", top_scenario.get("reasoning", ""))
+            production_impact = top_scenario.get("production_impact", top_scenario.get("operational_impact", ""))
+            causal_chain = top_scenario.get("causal_chain", "")
+            supported_by = top_scenario.get("supported_by", [])
+            ci_would_catch = top_scenario.get("ci_would_catch", False)
+            
+            primary_concern = {
+                "title": title,
+                "why_blocking": description or f"Change in {', '.join(supported_by[:3]) if supported_by else 'affected symbols'} introduces production risk",
+                "execution_path": causal_chain or f"{' → '.join(supported_by[:4]) if supported_by else 'Unknown execution path'}",
+                "customer_or_business_impact": production_impact or "Potential downstream impact",
+                "why_existing_tests_miss_it": "Existing tests do not cover this execution path" if not ci_would_catch else "Covered by existing CI",
+                "confidence_rationale": f"Deterministic analysis identified this as the highest-risk scenario (confidence: {top_scenario.get('confidence', 0):.2f})",
+                "required_validation": "Integration test covering the identified execution path" if not ci_would_catch else "Existing CI coverage is sufficient",
+            }
+        
+        # Build additional observations from remaining scenarios
+        additional_observations = []
+        for scenario in deterministic_scenarios[1:4]:
             if not isinstance(scenario, dict):
                 continue
-            failure_scenarios.append({
-                "title": scenario.get("title", scenario.get("narrative", "Unknown scenario")[:100]),
-                "trigger": scenario.get("description", "Deterministic scenario"),
-                "evidence_type": "inferred",
-                "production_impact": scenario.get("operational_impact", scenario.get("production_impact", "")),
-                "confidence": scenario.get("confidence", 0.5),
-                "causal_chain": scenario.get("causal_chain", ""),
-                "failure_class": scenario.get("failure_class", ""),
-                "first_observable_signal": scenario.get("first_observable_signal", "unknown"),
-                "silent_failure": scenario.get("silent_failure", True),
-                "ci_would_catch": scenario.get("ci_would_catch", False),
-                "merge_risk_level": scenario.get("merge_risk_level", "MEDIUM"),
-                "supported_by": scenario.get("supported_by", []),
-                "reasoning": scenario.get("reasoning", ""),
+            additional_observations.append({
+                "title": scenario.get("title", scenario.get("narrative", "Additional observation"))[:80],
+                "observation": scenario.get("reasoning", scenario.get("description", "")),
+                "symbols": scenario.get("supported_by", []),
             })
         
+        # Build required tests
+        required_tests = []
+        for s in deterministic_scenarios[:3]:
+            if not s.get("ci_would_catch", False):
+                title = s.get("title", "Change")
+                required_tests.append(f"Integration test for {title[:60]}")
+        
+        # Build reviewer questions
+        reviewer_questions = []
+        for s in deterministic_scenarios[:2]:
+            title = s.get("title", "This change")
+            causal = s.get("causal_chain", "")
+            if causal:
+                reviewer_questions.append(f"Has the {causal[:80]} path been verified under production-like load?")
+            else:
+                reviewer_questions.append(f"Has {title[:60]} been tested in the context of downstream consumers?")
+        
+        # Build merge recommendation
+        merge_recommendation = "Requires review before merge."
+        if primary_concern:
+            merge_recommendation = f"Blocked by: {primary_concern['title']}"
+        
         return {
-            "failure_scenarios": failure_scenarios[:5],
-            "hidden_impact_chain": [],
-            "checked_risk_areas": [],
-            "missing_critical_tests": [],
-            "broken_assumptions": [],
-            "silent_failure_summary": "",
-            "merge_risk_statement": "",
-            "verdict_rationale": "",
-            "verdict": "REVIEW_REQUIRED" if failure_scenarios else "NO_SIGNIFICANT_PROPAGATION_FOUND",
-            "final_question": "",
-            "system_behavior_deltas": [],
-            "matched_failure_templates": [],
-            # New fields (empty when no LLM)
-            "scenario_validations": [],
-            "scenario_rankings": [],
-            "evidence_challenges": [],
-            "missing_evidence": [],
-            "impact_explanations": [],
-            "executive_summary": "",
-            "top_risks": [],
+            "verdict": "BLOCK" if primary_concern else "REVIEW_REQUIRED",
+            "executive_summary": ReviewPipeline._build_executive_summary(deterministic_scenarios),
+            "primary_concern": primary_concern,
+            "additional_observations": additional_observations,
+            "required_tests": required_tests[:5],
+            "reviewer_questions": reviewer_questions[:5],
+            "merge_recommendation": merge_recommendation,
         }
     
     @staticmethod
+    def _build_executive_summary(scenarios: list[dict]) -> str:
+        """Build executive summary from deterministic scenarios."""
+        if not scenarios:
+            return "No significant risk detected."
+        
+        top = scenarios[0]
+        title = top.get("title", top.get("narrative", "Change"))
+        impact = top.get("production_impact", top.get("operational_impact", ""))
+        
+        if impact:
+            return f"{title}: {impact[:200]}"
+        
+        return f"{len(scenarios)} concerns identified. The highest-confidence risk involves {title}."
+    
+    @staticmethod
     def _run_llm(
-        compressed_for_llm: dict[str, Any],
-        bundle: EvidenceBundle,
+        llm_input: dict[str, Any],
         failure_simulation_llm: Any,
     ) -> dict[str, Any]:
-        """Call LLM with the evidence-driven LLM payload.
+        """Call LLM with reviewer-ready facts.
         
-        Hybrid architecture: LLM validates and ranks deterministic scenarios.
+        The LLM receives only reviewer-ready facts from llm_input_builder.
+        It does NOT receive internal implementation artifacts.
         
         Args:
-            compressed_for_llm: Compressed IR for the LLM (with evidence graph).
-            bundle: EvidenceBundle with all evidence.
+            llm_input: Reviewer-ready facts from llm_input_builder.
             failure_simulation_llm: LLM instance.
             
         Returns:
-            Failure simulation dict from LLM with validation/ranking.
+            Review output dict from LLM.
         """
-        # Build changed symbols list
-        changed_symbols = [cs.symbol for cs in bundle.changed_symbols]
-        
-        # Build change influence (simplified)
-        change_influence = []
-        for cs in bundle.changed_symbols:
-            change_influence.append({
-                "symbol": cs.symbol,
-                "domain": "general",
-                "influence_score": 0.5,
-            })
-        
-        # Build impact evidence
-        impact_evidence = [ev.model_dump() for ev in bundle.impact_evidence]
-        
-        # Build risk zones from domains
-        risk_zones = bundle.domains if bundle.domains else ["general"]
-        
-        # Call LLM with evidence graph scenarios (if available)
-        # The LLM will validate and rank the deterministic scenarios
         output = failure_simulation_llm.generate(
-            repo=compressed_for_llm.get("repo", ""),
-            pr_number=compressed_for_llm.get("pr_number", 0),
-            change_influence=change_influence,
-            impact_evidence=impact_evidence,
-            risk_zones=risk_zones,
-            changed_symbols=changed_symbols,
-            evidence_summary=compressed_for_llm.get("compressed_risk_hypotheses"),
+            llm_input=llm_input,
         )
         failure_simulation = output.model_dump()
         
         # Sanitize LLM output
         failure_simulation = ReviewPipeline._sanitize_llm_output(failure_simulation)
-        
-        # Ensure deterministic scenarios are preserved (LLM may not return them)
-        if "failure_scenarios" not in failure_simulation or not failure_simulation["failure_scenarios"]:
-            # LLM didn't return scenarios, use deterministic ones
-            deterministic_scenarios = compressed_for_llm.get("scenarios", [])
-            if deterministic_scenarios:
-                failure_simulation["failure_scenarios"] = [
-                    {
-                        "title": s.get("title", "Unknown"),
-                        "trigger": s.get("production_impact", ""),
-                        "evidence_type": "inferred",
-                        "production_impact": s.get("production_impact", ""),
-                        "confidence": s.get("confidence", 0.5),
-                        "causal_chain": " → ".join(s.get("causal_chain", [])) if isinstance(s.get("causal_chain"), list) else s.get("causal_chain", ""),
-                        "failure_class": s.get("failure_class", ""),
-                        "first_observable_signal": "See validation",
-                        "silent_failure": s.get("silent_failure", True),
-                        "ci_would_catch": s.get("ci_would_catch", False),
-                        "merge_risk_level": s.get("merge_risk_level", "MEDIUM"),
-                        "supported_by": [],
-                        "reasoning": "Deterministic scenario (LLM validation only)",
-                    }
-                    for s in deterministic_scenarios[:5]
-                ]
         
         return failure_simulation
     
@@ -377,7 +293,7 @@ class ReviewPipeline:
     ) -> str:
         """Aggregate verdict from LLM output and risk patterns.
         
-        Core signal: LLM assessment with causal context.
+        Core signal: LLM assessment with contextual findings.
         Secondary signal: risk patterns.
         """
         if not isinstance(failure_simulation, dict):
@@ -399,18 +315,13 @@ class ReviewPipeline:
     @staticmethod
     def _default_failure_simulation() -> dict:
         return {
-            "failure_scenarios": [],
-            "hidden_impact_chain": [],
-            "checked_risk_areas": [],
-            "missing_critical_tests": [],
-            "broken_assumptions": [],
-            "silent_failure_summary": "",
-            "merge_risk_statement": "",
-            "verdict_rationale": "",
-            "verdict": "NO_SIGNIFICANT_PROPAGATION_FOUND",
-            "final_question": "",
-            "system_behavior_deltas": [],
-            "matched_failure_templates": [],
+            "verdict": "APPROVE",
+            "executive_summary": "",
+            "primary_concern": None,
+            "additional_observations": [],
+            "required_tests": [],
+            "reviewer_questions": [],
+            "merge_recommendation": "",
         }
     
     @staticmethod
@@ -420,18 +331,13 @@ class ReviewPipeline:
         
         sanitized = {}
         expected_keys = {
-            "failure_scenarios",
-            "hidden_impact_chain",
-            "checked_risk_areas",
-            "missing_critical_tests",
-            "broken_assumptions",
-            "silent_failure_summary",
-            "merge_risk_statement",
-            "verdict_rationale",
             "verdict",
-            "final_question",
-            "system_behavior_deltas",
-            "matched_failure_templates",
+            "executive_summary",
+            "primary_concern",
+            "additional_observations",
+            "required_tests",
+            "reviewer_questions",
+            "merge_recommendation",
         }
         
         for key, value in raw_output.items():
@@ -460,10 +366,10 @@ class ReviewPipeline:
         has_risk_patterns = bool(risk_patterns)
         if has_risk_patterns:
             if "HIGH" in pr_risk_level:
-                return "BLOCK_REVIEW"
+                return "BLOCK"
             return "REVIEW_REQUIRED"
         if "HIGH" in pr_risk_level:
-            return "REVIEW_RECOMMENDED"
+            return "REVIEW_REQUIRED"
         if "MEDIUM" in pr_risk_level:
             return "REVIEW_REQUIRED"
-        return "SAFE_TO_MERGE"
+        return "APPROVE"

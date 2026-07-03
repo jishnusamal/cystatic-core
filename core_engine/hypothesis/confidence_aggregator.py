@@ -37,8 +37,9 @@ class EvidenceCluster(BaseModel):
         
         self.evidence_items.append(evidence)
         self.evidence_count += 1
-        if evidence.evidence_type.value not in self.evidence_types:
-            self.evidence_types.append(evidence.evidence_type.value)
+        evidence_type_str = evidence.evidence_type.value if hasattr(evidence.evidence_type, 'value') else str(evidence.evidence_type)
+        if evidence_type_str not in self.evidence_types:
+            self.evidence_types.append(evidence_type_str)
     
     def calculate_aggregated_confidence(self) -> float:
         """Calculate aggregated confidence from all evidence in cluster.
@@ -279,8 +280,9 @@ class ConfidenceAggregator:
         type_confidence: dict[str, float] = defaultdict(float)
         
         for e in evidence_items:
-            type_counts[e.evidence_type.value] += 1
-            type_confidence[e.evidence_type.value] += e.confidence
+            evidence_type_str = e.evidence_type.value if hasattr(e.evidence_type, 'value') else str(e.evidence_type)
+            type_counts[evidence_type_str] += 1
+            type_confidence[evidence_type_str] += e.confidence
         
         # Find the type with highest count
         max_count = max(type_counts.values())

@@ -1,36 +1,30 @@
 """
-LLM INPUT CONTRACT (EVIDENCE-DRIVEN)
+LLM INPUT CONTRACT (REVIEWER-READY FACTS)
 
 The LLM receives exactly 1 structure with 5 signal types:
-  1. change_influence []       — ONLY scored symbols + domains (Layer 1)
-  2. impact_evidence []        — Evidence connecting changed symbols (Layer 2)
-  3. risk_zones []             — Domain regions (checkout, invoice, tax, etc.)
-  4. changed_symbols []        — Tiny hint: list of changed symbols
-  5. impact_propagation {}     — Optional: Impact Propagation Kernel output
+  1. repository {}           — Context: name, language, framework
+  2. change_summary {}       — What changed: domains, business objects, symbols
+  3. review_findings []      — Reviewer-ready observations (not internal artifacts)
+  4. existing_validation {}  — What's covered, what's missing, known assumptions
+  5. deterministic_verdict {}— Engine's own assessment
 
-REMOVED (not reasoning inputs):
-  - files (enriched_files)     ❌ (too big + already abstracted elsewhere)
-  - excluded_files             ❌ (irrelevant to reasoning)
-  - keywords_detected          ❌ (already in change_influence)
-  - risk_patterns              ❌ (already encoded in domain + influence)
-  - entry_points_affected      ❌ (already in impact_evidence)
-  - system_impact              ❌ (already in propagation layer)
-  - pr_risk_score              ❌ (system opinion, LLM should derive)
-  - pr_risk_level              ❌ (system opinion, LLM should derive)
-  - compressed_for_llm         ❌ (reintroduces everything we separated)
-  - failure_simulation         ❌ (this is OUTPUT, not INPUT)
+REMOVED (internal implementation artifacts):
+  - change_influence         ❌ (internal scoring)
+  - impact_evidence          ❌ (internal evidence format)
+  - risk_hypotheses          ❌ (internal hypothesis format)
+  - risk_zones               ❌ (internal domain scoring)
+  - scenarios                ❌ (internal scenario format)
+  - evidence_graph           ❌ (internal graph format)
+  - compressed_*             ❌ (internal compression artifacts)
 
 LLM ROLE:
-  You are a causal reasoning engine.
-  You derive failure scenarios from change signals and evidence.
+  You are an expert reviewer.
+  You transform deterministic findings into a credible engineering review.
+  You do NOT perform analysis — that's already done.
 
 KEY RULE:
-  Everything the LLM receives must be a change signal, evidence, or constraint.
-  All other data is preprocessing junk that causes:
-  - contradiction
-  - overconfidence noise
-  - hallucinated reconciliation
-  - diluted signal strength
+  Everything the LLM receives must be a reviewer-ready fact.
+  All internal implementation details are preprocessed into findings.
 """
 from __future__ import annotations
 
@@ -49,285 +43,144 @@ from schemas.failure_simulation import FailureSimulationOutput
 # ══════════════════════════════════════════════════════════════════════════════
 
 SYSTEM_PROMPT = """
-You are a senior staff engineer performing PR risk validation on a deterministic dependency + impact analysis system.
+You are Factor Review, an AI Staff Engineer performing the final review before a pull request is merged.
 
-Your job is NOT to generate new failure modes from scratch.
+Your audience is experienced software engineers.
 
-You only:
-- Validate deterministic hypotheses
-- Consolidate and prioritize them
-- Add missing runtime reasoning (only if strongly implied by evidence)
-- Translate findings into high-impact PR review commentary
+Factor's deterministic engine has already identified, ranked and validated the technical findings.
 
-You treat input as a deterministic risk graph — your job is compression, prioritization, and PR communication, NOT a generative failure simulator.
+Do NOT perform additional analysis.
 
-Hard constraints:
-- Do NOT repeat identical scenarios
-- If multiple hypotheses share the same title + meaning → MERGE them
-- Do NOT invent failure scenarios
-- Every scenario must map to at least ONE: cluster, evidence item, or changed symbol
-- Do NOT generate "generic placeholders"
-- Do NOT hallucinate missing systems
-- If runtime graph is missing → explicitly state uncertainty once, not per scenario
-- No scenario duplication across sections (a scenario may appear ONLY ONCE in the output)
+Do NOT infer architecture beyond what is provided.
 
-Output limits:
-- NEVER output more than 6 scenarios
-- Prefer 3–5 for clarity
-- Each scenario must have concrete symbol grounding
-- Each scenario must be meaningfully different from others
+Do NOT invent dependencies or failure modes.
+
+Your responsibility is to make a merge decision and explain it like an experienced Staff Engineer.
+
+Your review should optimize for trust, not completeness.
+
+A reviewer should finish reading your output knowing:
+
+• What is the single highest-confidence production risk?
+• Why does it matter?
+• Why would existing tests miss it?
+• What is the smallest validation that would increase confidence?
+
+Prefer one strong insight over ten speculative observations.
+
+Every statement must be directly supported by the supplied findings.
+
+Never broaden the scope beyond the supplied evidence.
+
+Never speculate simply because a section exists.
+
+If there is only one meaningful concern, produce only one.
+
+Do not summarize every finding.
+
+Do not produce generic architecture commentary.
+
+Do not explain software engineering concepts.
+
+Avoid phrases like:
+
+- may affect
+- could impact
+- business logic error
+- architectural coupling
+- runtime tracing
+- version guards
+
+unless explicitly supported by the supplied findings.
+
+Write like a Staff Engineer leaving a blocking review comment—not an auditor writing a report.
+
+Be concise.
+
+Be decisive.
+
+Specificity always beats completeness.
 """
 
 USER_PROMPT_TEMPLATE = """
-## Factor Review — What could break?
+Using ONLY the deterministic findings below, write the review you would leave on the pull request.
 
-You are a senior staff engineer performing PR risk validation on a deterministic dependency + impact analysis system.
+Do not perform additional reasoning.
 
-Your job is NOT to generate new failure modes from scratch.
+Do not invent risks.
 
-You only:
-- Validate deterministic hypotheses
-- Consolidate and prioritize them
-- Add missing runtime reasoning (only if strongly implied by evidence)
-- Translate findings into high-impact PR review commentary
+Do not explain the deterministic findings.
 
----
+Instead, synthesize them into a concise engineering review.
 
-## 🚫 Hard Constraints (must follow)
+## Repository
 
-1. Do NOT repeat identical scenarios
-2. If multiple hypotheses share the same title + meaning → MERGE them
-3. Do NOT invent failure scenarios
-4. Every scenario must map to at least ONE: cluster, evidence item, or changed symbol
-5. Do NOT generate "generic placeholders" (e.g. "See validation", "inferred", "business logic errors" alone is invalid)
-6. Do NOT hallucinate missing systems
-7. If runtime graph is missing → explicitly state uncertainty once, not per scenario
-8. No scenario duplication across sections (a scenario may appear ONLY ONCE in the output)
+{repository}
 
----
+## Change summary
 
-## 🧠 Required Reasoning Model
+{change_summary}
 
-You must treat input as:
-- A deterministic risk graph → your job is compression, prioritization, and PR communication
-- NOT a generative failure simulator
+## Deterministic verdict
 
----
+{deterministic_verdict}
 
-## 📥 Input Structure
+## Deterministic findings
 
-You will receive:
-- clusters (deterministic hypotheses)
-- evidence items
-- affected domains
-- confidence scores
-- merge risk levels
+{review_findings}
 
----
+## Existing validation
 
-## 🔄 Processing Rules
+{existing_validation}
 
-### Step 1 — Deduplicate aggressively
+Return JSON matching the schema below.
 
-Group scenarios by:
-- business object (Customer, Order, Invoice, etc.)
-- domain
-- failure_class
-
-👉 If same meaning → merge into one scenario
-
-### Step 2 — Rank (DO NOT RANDOMIZE ORDER)
-
-Priority score:
-```
-risk_score = 0.4 * confidence + 0.3 * merge_risk_level + 0.2 * domain_criticality + 0.1 * breadth_of_blast_radius
-```
-
-Where:
-- domain_criticality: payment, billing > others
-- merge_risk_level: CRITICAL=4, HIGH=3, MEDIUM=2, LOW=1
-
-### Step 3 — Convert clusters into 3–6 MAX scenarios
-
-Hard limit: NEVER output more than 6 scenarios
-Prefer 3–5 for clarity
-
-### Step 4 — Strengthen evidence grounding
-
-Every scenario MUST include:
-- Affected business object(s)
-- At least 2 concrete symbols from input
-- Explicit domain
-- One real causal link from deterministic chain
-
-❌ Forbidden:
-- "inferred"
-- "validation-only"
-- "unknown risk"
-- generic descriptions without symbols
-
----
-
-## 🧠 Architecture Awareness Layer
-
-Before writing output, silently classify system shape:
-- monolith / modular monolith / microservices
-- domain boundaries (order/payment/billing/tax)
-- event-driven vs direct calls
-
-Then ensure:
-👉 You highlight CROSS-BOUNDARY risks only once per boundary pair
-
-Example: payment → billing coupling should NOT appear 5 times
-
----
-
-## ✍️ Output Style Requirements (PR Hook Effect)
-
-Your output must:
-- feel like a staff engineer PR review
-- be concise, sharp, non-repetitive
-- prioritize "what could break in production"
-
-Use:
-- crisp headings
-- minimal repetition
-- no filler text
-- no generic disclaimers repeated per item
-
----
-
-## ❌ Known Bad Behavior to Eliminate
-
-You must NOT:
-- repeat same scenario with different numbering
-- output generic "business logic error" blocks
-- restate confidence without new insight
-- produce filler "validation-only" scenarios
-- inflate 11 clusters into 11 near-identical failures
-
----
-
-## ✅ Success Criteria
-
-Good output:
-- 3–6 distinct risks max
-- each is meaningfully different
-- each has concrete symbol grounding
-- no duplication across domains unless merged explicitly
-- reads like a senior engineer blocking a risky PR
-
----
-
-## 📋 Output Format (Strict JSON)
-
-You must output valid JSON. The executive_summary field should contain the complete PR review in markdown-style format:
-
-{
+{{
   "verdict": "APPROVE | REVIEW_REQUIRED | BLOCK",
-  
-  "executive_summary": "## Factor Review — What could break?\\n\\nVerdict: REVIEW_REQUIRED\\n\\n### ⚠️ Key Risks (Top 3–6)\\n\\n#### ⚠️ {Title}\\n\\n**What changed**\\n[1-2 lines]\\n\\n**Explicit symbol(s)**\\n- `SymbolName1`\\n- `SymbolName2`\\n\\n**Where it impacts**\\nDomain + business object\\n\\n**Why it matters**\\n[2-3 line causal explanation grounded in evidence]\\n\\n**Blast radius**\\n- Impacted object/service 1\\n- Impacted object/service 2\\n\\n**Confidence**\\n[Derived only from deterministic score, no inflation]\\n\\n---\\n\\n### 🧠 Systemic Insight\\n\\n[1–3 lines max explaining structural risk]\\n\\n---\\n\\n### 🧪 Missing Validation\\n\\n[1–3 concrete missing tests or runtime signals]",
-  
-  "top_risks": [
-    {
-      "rank": 1,
-      "title": "Clear, specific risk title",
-      "confidence": 0.85,
-      "validation_verdict": "VALIDATE | DOWNGRADE | REJECT | NEEDS_MORE_EVIDENCE",
-      "production_symptom": "First observable signal in production",
-      "why_it_matters": "Architectural reasoning: why this is the highest risk",
-      "evidence_quality": "STRONG | MODERATE | WEAK",
-      "recommended_action": "Specific action: add integration test, review transaction boundary, etc."
-    }
-  ],
-  
-  "scenario_validations": [
-    {
-      "scenario_title": "exact title from input",
-      "verdict": "VALIDATE | DOWNGRADE | REJECT | NEEDS_MORE_EVIDENCE",
-      "confidence_calibration": "0.84 is well-calibrated because...",
-      "production_symptom": "First observable signal in production",
-      "ci_catch_probability": "HIGH | MEDIUM | LOW | NONE",
-      "strongest_evidence": "What evidence most strongly supports this",
-      "weakest_evidence": "What evidence is weakest",
-      "additional_evidence_needed": ["call graph", "runtime logs"],
-      "reasoning": "Step-by-step reasoning for this verdict"
-    }
-  ],
-  
-  "scenario_rankings": [
-    {
-      "rank": 1,
-      "scenario_title": "exact title from input",
-      "production_risk_score": 0.9,
-      "risk_factors": ["user-facing", "financial", "irreversible"],
-      "user_facing_impact": "How users are affected"
-    }
-  ],
-  
-  "evidence_challenges": [
-    {
-      "scenario_title": "exact title from input",
-      "assumption": "Assumes runtime call path exists",
-      "weakness": "No evidence of actual invocation",
-      "missing_evidence": "Would need runtime call graph",
-      "confidence_if_validated": 0.75
-    }
-  ],
-  
-  "impact_explanations": [
-    {
-      "scenario_title": "exact title from input",
-      "explanation": "How the failure propagates through the system",
-      "affected_systems": ["Checkout", "Invoice", "Tax"],
-      "blast_radius": "Checkout → Invoice → Wallet"
-    }
-  ],
-  
-  "missing_evidence": [
-    "Runtime call graph for Order → Invoice flow",
-    "Integration test coverage for tax calculation edge cases"
-  ],
-  
-  "hidden_impact_chain": [
-    "step 1 → step 2 → step 3"
-  ],
-  
-  "checked_risk_areas": [
-    "checkout, billing, invoice, auth"
-  ],
-  
-  "missing_critical_tests": [
-    "one concrete test scenario that would expose the issue"
-  ],
-  
-  "broken_assumptions": [
-    "assumption that is no longer true after this change"
-  ],
-  
-  "silent_failure_summary": "1-2 lines describing how this could pass CI but still fail in production",
-  
-  "merge_risk_statement": "This PR is mergeable but behaviorally unsafe under production conditions",
-  
-  "verdict_rationale": "REVIEW_REQUIRED because the tax calculation change could cause invoice drift in production. The deterministic engine identified 3 evidence clusters connecting checkout to invoice generation, but CI would not catch this because existing tests only validate unit-level tax computation, not end-to-end invoice totals.",
-  
-  "final_question": "a sharp question that forces reconsideration before merge"
-}
 
-CRITICAL RULES:
-- Output ONLY valid JSON, no markdown code blocks, no ``` markers
-- The executive_summary field must contain the complete PR review in markdown format (with ##, ###, **, etc.)
-- NEVER invent scenarios not in the input
-- MERGE duplicate scenarios
-- MAX 6 scenarios in top_risks
-- Every scenario must have concrete symbol grounding
-- Be specific and actionable, not generic
+  "executive_summary": "...",
 
----
+  "primary_concern": {{
+    "title": "...",
+    "why_blocking": "...",
+    "execution_path": "...",
+    "customer_or_business_impact": "...",
+    "why_existing_tests_miss_it": "...",
+    "confidence_rationale": "...",
+    "required_validation": "..."
+  }},
 
-## 📊 Input Data
+  "additional_observations": [
+    {{
+      "title": "...",
+      "observation": "...",
+      "symbols": []
+    }}
+  ],
 
-{input_structure}
+  "required_tests": [
+    "..."
+  ],
+
+  "reviewer_questions": [
+    "..."
+  ],
+
+  "merge_recommendation": "..."
+}}
+
+Rules
+
+There should be exactly one primary concern.
+Everything else is secondary.
+Never invent a second production risk simply to populate the schema.
+Omit additional observations if none add meaningful value.
+Prefer execution paths over architectural summaries.
+Every recommendation must be traceable to the supplied findings.
+If the deterministic verdict is BLOCK, explain why in concrete production terms.
+The executive summary should be no more than 120 words.
+Keep the entire review concise enough that an engineer could read it in under two minutes.
+Return valid JSON only.
 """
 
 
@@ -342,18 +195,13 @@ def sanitize_llm_json(raw_output: dict[str, Any]) -> dict[str, Any]:
 
     sanitized = {}
     expected_keys = {
-        "failure_scenarios",
-        "hidden_impact_chain",
-        "checked_risk_areas",
-        "missing_critical_tests",
-        "broken_assumptions",
-        "silent_failure_summary",
-        "merge_risk_statement",
-        "verdict_rationale",
         "verdict",
-        "final_question",
-        "system_behavior_deltas",
-        "matched_failure_templates",
+        "executive_summary",
+        "primary_concern",
+        "additional_observations",
+        "required_tests",
+        "reviewer_questions",
+        "merge_recommendation",
     }
 
     for key, value in raw_output.items():
@@ -374,6 +222,27 @@ def sanitize_llm_json(raw_output: dict[str, Any]) -> dict[str, Any]:
             sanitized[matched_key] = value
         else:
             sanitized[clean_key] = value
+
+    # Sanitize verdict value: map common LLM mistakes to valid values
+    if "verdict" in sanitized and isinstance(sanitized["verdict"], str):
+        verdict = sanitized["verdict"].strip().upper()
+        verdict_map = {
+            "BLOCK": "BLOCK",
+            "REVIEW": "REVIEW_REQUIRED",
+            "REQUIRED": "REVIEW_REQUIRED",
+            "REVIEW_REQUIRED": "REVIEW_REQUIRED",
+            "BLOCK_REVIEW": "BLOCK",
+            "APPROVE": "APPROVE",
+            "SAFE": "APPROVE",
+            "LOW_RISK": "APPROVE",
+            "LOW": "APPROVE",
+            "UNCERTAIN": "REVIEW_REQUIRED",
+            "UNCERTAIN_IMPACT": "REVIEW_REQUIRED",
+            "NO_SIGNIFICANT_PROPAGATION_FOUND": "APPROVE",
+            "NO_PROPAGATION": "APPROVE",
+            "NONE": "APPROVE",
+        }
+        sanitized["verdict"] = verdict_map.get(verdict, verdict)
 
     return sanitized
 
@@ -425,10 +294,9 @@ def sanitize_llm_json_string(json_string: str) -> str:
         else:
             parts = re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', cleaned)
             expected_fields = [
-                "failure_scenarios", "hidden_impact_chain", "checked_risk_areas",
-                "missing_critical_tests", "broken_assumptions", "silent_failure_summary",
-                "merge_risk_statement", "verdict_rationale", "verdict", "final_question",
-                "system_behavior_deltas", "matched_failure_templates",
+                "verdict", "executive_summary", "primary_concern",
+                "additional_observations", "required_tests",
+                "reviewer_questions", "merge_recommendation",
             ]
             matched_field = None
             for part in parts:
@@ -493,39 +361,29 @@ class FailureSimulationLLM:
 
     def build_prompt(
         self,
-        repo: str = "",
-        pr_number: int = 0,
-        change_influence: list[dict[str, Any]] | None = None,
-        impact_evidence: list[dict[str, Any]] | None = None,
-        risk_zones: list[str] | None = None,
-        changed_symbols: list[str] | None = None,
-        evidence_summary: list[dict[str, Any]] | None = None,
+        llm_input: dict[str, Any],
     ) -> list[Any]:
-        """Build prompt with the evidence-driven input contract.
+        """Build prompt from the llm_input structure.
 
         Args:
-            repo: Repository identifier.
-            pr_number: PR number.
-            change_influence: Scored symbols + domains (Layer 1).
-            impact_evidence: Impact evidence list (Layer 2, legacy — prefer evidence_summary).
-            risk_zones: Domain regions (checkout, invoice, tax, etc.).
-            changed_symbols: List of modified symbols.
-            evidence_summary: Pre-synthesized evidence summary (Layer 2, primary signal).
+            llm_input: The reviewer-ready facts dict from llm_input_builder.
 
         Returns:
             List of message dicts for the LLM API call.
         """
-        input_structure = {
-            "repo": repo,
-            "pr_number": pr_number,
-            "change_influence": change_influence or [],
-            "risk_hypotheses": evidence_summary or [],
-            "risk_zones": risk_zones or [],
-            "changed_symbols": changed_symbols or [],
-        }
-        
+        # Format each section for the prompt template
+        repository = json.dumps(llm_input.get("repository", {}), indent=2)
+        change_summary = json.dumps(llm_input.get("change_summary", {}), indent=2)
+        review_findings = json.dumps(llm_input.get("review_findings", []), indent=2)
+        existing_validation = json.dumps(llm_input.get("existing_validation", {}), indent=2)
+        deterministic_verdict = json.dumps(llm_input.get("deterministic_verdict", {}), indent=2)
+
         prompt = USER_PROMPT_TEMPLATE\
-            .replace("{input_structure}", json.dumps(input_structure, indent=2))
+            .replace("{repository}", repository)\
+            .replace("{change_summary}", change_summary)\
+            .replace("{review_findings}", review_findings)\
+            .replace("{existing_validation}", existing_validation)\
+            .replace("{deterministic_verdict}", deterministic_verdict)
 
         return [
             {"role": "system", "content": SYSTEM_PROMPT.strip()},
@@ -534,27 +392,15 @@ class FailureSimulationLLM:
 
     def generate(
         self,
-        repo: str = "",
-        pr_number: int = 0,
-        change_influence: list[dict[str, Any]] | None = None,
-        impact_evidence: list[dict[str, Any]] | None = None,
-        risk_zones: list[str] | None = None,
-        changed_symbols: list[str] | None = None,
-        evidence_summary: list[dict[str, Any]] | None = None,
+        llm_input: dict[str, Any],
     ) -> FailureSimulationOutput:
-        """Generate failure simulation from evidence-driven input contract.
+        """Generate failure simulation from reviewer-ready facts.
 
         Args:
-            repo: Repository identifier.
-            pr_number: PR number.
-            change_influence: Scored symbols + domains (Layer 1).
-            impact_evidence: Impact evidence list (Layer 2, legacy — prefer evidence_summary).
-            risk_zones: Domain regions (checkout, invoice, tax, etc.).
-            changed_symbols: List of modified symbols.
-            evidence_summary: Pre-synthesized evidence summary (Layer 2, primary signal).
+            llm_input: The reviewer-ready facts dict from llm_input_builder.
 
         Returns:
-            FailureSimulationOutput with verdict and scenarios.
+            FailureSimulationOutput with verdict and review content.
         """
         headers: dict[str, str] = {}
         if self.site_url:
@@ -568,15 +414,7 @@ class FailureSimulationLLM:
 
         completion = self.client.chat.completions.create(
             model=self.model,
-            messages=self.build_prompt(
-                repo=repo,
-                pr_number=pr_number,
-                change_influence=change_influence,
-                impact_evidence=impact_evidence,
-                risk_zones=risk_zones,
-                changed_symbols=changed_symbols,
-                evidence_summary=evidence_summary,
-            ),
+            messages=self.build_prompt(llm_input=llm_input),
             extra_headers=headers,
             extra_body=extra_body,
             response_format={"type": "json_object"},

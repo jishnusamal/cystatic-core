@@ -92,12 +92,12 @@ class BaseOrchestrator:
         print(f"  evidence_clusters:  {len(inference.evidence_clusters)}")
         print(f"  hypotheses:         {len(inference.hypotheses)}")
         print(f"  scenarios:          {len(inference.scenarios)}")
-        num_failure_scenarios = len(
-            review.failure_simulation.get("failure_scenarios", [])
-            if isinstance(review.failure_simulation, dict)
-            else []
-        )
-        print(f"  failure_scenarios:  {num_failure_scenarios}")
+        # New output format: primary_concern and additional_observations
+        review_output = review.failure_simulation if isinstance(review.failure_simulation, dict) else {}
+        has_primary = 1 if review_output.get("primary_concern") else 0
+        num_additional = len(review_output.get("additional_observations", []))
+        print(f"  primary_concern:             {'yes' if has_primary else 'no'}")
+        print(f"  additional_observations:     {num_additional}")
         print(f"  verdict:            {review.verdict}")
         print("─" * 60)
 

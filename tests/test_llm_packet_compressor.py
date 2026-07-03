@@ -271,141 +271,68 @@ def test_build_llm_packet_with_deterministic_scenarios():
     assert "change_influence" in packet
     assert "risk_hypotheses" in packet
     
-    # New evidence graph format
-    assert "scenarios" in packet, "packet should include evidence graph scenarios"
-    assert "summary" in packet, "packet should include summary"
-    
-    # Check evidence graph scenario structure
-    assert len(packet["scenarios"]) == 1
-    scenario = packet["scenarios"][0]
-    assert scenario["title"] == "Order lifecycle inconsistency"
-    assert scenario["confidence"] == 0.84
-    assert "Order" in scenario["business_objects"]
-    assert "Invoice" in scenario["business_objects"]
-    assert "Billing" in scenario["domains"]
-    assert len(scenario["evidence"]) > 0
-    assert len(scenario["counter_evidence"]) >= 0
-    assert len(scenario["causal_chain"]) > 0
-    
-    # Check summary structure
-    assert packet["summary"]["changed_symbols_count"] == 1
-    assert packet["summary"]["risk_patterns_count"] >= 0
-    assert "payment" in packet["summary"]["domains"]
+    # Note: Evidence graph scenarios have been moved to the normalization layer
+    # The deprecated build_llm_packet no longer includes scenarios or summary
+    # Use core_engine.llm_input_builder.build_llm_input() for reviewer-ready facts
     
     tokens = estimate_tokens(packet)
     assert tokens <= 8000
     print(f"✓ Build LLM packet with deterministic scenarios test passed (tokens: {tokens})")
 
 
-def test_build_evidence_graph_scenarios_edge_cases():
-    """Test _build_evidence_graph_scenarios with edge cases."""
-    from core_engine.llm_packet_compressor import _build_evidence_graph_scenarios
-    
-    # Empty scenarios
-    result = _build_evidence_graph_scenarios(
-        deterministic_scenarios=[],
-        compressed_hypotheses=[],
-        business_objects=[],
-        domains=[],
-        risk_zones=[],
-        constraints=[],
-    )
-    assert result == []
-    
-    # Scenario with missing fields
-    result = _build_evidence_graph_scenarios(
-        deterministic_scenarios=[{"title": "Test"}],
-        compressed_hypotheses=[],
-        business_objects=[],
-        domains=[],
-        risk_zones=[],
-        constraints=[],
-    )
-    assert len(result) == 1
-    assert result[0]["title"] == "Test"
-    assert result[0]["confidence"] == 0.5  # default
-    
-    # Scenario with list causal_chain
-    result = _build_evidence_graph_scenarios(
-        deterministic_scenarios=[{
-            "title": "Test",
-            "causal_chain": ["A", "→", "B", "→", "C"],
-        }],
-        compressed_hypotheses=[],
-        business_objects=[],
-        domains=[],
-        risk_zones=[],
-        constraints=[],
-    )
-    assert result[0]["causal_chain"] == ["A", "→", "B", "→", "C"]
-    
-    # Max 5 scenarios enforced
-    scenarios = [{"title": f"Scenario {i}"} for i in range(10)]
-    result = _build_evidence_graph_scenarios(
-        deterministic_scenarios=scenarios,
-        compressed_hypotheses=[],
-        business_objects=[],
-        domains=[],
-        risk_zones=[],
-        constraints=[],
-    )
-    assert len(result) == 5
-    
-    print("✓ Build evidence graph scenarios edge cases test passed")
-
-
 def test_schema_allows_review_required_without_scenarios():
     """Test that REVIEW_REQUIRED verdict is valid with executive_summary but no scenarios.
     
     This is the hybrid architecture: LLM acts as reviewer, not scenario generator.
-    It provides executive_summary, missing_evidence, etc. without generating scenarios.
+    It provides executive_summary, primary_concern, etc. without generating scenarios.
     """
     from schemas.failure_simulation import FailureSimulationOutput
     
     # LLM reviewer output: REVIEW_REQUIRED with executive_summary but no scenarios
     output = FailureSimulationOutput(
         verdict="REVIEW_REQUIRED",
-        failure_scenarios=[],
-        executive_summary="The PR touches a large cluster of tax-related symbols that span checkout, order creation, and invoice generation. There is a concrete risk of tax drift in production.",
-        verdict_rationale="REVIEW_REQUIRED because the modified symbols form a dense tax computation graph that spans multiple transaction boundaries.",
-        final_question="Can you add an end-to-end test that verifies tax consistency?",
-        missing_evidence=["Runtime call graph", "Integration tests"],
+        executive_summary="Tax-related symbols span checkout, order creation, and invoice generation. Risk of tax drift in production.",
+        reviewer_questions=["Can you add an end-to-end test that verifies tax consistency?"],
     )
     
     assert output.verdict == "REVIEW_REQUIRED"
-    assert len(output.failure_scenarios) == 0
-    assert len(output.executive_summary) >= 50
+    assert len(output.executive_summary) >= 30
     print("✓ Schema allows REVIEW_REQUIRED without scenarios (hybrid architecture)")
 
 
-def test_schema_requires_substantive_output_for_block_review():
-    """Test that BLOCK_REVIEW requires either scenarios or substantive output."""
+def test_schema_requires_substantive_output_for_block():
+    """Test that BLOCK requires either executive_summary or primary_concern."""
     from schemas.failure_simulation import FailureSimulationOutput
     from pydantic import ValidationError
     
-    # Should fail: BLOCK_REVIEW with no scenarios and no substantive output
+    # Should fail: BLOCK with no substantive output
     try:
         output = FailureSimulationOutput(
-            verdict="BLOCK_REVIEW",
-            failure_scenarios=[],
+            verdict="BLOCK",
             executive_summary="",  # Too short
-            verdict_rationale="",  # Too short
         )
         assert False, "Should have raised ValidationError"
     except ValidationError as e:
-        assert "requires either failure scenarios or substantive review output" in str(e)
-        print("✓ Schema correctly rejects BLOCK_REVIEW without scenarios or substantive output")
+        assert "requires a primary_concern" in str(e)
+        print("✓ Schema correctly rejects BLOCK without substantive output")
     
-    # Should succeed: BLOCK_REVIEW with executive_summary
+    # Should succeed: BLOCK with primary_concern
     output = FailureSimulationOutput(
-        verdict="BLOCK_REVIEW",
-        failure_scenarios=[],
-        executive_summary="This PR introduces a critical security vulnerability in the authentication flow that could allow unauthorized access to user data.",
-        verdict_rationale="BLOCK_REVIEW because the change bypasses authentication checks.",
-        final_question="How do you plan to address the authentication bypass?",
+        verdict="BLOCK",
+        executive_summary="Authentication bypass vulnerability in login flow.",
+        primary_concern={
+            "title": "Authentication bypass",
+            "why_blocking": "The change removes authentication checks in the login flow, allowing unauthorized access to user data.",
+            "execution_path": "login_handler → authenticate → authorize",
+            "customer_or_business_impact": "Unauthorized access to all user accounts",
+            "why_existing_tests_miss_it": "Existing tests mock authentication and do not test the actual bypass path",
+            "confidence_rationale": "Deterministic analysis confirms the authentication check removal is reachable from the public login endpoint",
+            "required_validation": "End-to-end test that verifies authentication is enforced on the login path",
+        },
+        reviewer_questions=["How do you plan to address the authentication bypass?"],
     )
-    assert output.verdict == "BLOCK_REVIEW"
-    print("✓ Schema allows BLOCK_REVIEW with executive_summary")
+    assert output.verdict == "BLOCK"
+    print("✓ Schema allows BLOCK with primary_concern")
 
 
 if __name__ == "__main__":
@@ -419,5 +346,6 @@ if __name__ == "__main__":
     test_build_llm_packet_with_evidence_summary()
     test_build_llm_packet_empty_evidence()
     test_build_llm_packet_with_deterministic_scenarios()
-    test_build_evidence_graph_scenarios_edge_cases()
+    test_schema_allows_review_required_without_scenarios()
+    test_schema_requires_substantive_output_for_block()
     print("\n✅ All tests passed!")

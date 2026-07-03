@@ -25,6 +25,15 @@ from .business_object import BusinessObject
 from .evidence_bundle import EvidenceBundle
 from .impact_hypothesis import ImpactHypothesis
 from .failure_scenario import FailureScenario
+from .normalized_facts import (
+    ArchitecturalFact,
+    CanonicalRisk,
+    ProductionInvariant,
+    ValidationGap,
+    ReviewerQuestion,
+    MergeFact,
+    NormalizedReviewFacts,
+)
 
 __all__ = [
     # Enums
@@ -45,4 +54,12 @@ __all__ = [
     "ImpactHypothesis",
     # Presentation
     "FailureScenario",
+    # Normalized review facts
+    "ArchitecturalFact",
+    "CanonicalRisk",
+    "ProductionInvariant",
+    "ValidationGap",
+    "ReviewerQuestion",
+    "MergeFact",
+    "NormalizedReviewFacts",
 ]
