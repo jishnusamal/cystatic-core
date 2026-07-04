@@ -148,7 +148,7 @@ class InputPreparationPipeline:
             
             # Build repo index
             try:
-                from core_engine.causal_graph import RepositorySymbolIndex
+                from core_engine.repo_symbol_index import RepositorySymbolIndex
                 repo_index = RepositorySymbolIndex.from_files(list(file_snapshots.items()))
             except Exception:
                 repo_index = None

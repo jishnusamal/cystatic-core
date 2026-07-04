@@ -72,6 +72,7 @@ class BaseOrchestrator:
         review = ReviewPipeline.run(
             bundle=bundle,
             understanding=understanding,
+            inference_result=inference,
             failure_simulation_llm=self.failure_simulation_llm,
         )
 
@@ -122,6 +123,7 @@ class BaseOrchestrator:
             failure_simulation=review.failure_simulation,
             verdict=review.verdict,
             excluded_files=prepared.excluded_files,
+            llm_input_packet=review.llm_input_packet,
         )
 
     def _prepare_analysis_inputs(self) -> Any:
@@ -166,8 +168,10 @@ class BaseOrchestrator:
         failure_simulation: dict | None = None,
         verdict: str = "UNKNOWN",
         excluded_files: list[dict] | None = None,
+        llm_input_packet: dict | None = None,
     ) -> dict[str, Any]:
         """Build final result from all pipeline outputs."""
+        artifacts = self._extract_artifacts(impact_evidence)
         return {
             "repo": repo,
             "pr_number": pr_number,
@@ -188,7 +192,49 @@ class BaseOrchestrator:
             "failure_simulation": failure_simulation or {},
             "verdict": verdict,
             "excluded_files": excluded_files or [],
+            "llm_input_packet": llm_input_packet or {},
         }
+
+    def _extract_artifacts(self, impact_evidence: list[Any]) -> list[dict[str, Any]]:
+        """Extract artifacts from impact_evidence metadata.
+        
+        Args:
+            impact_evidence: List of ImpactEvidence objects.
+            
+        Returns:
+            List of artifact dicts with type and identifier.
+        """
+        artifacts: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        
+        for ev in impact_evidence:
+            try:
+                # Get metadata from evidence
+                if hasattr(ev, 'metadata') and ev.metadata:
+                    artifact_type = ev.metadata.get("artifact_type")
+                    if artifact_type:
+                        # Determine artifact identifier
+                        artifact_id = None
+                        if artifact_type == "file":
+                            # Use source symbol as file path
+                            artifact_id = ev.source.name if hasattr(ev.source, 'name') else str(ev.source)
+                        elif artifact_type == "function":
+                            # Use source symbol as function name
+                            artifact_id = ev.source.name if hasattr(ev.source, 'name') else str(ev.source)
+                        elif artifact_type == "keyword_signal":
+                            # Use keyword from metadata
+                            artifact_id = ev.metadata.get("keyword", str(ev.source))
+                        
+                        if artifact_id and artifact_id not in seen:
+                            seen.add(artifact_id)
+                            artifacts.append({
+                                "type": artifact_type,
+                                "id": artifact_id,
+                            })
+            except Exception:
+                continue
+        
+        return artifacts
 
     def publish_comments(self, result: dict[str, Any]) -> None:
         """Publish PR comments."""

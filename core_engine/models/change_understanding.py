@@ -43,8 +43,6 @@ class ChangeUnderstanding(BaseModel):
         enriched_files: Enriched file data from the analysis.
         risk_patterns: Detected risk patterns.
         entry_points_affected: Entry points affected by the change.
-        causal_graph: Causal graph built from the change.
-        system_deltas: System-level behavior deltas.
     """
     changed_symbols: list[ChangedSymbol] = Field(default_factory=list)
     
@@ -63,7 +61,3 @@ class ChangeUnderstanding(BaseModel):
     risk_patterns: list[Any] = Field(default_factory=list)
     
     entry_points_affected: list[Any] = Field(default_factory=list)
-    
-    causal_graph: Any = None
-    
-    system_deltas: list[Any] = Field(default_factory=list)

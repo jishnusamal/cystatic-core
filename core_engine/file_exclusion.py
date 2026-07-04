@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field  # pyright: ignore[reportMissingImports]
 class FileExclusionConfig(BaseModel):
     excluded_globs: list[str] = Field(
         default_factory=lambda: [
-            "**/migrations/**",
+            # "**/migrations/**",
             "**/alembic/versions/**",
             "**/__pycache__/**",
             "**/generated/**",

@@ -10,8 +10,8 @@ This pipeline is responsible for:
 Output: Review
 
 Architecture:
-  Deterministic engine -> llm_input_builder -> LLM (expert reviewer) -> Review
-  The LLM never sees internal implementation artifacts.
+  Deterministic engine -> LlmFacts -> LLM (expert reviewer) -> Review
+  The LLM receives facts, not conclusions.
 """
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from typing import Any
 
 from core_engine.models.evidence_bundle import EvidenceBundle
 from core_engine.scenario_validator import score_scenarios, ValidationScore
+from core_engine.llm_facts import LlmFacts, LlmFactsBuilder
 
 
 class Review:
@@ -28,6 +29,7 @@ class Review:
         failure_simulation: LLM-generated review output.
         validation_score: Scenario validation scores.
         verdict: Aggregated verdict (BLOCK, REVIEW_REQUIRED, APPROVE).
+        llm_input_packet: The facts packet passed to the LLM.
     """
     
     def __init__(
@@ -35,16 +37,19 @@ class Review:
         failure_simulation: dict[str, Any],
         validation_score: ValidationScore,
         verdict: str,
+        llm_input_packet: dict[str, Any] | None = None,
     ):
         self.failure_simulation = failure_simulation
         self.validation_score = validation_score
         self.verdict = verdict
+        self.llm_input_packet = llm_input_packet
     
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "failure_simulation": self.failure_simulation,
             "verdict": self.verdict,
+            "llm_input_packet": self.llm_input_packet,
         }
 
 
@@ -52,6 +57,12 @@ class ReviewPipeline:
     """Performs LLM review and verdict aggregation.
     
     This pipeline owns the LLM interaction and verdict logic.
+    
+    Architecture change:
+      The deterministic engine now stops one layer earlier.
+      Instead of passing conclusions (scenarios, hypotheses, canonical risks),
+      it passes facts (changed symbols, relationships, test coverage, etc.).
+      The LLM reasons from facts, not conclusions.
     """
     
     @staticmethod
@@ -59,19 +70,24 @@ class ReviewPipeline:
         bundle: EvidenceBundle,
         understanding: Any,  # ChangeUnderstanding - using Any to avoid circular import
         failure_simulation_llm: Any = None,
+        inference_result: Any = None,
         compressed_for_llm: dict[str, Any] | None = None,
     ) -> Review:
         """Run the review pipeline.
         
-        Hybrid deterministic + LLM architecture:
-        - Deterministic engine: fact generator (evidence, findings, scenarios)
-        - Normalization layer: converts internal artifacts to reviewer-ready facts
-        - LLM: expert reviewer (writes engineering review from findings)
+        Architecture:
+          Deterministic engine -> LlmFactsBuilder -> LlmFacts -> LLM -> Review
+          
+          The deterministic engine (EvidenceBundle) is the source of truth.
+          LlmFactsBuilder extracts facts (not conclusions) from the bundle.
+          The LLM receives facts and reasons from them.
         
         Args:
             bundle: EvidenceBundle from EvidencePipeline.
             understanding: ChangeUnderstanding from ChangeUnderstandingPipeline.
             failure_simulation_llm: Optional LLM instance for review.
+            inference_result: Optional InferenceResult from InferencePipeline.
+                When omitted, inference is run here (e.g. standalone tests).
             compressed_for_llm: Optional pre-compressed LLM packet (legacy, unused).
             
         Returns:
@@ -79,22 +95,19 @@ class ReviewPipeline:
         """
         print("Running review pipeline...")
         
-        # Step 1: Build deterministic scenarios from inference pipeline
-        from core_engine.pipelines.inference import InferencePipeline
-        print("Running inference pipeline to generate deterministic scenarios...")
-        inference_result = InferencePipeline.run(bundle)
+        # Step 1: Use inference from orchestrator, or run locally if not provided
+        if inference_result is None:
+            from core_engine.pipelines.inference import InferencePipeline
+            print("Running inference pipeline to generate deterministic scenarios...")
+            inference_result = InferencePipeline.run(bundle)
+        else:
+            print("Using inference result from upstream pipeline...")
         deterministic_scenarios = inference_result.scenarios
         
-        # Step 2: Normalize evidence into reviewer-ready facts
-        print("Normalizing evidence into reviewer-ready facts...")
-        from core_engine.pipelines.normalization import EvidenceNormalizationPipeline
-        normalized_facts = EvidenceNormalizationPipeline.run(
-            inference_result=inference_result,
-            bundle=bundle,
-        )
-        
-        # Step 3: Build reviewer-ready facts for the LLM from normalized facts
-        print("Building reviewer-ready facts for LLM...")
+        # Step 2: Build LlmFacts — facts, not conclusions
+        # This is the key architectural change. Instead of passing scenarios,
+        # hypotheses, and canonical risks to the LLM, we pass raw facts.
+        print("Building LlmFacts from deterministic evidence...")
         repo = ""
         pr_number = 0
         if hasattr(understanding, 'enriched_files') and understanding.enriched_files:
@@ -103,14 +116,34 @@ class ReviewPipeline:
                     repo = f.get("repo", repo)
                     pr_number = f.get("pr_number", pr_number)
         
-        from core_engine.normalized_llm_input_builder import build_normalized_llm_input
-        llm_input = build_normalized_llm_input(
-            normalized_facts=normalized_facts,
+        llm_facts = LlmFactsBuilder.build(
+            bundle=bundle,
+            understanding=understanding,
             repo=repo,
             pr_number=pr_number,
         )
         
-        # Step 3: Run LLM if available
+        # Pipeline integrity check: fail if no facts were extracted
+        has_facts = bool(llm_facts.changed_symbols or llm_facts.behavior_changes or llm_facts.relationships)
+        if not has_facts:
+            print("WARNING: LlmFacts produced empty packet - skipping LLM")
+            return Review(
+                failure_simulation=ReviewPipeline._build_empty_facts_fallback(),
+                validation_score=score_scenarios({}, {}),
+                verdict="REVIEW_REQUIRED",
+                llm_input_packet=None,
+            )
+        
+        # Step 3: Build LLM input from facts
+        print("Building LLM input from facts...")
+        from core_engine.normalized_llm_input_builder import build_normalized_llm_input
+        llm_input = build_normalized_llm_input(
+            llm_facts=llm_facts,
+            repo=repo,
+            pr_number=pr_number,
+        )
+        
+        # Step 4: Run LLM if available
         if failure_simulation_llm:
             print("Calling LLM for review...")
             failure_simulation = ReviewPipeline._run_llm(
@@ -123,9 +156,10 @@ class ReviewPipeline:
                 deterministic_scenarios=deterministic_scenarios,
             )
         
-        # Step 4: Apply deterministic validation scores
+        # Step 5: Apply deterministic validation scores
         print("Validating scenarios...")
-        validation_score = score_scenarios(failure_simulation, normalized_facts)
+        compressed_ir = inference_result.compression.to_dict() if inference_result.compression else {}
+        validation_score = score_scenarios(failure_simulation, compressed_ir)
         
         if validation_score.warnings:
             for warning in validation_score.warnings:
@@ -134,7 +168,7 @@ class ReviewPipeline:
             for note in validation_score.notes:
                 print(f"Scenario validation note: {note}")
         
-        # Step 5: Aggregate verdict
+        # Step 6: Aggregate verdict
         print("Aggregating verdict...")
         risk_patterns = understanding.risk_patterns
         verdict = ReviewPipeline._aggregate_verdict(
@@ -149,6 +183,7 @@ class ReviewPipeline:
             failure_simulation=failure_simulation,
             validation_score=validation_score,
             verdict=verdict,
+            llm_input_packet=llm_input,
         )
     
     @staticmethod
@@ -265,11 +300,11 @@ class ReviewPipeline:
     ) -> dict[str, Any]:
         """Call LLM with reviewer-ready facts.
         
-        The LLM receives only reviewer-ready facts from llm_input_builder.
+        The LLM receives only deterministic facts from normalized_llm_input_builder.
         It does NOT receive internal implementation artifacts.
         
         Args:
-            llm_input: Reviewer-ready facts from llm_input_builder.
+            llm_input: Deterministic facts from normalized_llm_input_builder.
             failure_simulation_llm: LLM instance.
             
         Returns:
@@ -312,6 +347,31 @@ class ReviewPipeline:
         
         return ReviewPipeline._get_verdict(pr_risk_level, risk_patterns=risk_patterns)
     
+    @staticmethod
+    def _build_empty_facts_fallback() -> dict:
+        """Build fallback when LlmFacts produces empty packet.
+        
+        This prevents the LLM from inventing 'no findings' when the
+        deterministic engine clearly produced evidence.
+        """
+        return {
+            "verdict": "REVIEW_REQUIRED",
+            "executive_summary": "Unable to extract deterministic facts from evidence. Manual review required.",
+            "primary_concern": {
+                "title": "LlmFacts builder produced empty packet",
+                "why_blocking": "The deterministic engine produced evidence but the LlmFacts builder failed to extract any facts. This indicates a pipeline integrity issue.",
+                "execution_path": "EvidenceBundle → LlmFactsBuilder → ReviewPipeline",
+                "customer_or_business_impact": "Unknown - fact extraction failure prevents risk assessment",
+                "why_existing_tests_miss_it": "N/A - pipeline integrity issue",
+                "confidence_rationale": "LlmFacts produced 0 changed symbols, 0 behavior changes, and 0 relationships despite evidence being present",
+                "required_validation": "Investigate LlmFacts builder failure and review deterministic evidence manually",
+            },
+            "additional_observations": [],
+            "required_tests": ["Manual review of LlmFacts builder logs"],
+            "reviewer_questions": ["Why did the LlmFacts builder fail to extract facts from the evidence bundle?"],
+            "merge_recommendation": "Blocked by fact extraction failure - requires manual investigation",
+        }
+
     @staticmethod
     def _default_failure_simulation() -> dict:
         return {

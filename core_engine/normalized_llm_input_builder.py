@@ -1,126 +1,55 @@
 """
-Normalized LLM Input Builder — builds reviewer-ready input from NormalizedReviewFacts.
+Normalized LLM Input Builder — builds reviewer-ready input from LlmFacts.
 
-This module replaces llm_input_builder for the ReviewPipeline, constructing
-LLM input from normalized facts instead of internal artifacts.
+This module is the ONLY interface between the deterministic engine and the LLM.
+
+It uses ReviewerFactsBuilder to produce a CompactPacket — a compact, structured
+feature packet (~1.2k–1.8k tokens) where every token contributes meaningful
+engineering context.
+
+Target budget: ≤2,000 tokens for llm_input.
 """
 from __future__ import annotations
 
 from typing import Any
 
-from core_engine.models.normalized_facts import NormalizedReviewFacts
+from core_engine.llm_facts import LlmFacts
+from core_engine.llm_facts.reviewer_facts_builder import ReviewerFactsBuilder
 
 
 def build_normalized_llm_input(
-    normalized_facts: NormalizedReviewFacts,
+    llm_facts: LlmFacts,
     repo: str = "",
     pr_number: int = 0,
 ) -> dict[str, Any]:
-    """Build LLM input from normalized review facts.
-    
-    This is the ONLY function that constructs data for the LLM from
-    normalized facts. The LLM receives only reviewer-ready facts.
-    
+    """Build LLM input from deterministic facts using ReviewerFactsBuilder.
+
+    The LLM receives a CompactPacket — a compact, structured feature packet
+    with symbol IDs, feature flags, graph edges, and compressed summaries.
+
     Args:
-        normalized_facts: NormalizedReviewFacts from EvidenceNormalizationPipeline.
+        llm_facts: LlmFacts from the deterministic engine.
         repo: Repository name.
         pr_number: PR number.
-        
+
     Returns:
-        A dict containing only reviewer-ready facts for the LLM.
+        A dict containing the compact reviewer packet.
     """
-    llm_input: dict[str, Any] = {
-        "repository": {
-            "name": repo,
-            "language": "Python",  # Placeholder - would come from source adapter
-            "framework": "FastAPI",  # Placeholder - would come from source adapter
-        },
-        "pull_request": {
-            "number": pr_number,
-            "title": "",
-            "description": "",
-            "analysis_mode": "FULL_FILE",
-        },
-    }
-    
-    # ── Architectural facts ───────────────────────────────────────────────
-    llm_input["architectural_facts"] = [
-        {
-            "title": fact.title,
-            "description": fact.description,
-            "symbols": fact.symbols,
-            "domains": fact.domains,
-            "confidence": fact.confidence,
-        }
-        for fact in normalized_facts.architectural_facts
-    ]
-    
-    # ── Production risks ──────────────────────────────────────────────────
-    llm_input["production_risks"] = [
-        {
-            "title": risk.title,
-            "affected_symbols": risk.affected_symbols,
-            "affected_domains": risk.affected_domains,
-            "production_invariant": risk.production_invariant,
-            "confidence": risk.confidence,
-            "supporting_evidence": risk.supporting_evidence,
-        }
-        for risk in normalized_facts.canonical_risks
-    ]
-    
-    # ── Production invariants ─────────────────────────────────────────────
-    llm_input["production_invariants"] = [
-        {
-            "statement": invariant.statement,
-            "business_objects": invariant.business_objects,
-            "symbols": invariant.symbols,
-            "domains": invariant.domains,
-            "confidence": invariant.confidence,
-        }
-        for invariant in normalized_facts.production_invariants
-    ]
-    
-    # ── Validation gaps ───────────────────────────────────────────────────
-    llm_input["validation_gaps"] = [
-        {
-            "description": gap.description,
-            "invariant": gap.invariant,
-            "existing_validation": gap.existing_validation,
-            "missing_validation": gap.missing_validation,
-            "affected_symbols": gap.affected_symbols,
-            "affected_domains": gap.affected_domains,
-            "confidence": gap.confidence,
-        }
-        for gap in normalized_facts.validation_gaps
-    ]
-    
-    # ── Reviewer questions ────────────────────────────────────────────────
-    llm_input["reviewer_questions"] = [
-        {
-            "question": question.question,
-            "context": question.context,
-            "related_symbols": question.related_symbols,
-            "related_domains": question.related_domains,
-            "priority": question.priority,
-        }
-        for question in normalized_facts.reviewer_questions
-    ]
-    
-    # ── Merge facts ───────────────────────────────────────────────────────
-    llm_input["merge_facts"] = [
-        {
-            "fact": merge_fact.fact,
-            "category": merge_fact.category,
-            "supporting_evidence": merge_fact.supporting_evidence,
-            "confidence": merge_fact.confidence,
-        }
-        for merge_fact in normalized_facts.merge_facts
-    ]
-    
-    # ── Deterministic verdict ─────────────────────────────────────────────
-    llm_input["deterministic_verdict"] = {
-        "status": normalized_facts.verdict_input.get("status", "APPROVE"),
-        "confidence": normalized_facts.overall_confidence,
-    }
-    
-    return llm_input
+    builder = ReviewerFactsBuilder(
+        llm_facts,
+        repo=repo,
+        pr_number=pr_number,
+    )
+    packet = builder.build()
+    return packet.to_dict()
+
+
+def build_llm_input_from_facts(
+    llm_facts: LlmFacts,
+) -> dict[str, Any]:
+    """Build LLM input directly from LlmFacts."""
+    return build_normalized_llm_input(
+        llm_facts=llm_facts,
+        repo=llm_facts.repo,
+        pr_number=llm_facts.pr_number,
+    )

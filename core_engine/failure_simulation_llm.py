@@ -1,30 +1,32 @@
 """
-LLM INPUT CONTRACT (REVIEWER-READY FACTS)
+LLM INPUT CONTRACT (DETERMINISTIC FACTS)
 
-The LLM receives exactly 1 structure with 5 signal types:
-  1. repository {}           — Context: name, language, framework
-  2. change_summary {}       — What changed: domains, business objects, symbols
-  3. review_findings []      — Reviewer-ready observations (not internal artifacts)
-  4. existing_validation {}  — What's covered, what's missing, known assumptions
-  5. deterministic_verdict {}— Engine's own assessment
+The LLM receives exactly 1 structure with deterministic facts:
+  1. summary {}              — Context: repo, PR number
+  2. changed_symbols []      — What symbols changed
+  3. behavior_changes []     — What behavior changed (validation, persistence, etc.)
+  4. relationships []        — Structural relationships (calls, writes, reads)
+  5. test_coverage {}        — Existing tests and missing coverage
+  6. migrations []           — Schema migration facts
+  7. review_hints []         — Deterministic observations for investigation
+  8. architectural_paths []  — Key execution paths
 
 REMOVED (internal implementation artifacts):
-  - change_influence         ❌ (internal scoring)
   - impact_evidence          ❌ (internal evidence format)
   - risk_hypotheses          ❌ (internal hypothesis format)
-  - risk_zones               ❌ (internal domain scoring)
   - scenarios                ❌ (internal scenario format)
   - evidence_graph           ❌ (internal graph format)
   - compressed_*             ❌ (internal compression artifacts)
+  - canonical_risks          ❌ (pre-digested conclusions)
 
 LLM ROLE:
   You are an expert reviewer.
-  You transform deterministic findings into a credible engineering review.
-  You do NOT perform analysis — that's already done.
+  You reason from deterministic facts to identify production risks.
+  You do NOT receive pre-digested conclusions — you synthesize them from facts.
 
 KEY RULE:
-  Everything the LLM receives must be a reviewer-ready fact.
-  All internal implementation details are preprocessed into findings.
+  Every statement must trace to a supplied fact.
+  Do not invent dependencies, failure modes, or risks beyond the evidence.
 """
 from __future__ import annotations
 
@@ -47,15 +49,18 @@ You are Factor Review, an AI Staff Engineer performing the final review before a
 
 Your audience is experienced software engineers.
 
-Factor's deterministic engine has already identified, ranked and validated the technical findings.
+Factor's deterministic engine has extracted facts about what changed — symbols, behavior,
+relationships, test coverage, migrations, and execution paths. It has NOT pre-judged
+which risks matter. That is your job.
 
-Do NOT perform additional analysis.
+Do NOT perform additional static analysis beyond what the facts support.
 
 Do NOT infer architecture beyond what is provided.
 
 Do NOT invent dependencies or failure modes.
 
-Your responsibility is to make a merge decision and explain it like an experienced Staff Engineer.
+Your responsibility is to reason from the supplied facts, identify the single
+highest-confidence production risk, and explain it like an experienced Staff Engineer.
 
 Your review should optimize for trust, not completeness.
 
@@ -68,7 +73,7 @@ A reviewer should finish reading your output knowing:
 
 Prefer one strong insight over ten speculative observations.
 
-Every statement must be directly supported by the supplied findings.
+Every statement must be directly supported by the supplied facts.
 
 Never broaden the scope beyond the supplied evidence.
 
@@ -76,7 +81,7 @@ Never speculate simply because a section exists.
 
 If there is only one meaningful concern, produce only one.
 
-Do not summarize every finding.
+Do not summarize every fact.
 
 Do not produce generic architecture commentary.
 
@@ -91,7 +96,7 @@ Avoid phrases like:
 - runtime tracing
 - version guards
 
-unless explicitly supported by the supplied findings.
+unless explicitly supported by the supplied facts.
 
 Write like a Staff Engineer leaving a blocking review comment—not an auditor writing a report.
 
@@ -103,35 +108,43 @@ Specificity always beats completeness.
 """
 
 USER_PROMPT_TEMPLATE = """
-Using ONLY the deterministic findings below, write the review you would leave on the pull request.
+Using ONLY the deterministic facts below, write the review you would leave on the pull request.
 
-Do not perform additional reasoning.
+Reason from the facts to identify production risks. Do not invent risks unsupported by the facts.
 
-Do not invent risks.
+Do not restate every fact. Synthesize them into a concise engineering review.
 
-Do not explain the deterministic findings.
+## Summary
 
-Instead, synthesize them into a concise engineering review.
+{summary}
 
-## Repository
+## Changed symbols
 
-{repository}
+{changed_symbols}
 
-## Change summary
+## Behavior changes
 
-{change_summary}
+{behavior_changes}
 
-## Deterministic verdict
+## Architecture changes
 
-{deterministic_verdict}
+{architecture_changes}
 
-## Deterministic findings
+## Execution paths
 
-{review_findings}
+{execution_paths}
 
-## Existing validation
+## Test coverage
 
-{existing_validation}
+{test_coverage}
+
+## Migrations
+
+{migrations}
+
+## Review hints
+
+{review_hints}
 
 Return JSON matching the schema below.
 
@@ -176,8 +189,8 @@ Everything else is secondary.
 Never invent a second production risk simply to populate the schema.
 Omit additional observations if none add meaningful value.
 Prefer execution paths over architectural summaries.
-Every recommendation must be traceable to the supplied findings.
-If the deterministic verdict is BLOCK, explain why in concrete production terms.
+Every recommendation must be traceable to the supplied facts.
+Use test_coverage.missing to explain why existing tests may miss the risk.
 The executive summary should be no more than 120 words.
 Keep the entire review concise enough that an engineer could read it in under two minutes.
 Return valid JSON only.
@@ -366,24 +379,30 @@ class FailureSimulationLLM:
         """Build prompt from the llm_input structure.
 
         Args:
-            llm_input: The reviewer-ready facts dict from llm_input_builder.
+            llm_input: The deterministic facts dict from normalized_llm_input_builder.
 
         Returns:
             List of message dicts for the LLM API call.
         """
         # Format each section for the prompt template
-        repository = json.dumps(llm_input.get("repository", {}), indent=2)
-        change_summary = json.dumps(llm_input.get("change_summary", {}), indent=2)
-        review_findings = json.dumps(llm_input.get("review_findings", []), indent=2)
-        existing_validation = json.dumps(llm_input.get("existing_validation", {}), indent=2)
-        deterministic_verdict = json.dumps(llm_input.get("deterministic_verdict", {}), indent=2)
+        summary = json.dumps(llm_input.get("summary", {}), indent=2)
+        changed_symbols = json.dumps(llm_input.get("changed_symbols", []), indent=2)
+        behavior_changes = json.dumps(llm_input.get("behavior_changes", []), indent=2)
+        architecture_changes = json.dumps(llm_input.get("architecture_changes", {}), indent=2)
+        execution_paths = json.dumps(llm_input.get("execution_paths", []), indent=2)
+        test_coverage = json.dumps(llm_input.get("test_coverage", {}), indent=2)
+        migrations = json.dumps(llm_input.get("migrations", {}), indent=2)
+        review_hints = json.dumps(llm_input.get("review_hints", []), indent=2)
 
         prompt = USER_PROMPT_TEMPLATE\
-            .replace("{repository}", repository)\
-            .replace("{change_summary}", change_summary)\
-            .replace("{review_findings}", review_findings)\
-            .replace("{existing_validation}", existing_validation)\
-            .replace("{deterministic_verdict}", deterministic_verdict)
+            .replace("{summary}", summary)\
+            .replace("{changed_symbols}", changed_symbols)\
+            .replace("{behavior_changes}", behavior_changes)\
+            .replace("{architecture_changes}", architecture_changes)\
+            .replace("{execution_paths}", execution_paths)\
+            .replace("{test_coverage}", test_coverage)\
+            .replace("{migrations}", migrations)\
+            .replace("{review_hints}", review_hints)
 
         return [
             {"role": "system", "content": SYSTEM_PROMPT.strip()},
@@ -397,7 +416,7 @@ class FailureSimulationLLM:
         """Generate failure simulation from reviewer-ready facts.
 
         Args:
-            llm_input: The reviewer-ready facts dict from llm_input_builder.
+            llm_input: The deterministic facts dict from normalized_llm_input_builder.
 
         Returns:
             FailureSimulationOutput with verdict and review content.
