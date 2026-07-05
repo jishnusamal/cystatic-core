@@ -116,6 +116,23 @@ class PythonAdapter(LanguageAdapter):
             graph.merge(file_graph)
 
         graph.deduplicate()
+        
+        # Print the SemanticGraph for debugging
+        print("=" * 80)
+        print("SEMANTIC GRAPH BUILT BY LANGUAGE ADAPTER")
+        print("=" * 80)
+        graph_dict = graph.to_dict()
+        print(f"Total nodes: {len(graph_dict['nodes'])}")
+        print(f"Total edges: {len(graph_dict['edges'])}")
+        print(f"Files analyzed: {len(graph_dict['file_paths'])}")
+        print("\nNodes:")
+        for node in graph_dict['nodes']:
+            print(f"  [{node['type']}] {node['name']} in {node['file_path']} ({node['change_type']})")
+        print("\nEdges:")
+        for edge in graph_dict['edges']:
+            print(f"  [{edge['type']}] {edge['source']} -> {edge['target']} ({edge['change_type']})")
+        print("=" * 80)
+        
         return graph
 
     # ------------------------------------------------------------------
