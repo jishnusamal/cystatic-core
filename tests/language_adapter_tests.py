@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from language_adapters.python.python_adapter import PythonAdapter
-from language_adapters.ts_adapter import TypeScriptAdapter
+from language_adapters.typescript.ts_adapter import TypeScriptAdapter
 
 
 @pytest.mark.skip(reason="PythonAdapter.analyze() not implemented - adapter focuses on diff analysis")

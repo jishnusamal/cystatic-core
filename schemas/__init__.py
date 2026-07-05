@@ -8,7 +8,7 @@ from .ir import (
     FileChanged,
     FunctionChanged,
     ImportChanged,
-    KeywordDetected
+    KeywordDetected,
 )
 
 __all__ = [
@@ -21,5 +21,5 @@ __all__ = [
     "FileChanged",
     "FunctionChanged",
     "ImportChanged",
-    "KeywordDetected"
+    "KeywordDetected",
 ]
