@@ -96,19 +96,35 @@ async def analyze_pr(body: AnalyzeRequest = Body(...)):
     dependencies=[Depends(sentry_pr_context)],
 )
 async def analyze_public_pr(body: AnalyzeRequest = Body(...)):
-    source = build_public_github_client(token=settings.github_access_token)
+    # For public repos, token is optional - GitHub API allows unauthenticated access to public repos
+    # with lower rate limits (60 requests/hour vs 5000 with token)
+    token = settings.github_access_token or None
+    source = build_public_github_client(token=token)
 
     failure_simulation_llm = build_failure_simulation_llm()
 
-    orchestrator = Orchestrator(
-        request=body,
-        source=source,
-        language=PythonAdapter(),
-        publisher=None,  # no PR comments in public mode
-        failure_simulation_llm=failure_simulation_llm,
-    )
-
-    result = orchestrator.run_pr_analysis()
+    try:
+        orchestrator = Orchestrator(
+            request=body,
+            source=source,
+            language=PythonAdapter(),
+            publisher=None,  # no PR comments in public mode
+            failure_simulation_llm=failure_simulation_llm,
+        )
+        result = orchestrator.run_pr_analysis()
+    except Exception as exc:
+        # Provide a helpful error message for common issues
+        error_msg = str(exc)
+        if "401" in error_msg or "Unauthorized" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=(
+                    "Failed to access the repository. This may be a private repository. "
+                    "Please use /v1/analyze-pr with an installation_id for private repositories, "
+                    "or ensure the repository is public and you have the necessary access token configured."
+                ),
+            ) from exc
+        raise
 
     # Render PR comment using BaseOrchestrator._render_pr_comment but don't publish
     comment = orchestrator._render_pr_comment("github/pr_comment.md.j2", result)

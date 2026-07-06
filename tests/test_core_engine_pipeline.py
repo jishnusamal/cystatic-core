@@ -593,38 +593,37 @@ class TestPacket:
         packet = builder.build(validated, generate_summary=True)
         assert isinstance(packet, EvidencePacket)
         assert len(packet.summary) > 0
-        assert len(packet.signals) > 0
+        assert len(packet.facts) > 0
 
     def test_packet_has_all_sections(self, full_pipeline_graph: SemanticGraph):
         validated = ValidatedSemanticGraph.validate(full_pipeline_graph)
         builder = PacketBuilder()
         packet = builder.build(validated, generate_summary=True)
-        assert packet.signals is not None
-        assert packet.execution_evidence is not None
-        assert packet.coverage_evidence is not None
-        assert packet.architecture_evidence is not None
-        assert len(packet.confidence_summary) > 0
+        assert len(packet.changed_symbols) > 0
+        assert len(packet.facts) > 0
+        assert len(packet.effects) >= 0
+        assert len(packet.execution_paths) >= 0
+        assert len(packet.evidence) >= 0
+        assert len(packet.scenarios) >= 0
+        assert len(packet.confidence) > 0
 
     def test_compressor_deduplicates(self):
         compressor = PacketCompressor()
         packet = EvidencePacket(
-            signals=[
-                Signal(name="Test", rule_name="R1", description="a",
-                       node_ids=["n1"]),
-                Signal(name="Test", rule_name="R1", description="a",
-                       node_ids=["n1"]),  # Duplicate
-                Signal(name="Other", rule_name="R2", description="b",
-                       node_ids=["n2"]),
+            facts=[
+                {"name": "Test", "rule": "R1", "description": "a", "nodes": ["n1"]},
+                {"name": "Test", "rule": "R1", "description": "a",
+                 "nodes": ["n1"]},  # Duplicate
+                {"name": "Other", "rule": "R2", "description": "b",
+                 "nodes": ["n2"]},
             ],
             execution_paths=[
-                ExecutionPath(path_id="p1", entrypoint="e1", sink="s1",
-                              nodes=["a", "b"]),
-                ExecutionPath(path_id="p1", entrypoint="e1", sink="s1",
-                              nodes=["a", "b"]),  # Duplicate
+                {"entrypoint": "e1", "sink": "s1", "nodes": ["a", "b"], "count": 1},
+                {"entrypoint": "e1", "sink": "s1", "nodes": ["a", "b"], "count": 1},  # Duplicate
             ],
         )
         compressed = compressor.compress(packet)
-        assert len(compressed.signals) == 2  # Deduplicated from 3 to 2
+        assert len(compressed.facts) == 2  # Deduplicated from 3 to 2
         assert len(compressed.execution_paths) == 1  # Deduplicated from 2 to 1
 
     def test_packet_estimated_tokens(self, full_pipeline_graph: SemanticGraph):
@@ -633,6 +632,28 @@ class TestPacket:
         packet = builder.build(validated, generate_summary=True)
         tokens = packet.estimated_tokens
         assert tokens > 0
+
+    def test_packet_has_effects(self, full_pipeline_graph: SemanticGraph):
+        validated = ValidatedSemanticGraph.validate(full_pipeline_graph)
+        builder = PacketBuilder()
+        packet = builder.build(validated, generate_summary=True)
+        # Should detect some effects from the complex graph
+        assert len(packet.effects) > 0
+        assert "writes_db" in packet.effects
+
+    def test_packet_has_entities(self, full_pipeline_graph: SemanticGraph):
+        validated = ValidatedSemanticGraph.validate(full_pipeline_graph)
+        builder = PacketBuilder()
+        packet = builder.build(validated, generate_summary=True)
+        # Should detect User entity
+        assert "User" in packet.entities
+
+    def test_packet_has_subsystems(self, full_pipeline_graph: SemanticGraph):
+        validated = ValidatedSemanticGraph.validate(full_pipeline_graph)
+        builder = PacketBuilder()
+        packet = builder.build(validated, generate_summary=True)
+        # Should detect subsystems from file paths
+        assert len(packet.subsystems) > 0
 
 
 # ---------------------------------------------------------------------------
@@ -645,11 +666,9 @@ class TestFullPipeline:
         pipeline = ReviewPipeline()
         packet = pipeline.run(full_pipeline_graph)
         assert isinstance(packet, EvidencePacket)
-        assert len(packet.signals) > 0
-        assert packet.execution_evidence is not None
-        assert packet.coverage_evidence is not None
-        assert packet.architecture_evidence is not None
-        assert len(packet.confidence_summary) > 0
+        assert len(packet.facts) > 0
+        assert len(packet.changed_symbols) > 0
+        assert len(packet.confidence) > 0
 
     def test_pipeline_raises_on_invalid_graph(self):
         graph = SemanticGraph()
@@ -689,13 +708,15 @@ class TestFullPipeline:
         packet = pipeline.run(full_pipeline_graph)
         d = packet.to_dict()
         assert "summary" in d
-        assert "signals" in d
+        assert "changed_symbols" in d
+        assert "facts" in d
+        assert "effects" in d
+        assert "entities" in d
+        assert "subsystems" in d
         assert "execution_paths" in d
-        assert "execution_evidence" in d
-        assert "coverage_evidence" in d
-        assert "architecture_evidence" in d
-        assert "combined_evidence" in d
-        assert "confidence_summary" in d
+        assert "evidence" in d
+        assert "scenarios" in d
+        assert "confidence" in d
 
     def test_signal_combiner_in_pipeline(self, full_pipeline_graph: SemanticGraph):
         """Verify signal combination works within the full pipeline."""
