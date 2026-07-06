@@ -1,8 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Literal, List
 from dataclasses import dataclass, field
-from core_engine.risk_flags import SignalType
-
 
 ChangeType = Literal["added", "modified", "deleted", "renamed"]
 
@@ -23,7 +21,6 @@ class ImportChanged(BaseModel):
 
 class KeywordDetected(BaseModel):
     keyword: str
-    category: SignalType
     file_path: str
     line_number: int | None = None
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)

@@ -6,7 +6,6 @@ from enum import Enum
 from typing import Any, cast
 
 from api.settings import get_settings
-from core_engine.risk_flags import RiskEventType
 from tortoise import fields, models
 
 
@@ -373,30 +372,30 @@ def _confidence_bucket(confidence: float | None) -> str:
     return "low"
 
 
-def _severity_for_category(category: str) -> str:
-    category_upper = category.upper()
-    if category_upper in {
-        RiskEventType.BACKDOOR_INTRODUCED.value,
-        RiskEventType.AUTH_BYPASS.value,
-        RiskEventType.DATA_LEAK_RISK.value,
-    }:
-        return "CRITICAL"
-    if category_upper in {
-        RiskEventType.VALIDATION_REMOVED.value,
-        RiskEventType.CRITICAL_DEPENDENCY_CHANGED.value,
-        RiskEventType.FINANCIAL_LOGIC_CHANGE.value,
-        RiskEventType.FINANCIAL_DATA_MODEL_CHANGE.value,
-    }:
-        return "HIGH"
-    if category_upper in {
-        RiskEventType.TAX_CALCULATION_CHANGE.value,
-        RiskEventType.SCHEMA_MIGRATION.value,
-        RiskEventType.DATA_BACKFILL.value,
-        RiskEventType.STATE_INCONSISTENCY.value,
-        RiskEventType.PERMISSION_REMOVED.value,
-    }:
-        return "MEDIUM"
-    return "MEDIUM"
+# def _severity_for_category(category: str) -> str:
+#     category_upper = category.upper()
+#     if category_upper in {
+#         RiskEventType.BACKDOOR_INTRODUCED.value,
+#         RiskEventType.AUTH_BYPASS.value,
+#         RiskEventType.DATA_LEAK_RISK.value,
+#     }:
+#         return "CRITICAL"
+#     if category_upper in {
+#         RiskEventType.VALIDATION_REMOVED.value,
+#         RiskEventType.CRITICAL_DEPENDENCY_CHANGED.value,
+#         RiskEventType.FINANCIAL_LOGIC_CHANGE.value,
+#         RiskEventType.FINANCIAL_DATA_MODEL_CHANGE.value,
+#     }:
+#         return "HIGH"
+#     if category_upper in {
+#         RiskEventType.TAX_CALCULATION_CHANGE.value,
+#         RiskEventType.SCHEMA_MIGRATION.value,
+#         RiskEventType.DATA_BACKFILL.value,
+#         RiskEventType.STATE_INCONSISTENCY.value,
+#         RiskEventType.PERMISSION_REMOVED.value,
+#     }:
+#         return "MEDIUM"
+#     return "MEDIUM"
 
 
 async def persist_analysis_result(result: dict[str, Any]) -> None:
@@ -641,7 +640,7 @@ async def persist_analysis_result(result: dict[str, Any]) -> None:
         await RiskFinding.create(
             analysis_run=analysis_run,
             category=category,
-            severity=_severity_for_category(category),
+            # severity=_severity_for_category(category),
             confidence_bucket=_confidence_bucket(confidence),
             confidence=confidence,
             evidence={

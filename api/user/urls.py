@@ -12,8 +12,8 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse
 from api.settings import get_settings
-from core_engine.failure_simulation_llm import FailureSimulationLLM
-from core_engine.orchestrator import DiffOrchestrator, Orchestrator
+# from core_engine.failure_simulation_llm import FailureSimulationLLM
+# from core_engine.orchestrator import DiffOrchestrator, Orchestrator
 from language_adapters import PythonAdapter
 from schemas import AnalyzeRequest
 from source_adapters.github import GitHubPublisher, GitHubSource
