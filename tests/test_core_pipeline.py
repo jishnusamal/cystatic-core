@@ -165,7 +165,7 @@ def test_pipeline_detects_tests():
     packet = pipeline.run(graph)
     
     assert len(packet.tests) > 0
-    assert packet.tests[0]["name"] == "Test: test_create_user"
+    assert packet.tests[0]["name"] == "test_create_user"
 
 
 def test_petwork_serialization():

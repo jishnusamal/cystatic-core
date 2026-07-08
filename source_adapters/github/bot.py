@@ -101,6 +101,28 @@ class GitHubBot:
         response.raise_for_status()
         return self._format_diff(response.text)
 
+    def fetch_pr_files(self, repo: str, pr_number: int) -> Dict[str, str]:
+        """Fetch the content of all changed files in a PR at the head SHA.
+        
+        Returns a dict of file_path -> content for each changed file.
+        """
+        repository = self._get_client().get_repo(repo)
+        pull_request = repository.get_pull(pr_number)
+        head_sha = pull_request.head.sha
+        
+        files: Dict[str, str] = {}
+        for pr_file in pull_request.get_files():
+            file_path = pr_file.filename
+            if not file_path.endswith(".py"):
+                continue
+            try:
+                snapshot = self.fetch_file_at_sha(repo, file_path, head_sha)
+                files[file_path] = snapshot.content
+            except Exception:
+                # Skip files we can't fetch
+                continue
+        return files
+
     def fetch_repo_archive(self, repo: str, ref: str = "main") -> GitHubFetchResult:
         repository = self._get_client().get_repo(repo)
         archive_url = repository.get_archive_link("zipball", ref=ref)

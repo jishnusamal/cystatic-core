@@ -1,6 +1,4 @@
-"""Factor Core Engine - Deterministic semantic analysis compiler."""
-
-__version__ = "0.1.0"
+"""Compiler pipeline infrastructure."""
 
 from core_engine.pipelines.compiler import Compiler
 from core_engine.pipelines.pass_manager import PassManager

@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch, MagicMock
 from fastapi import HTTPException
 from api.user.urls import analyze_public_pr
 from schemas import AnalyzeRequest
+from core_engine.graph.reasoning_packet import ReasoningPacket
 
 
 def test_analyze_public_pr_without_token():
@@ -28,28 +29,36 @@ def test_analyze_public_pr_without_token():
         # Mock build_public_github_client to verify it's called with None
         with patch('api.user.urls.build_public_github_client') as mock_build_client:
             mock_source = Mock()
+            mock_source.fetch_diff.return_value = Mock()  # Return a mock diff
             mock_build_client.return_value = mock_source
             
-            # Mock the orchestrator
-            with patch('api.user.urls.Orchestrator') as mock_orchestrator_class:
-                mock_orchestrator = Mock()
-                mock_orchestrator.run_pr_analysis.return_value = {
-                    "repo": "owner/repo",
-                    "pr_number": 123,
-                    "verdict": "APPROVE",
-                }
-                mock_orchestrator._render_pr_comment.return_value = "Test comment"
-                mock_orchestrator_class.return_value = mock_orchestrator
+            # Mock PythonAdapter and CorePipeline
+            with patch('api.user.urls.PythonAdapter') as mock_adapter_class:
+                mock_language = Mock()
+                mock_language.analyze.return_value = Mock()  # Return a mock semantic graph
+                mock_adapter_class.return_value = mock_language
                 
-                # Call the endpoint (it's async, so we need to run it)
-                result = asyncio.run(analyze_public_pr(body=mock_request))
-                
-                # Verify build_public_github_client was called with None (not empty string)
-                mock_build_client.assert_called_once_with(token=None)
-                
-                # Verify the result
-                assert result["repo"] == "owner/repo"
-                assert result["pr_number"] == 123
+                with patch('api.user.urls.CorePipeline') as mock_pipeline_class:
+                    mock_pipeline = Mock()
+                    mock_reasoning_packet = ReasoningPacket(
+                        summary="Test summary",
+                        changed_areas=["area1"],
+                        unresolved=["issue1"]
+                    )
+                    mock_pipeline.run.return_value = mock_reasoning_packet
+                    mock_pipeline_class.return_value = mock_pipeline
+                    
+                    # Call the endpoint (it's async, so we need to run it)
+                    result = asyncio.run(analyze_public_pr(body=mock_request))
+                    
+                    # Verify build_public_github_client was called with None (not empty string)
+                    mock_build_client.assert_called_once_with(token=None)
+                    
+                    # Verify the result
+                    assert result["repo"] == "owner/repo"
+                    assert result["pr_number"] == 123
+                    assert result["verdict"] == "needs_review"
+                    assert result["pr_risk_level"] == "high"
 
 
 def test_analyze_public_pr_with_token():
@@ -72,28 +81,36 @@ def test_analyze_public_pr_with_token():
         # Mock build_public_github_client to verify it's called with the token
         with patch('api.user.urls.build_public_github_client') as mock_build_client:
             mock_source = Mock()
+            mock_source.fetch_diff.return_value = Mock()  # Return a mock diff
             mock_build_client.return_value = mock_source
             
-            # Mock the orchestrator
-            with patch('api.user.urls.Orchestrator') as mock_orchestrator_class:
-                mock_orchestrator = Mock()
-                mock_orchestrator.run_pr_analysis.return_value = {
-                    "repo": "owner/repo",
-                    "pr_number": 123,
-                    "verdict": "APPROVE",
-                }
-                mock_orchestrator._render_pr_comment.return_value = "Test comment"
-                mock_orchestrator_class.return_value = mock_orchestrator
+            # Mock PythonAdapter and CorePipeline
+            with patch('api.user.urls.PythonAdapter') as mock_adapter_class:
+                mock_language = Mock()
+                mock_language.analyze.return_value = Mock()  # Return a mock semantic graph
+                mock_adapter_class.return_value = mock_language
                 
-                # Call the endpoint (it's async, so we need to run it)
-                result = asyncio.run(analyze_public_pr(body=mock_request))
-                
-                # Verify build_public_github_client was called with the token
-                mock_build_client.assert_called_once_with(token="ghp_test_token")
-                
-                # Verify the result
-                assert result["repo"] == "owner/repo"
-                assert result["pr_number"] == 123
+                with patch('api.user.urls.CorePipeline') as mock_pipeline_class:
+                    mock_pipeline = Mock()
+                    mock_reasoning_packet = ReasoningPacket(
+                        summary="Test summary",
+                        changed_areas=["area1"],
+                        unresolved=[]
+                    )
+                    mock_pipeline.run.return_value = mock_reasoning_packet
+                    mock_pipeline_class.return_value = mock_pipeline
+                    
+                    # Call the endpoint (it's async, so we need to run it)
+                    result = asyncio.run(analyze_public_pr(body=mock_request))
+                    
+                    # Verify build_public_github_client was called with the token
+                    mock_build_client.assert_called_once_with(token="ghp_test_token")
+                    
+                    # Verify the result
+                    assert result["repo"] == "owner/repo"
+                    assert result["pr_number"] == 123
+                    assert result["verdict"] == "approved"
+                    assert result["pr_risk_level"] == "low"
 
 
 if __name__ == "__main__":
