@@ -109,11 +109,6 @@ def build_core_pipeline() -> Compiler:
     return Compiler(registry)
 
 
-def build_behavior_graph_pipeline() -> BehaviorGraphPipeline:
-    """Build the behavior graph pipeline (FGCS v2)."""
-    return BehaviorGraphPipeline()
-
-
 @router.post(
     "/v1/analyze-pr",
     dependencies=[Depends(sentry_pr_context)],
@@ -185,10 +180,6 @@ async def analyze_pr(body: AnalyzeRequest = Body(...)):
         ],
     }
     
-    # Run behavior graph pipeline (FGCS v2 - behavior graph)
-    bg_pipeline = build_behavior_graph_pipeline()
-    behavior_result = bg_pipeline.run(semantic_graph)
-    
     # Convert to result format
     result = {
         "repo": body.repo,
@@ -197,48 +188,12 @@ async def analyze_pr(body: AnalyzeRequest = Body(...)):
         "pr_risk_level": "high" if len(knowledge_model.diagnostics) > 0 else "low",
         "pr_risk_score": 0.8 if len(knowledge_model.diagnostics) > 0 else 0.2,
         "generated_comment": "; ".join(knowledge_model.diagnostics) if knowledge_model.diagnostics else "No issues found",
-        "files": [],
-        "language_breakdown": {},
-        "framework_hints": [],
         "compressed_for_llm": context_builder_metadata.get("raw_facts", []),
         "entry_points_affected": knowledge_model.execution_units,
         "system_impact": knowledge_model.propagation_paths,
-        "excluded_files": [],
-        "risk_patterns": [],
         "analysis_mode": "full_analysis",
         # Core Engine output
         "core_engine_output": core_engine_output,
-        # Behavior Graph v2 output
-        "behavior_graph": {
-            "components": {
-                cid: {
-                    "id": c.id,
-                    "type": c.type.name.title(),
-                    "domain": c.domain,
-                    "location": c.location,
-                    "capabilities": [cap.name for cap in c.capabilities],
-                    "responsibilities": [r.name for r in c.responsibilities],
-                    "reads": c.reads,
-                    "writes": c.writes,
-                    "validates": c.validates,
-                    "calls": c.calls,
-                    "emits": c.emits,
-                    "transactions": c.transactions,
-                    "tests": c.tests,
-                }
-                for cid, c in behavior_result.graph.components.items()
-            },
-            "edges": [
-                {
-                    "source": e.source_id,
-                    "target": e.target_id,
-                    "type": e.edge_type.name,
-                }
-                for e in behavior_result.graph.edges
-            ],
-            "domains": list(behavior_result.graph.domains.keys()),
-            "yaml": behavior_result.graph.to_yaml(),
-        },
     }
     
     # Publish comment if publisher available
@@ -311,10 +266,6 @@ async def analyze_public_pr(body: AnalyzeRequest = Body(...)):
                 for result in pass_results
             ],
         }
-        
-        # Run behavior graph pipeline (FGCS v2 - behavior graph)
-        bg_pipeline = build_behavior_graph_pipeline()
-        behavior_result = bg_pipeline.run(semantic_graph)
         
         # Convert to result format
         result = {
@@ -406,10 +357,6 @@ async def analyze_diff(body: str = Body(..., media_type="text/plain")):
         ],
     }
     
-    # Run behavior graph pipeline (FGCS v2 - behavior graph)
-    bg_pipeline = build_behavior_graph_pipeline()
-    behavior_result = bg_pipeline.run(semantic_graph)
-    
     # Convert to result format
     result = {
         "verdict": "needs_review" if knowledge_model.diagnostics else "approved",
@@ -422,37 +369,6 @@ async def analyze_diff(body: str = Body(..., media_type="text/plain")):
         "analysis_mode": "diff_only",
         # Core Engine output
         "core_engine_output": core_engine_output,
-        # Behavior Graph v2 output
-        "behavior_graph": {
-            "components": {
-                cid: {
-                    "id": c.id,
-                    "type": c.type.name.title(),
-                    "domain": c.domain,
-                    "location": c.location,
-                    "capabilities": [cap.name for cap in c.capabilities],
-                    "responsibilities": [r.name for r in c.responsibilities],
-                    "reads": c.reads,
-                    "writes": c.writes,
-                    "validates": c.validates,
-                    "calls": c.calls,
-                    "emits": c.emits,
-                    "transactions": c.transactions,
-                    "tests": c.tests,
-                }
-                for cid, c in behavior_result.graph.components.items()
-            },
-            "edges": [
-                {
-                    "source": e.source_id,
-                    "target": e.target_id,
-                    "type": e.edge_type.name,
-                }
-                for e in behavior_result.graph.edges
-            ],
-            "domains": list(behavior_result.graph.domains.keys()),
-            "yaml": behavior_result.graph.to_yaml(),
-        },
     }
 
     try:

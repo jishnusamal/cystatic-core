@@ -8,3 +8,4 @@ class AnalyzeRequest(BaseModel):
     repo: str = Field(..., description="Full repo name in owner/repo format")
     pr_number: int = Field(..., description="Pull request number")
     installation_id: int | None = Field(default=None, description="GitHub App installation ID for webhook operations")
+    head_sha: str | None = Field(default=None, description="Head commit SHA for the PR")

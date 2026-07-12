@@ -9,7 +9,7 @@ import pytest
 
 from schemas.ir import DiffIR, FileDiff, DiffHunk, DiffLine
 
-from language_adapters.python.python_adapter import PythonAdapter
+from language_adapters.languages.python.python_adapter import PythonAdapter
 from language_adapters.ir import (
     SemanticGraph,
     NodeType,

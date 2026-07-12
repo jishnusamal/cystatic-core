@@ -31,11 +31,11 @@ from language_adapters.interfaces.adapter import LanguageAdapter
 from language_adapters.interfaces.graph import GraphBuilder
 from language_adapters.shared.diff_utils import DiffUtils
 
-from language_adapters.python.ast.ast_loader import ASTLoader
-from language_adapters.python.ast.ast_diff import ASTDiff, ASTChange
-from language_adapters.python.ast.symbol_index import SymbolIndex
+from language_adapters.languages.python.ast.ast_loader import ASTLoader
+from language_adapters.languages.python.ast.ast_diff import ASTDiff, ASTChange
+from language_adapters.languages.python.ast.symbol_index import SymbolIndex
 
-from language_adapters.python.parsers import (
+from language_adapters.languages.python.parsers import (
     SymbolParser,
     CallGraphParser,
     ReadWriteParser,
@@ -49,7 +49,7 @@ from language_adapters.python.parsers import (
     TestParser,
     PersistenceParser,
 )
-from language_adapters.python.frameworks import FastAPIParser, FlaskParser
+from language_adapters.languages.python.frameworks import FastAPIParser, FlaskParser
 
 
 _PARSE_ORDER: List[type[GraphBuilder]] = [

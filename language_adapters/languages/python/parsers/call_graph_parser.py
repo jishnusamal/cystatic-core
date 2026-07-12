@@ -23,7 +23,7 @@ from language_adapters.ir import (
     CalledByEdge,
 )
 from language_adapters.interfaces.graph import GraphBuilder
-from language_adapters.python.ast.symbol_index import SymbolIndex
+from language_adapters.languages.python.ast.symbol_index import SymbolIndex
 from language_adapters.shared.graph_builder import GraphBuilderUtils as G
 from language_adapters.shared.symbol_resolver import SymbolResolver
 
