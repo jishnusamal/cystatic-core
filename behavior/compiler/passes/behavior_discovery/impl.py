@@ -191,7 +191,9 @@ class BehaviorDiscoveryPass(BehaviorCompilerPass):
             "worker_entry": BehaviorKind.WORKER_ENTRY,
         }
 
-        kind = kind_map.get(entry_point.kind.value, BehaviorKind.EVENT_CONSUMER)
+        # Handle both EntryPointKind enum and string values
+        kind_str = entry_point.kind.value if hasattr(entry_point.kind, 'value') else entry_point.kind
+        kind = kind_map.get(kind_str, BehaviorKind.EVENT_CONSUMER)
 
         # Create a stable behavior id from the entry point
         behavior_id = f"behavior://{entry_point.handler_id}"

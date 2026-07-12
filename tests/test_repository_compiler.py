@@ -1,8 +1,8 @@
 """Tests for the repository compiler."""
 
 import pytest
-from repository.compiler import RepositoryCompiler
-from repository.model import SymbolKind, SymbolVisibility, EntryPointKind
+from language_adapters.python.adapter import PythonLanguageAdapter
+from language_adapters.model import SymbolKind, SymbolVisibility, EntryPointKind
 
 
 @pytest.fixture
@@ -111,19 +111,19 @@ def sample_semantic_graph():
     }
 
 
-class TestRepositoryCompiler:
+class TestPythonLanguageAdapter:
     """Test the repository compiler."""
     
     def test_compiler_initialization(self):
         """Test that compiler initializes correctly."""
-        compiler = RepositoryCompiler()
-        assert compiler is not None
-        assert len(compiler.passes) == 4
+        adapter = PythonLanguageAdapter()
+        assert adapter is not None
+        assert adapter.get_language() == "python"
     
     def test_compiler_pass_names(self):
         """Test that compiler has correct pass names."""
-        compiler = RepositoryCompiler()
-        pass_names = compiler.get_pass_names()
+        adapter = PythonLanguageAdapter()
+        pass_names = adapter.get_compiler_passes()
         assert pass_names == [
             "symbol_collection",
             "reference_resolution",
@@ -133,8 +133,8 @@ class TestRepositoryCompiler:
     
     def test_full_compilation(self, sample_semantic_graph):
         """Test full compilation pipeline."""
-        compiler = RepositoryCompiler()
-        model = compiler.compile(sample_semantic_graph)
+        adapter = PythonLanguageAdapter()
+        model = adapter.compile({"files": sample_semantic_graph})
         
         # Verify model was created
         assert model is not None
@@ -143,8 +143,8 @@ class TestRepositoryCompiler:
     
     def test_symbol_collection(self, sample_semantic_graph):
         """Test that symbols are collected correctly."""
-        compiler = RepositoryCompiler()
-        model = compiler.compile(sample_semantic_graph)
+        adapter = PythonLanguageAdapter()
+        model = adapter.compile({"files": sample_semantic_graph})
         
         # Should have symbols from both files
         assert len(model.symbols) >= 5  # At least 3 functions + 1 class + 1 method
@@ -165,8 +165,8 @@ class TestRepositoryCompiler:
     
     def test_symbol_properties(self, sample_semantic_graph):
         """Test that symbol properties are preserved."""
-        compiler = RepositoryCompiler()
-        model = compiler.compile(sample_semantic_graph)
+        adapter = PythonLanguageAdapter()
+        model = adapter.compile({"files": sample_semantic_graph})
         
         # Find confirm_checkout function
         confirm_checkout = model.get_symbol_by_id("python://checkout/service.py::confirm_checkout")
@@ -181,8 +181,8 @@ class TestRepositoryCompiler:
     
     def test_call_graph(self, sample_semantic_graph):
         """Test that call graph is built correctly."""
-        compiler = RepositoryCompiler()
-        model = compiler.compile(sample_semantic_graph)
+        adapter = PythonLanguageAdapter()
+        model = adapter.compile({"files": sample_semantic_graph})
         
         # Should have call edges
         assert len(model.call_graph.edges) > 0
@@ -198,8 +198,8 @@ class TestRepositoryCompiler:
     
     def test_endpoint_discovery(self, sample_semantic_graph):
         """Test that endpoints are discovered correctly."""
-        compiler = RepositoryCompiler()
-        model = compiler.compile(sample_semantic_graph)
+        adapter = PythonLanguageAdapter()
+        model = adapter.compile({"files": sample_semantic_graph})
         
         # Should have one endpoint
         assert len(model.entry_points) == 1
@@ -214,8 +214,8 @@ class TestRepositoryCompiler:
     
     def test_get_symbols_by_kind(self, sample_semantic_graph):
         """Test filtering symbols by kind."""
-        compiler = RepositoryCompiler()
-        model = compiler.compile(sample_semantic_graph)
+        adapter = PythonLanguageAdapter()
+        model = adapter.compile({"files": sample_semantic_graph})
         
         # Get all functions
         functions = model.get_symbols_by_kind("function")
@@ -228,12 +228,12 @@ class TestRepositoryCompiler:
     
     def test_get_symbols_by_file(self, sample_semantic_graph):
         """Test filtering symbols by file."""
-        compiler = RepositoryCompiler()
-        model = compiler.compile(sample_semantic_graph)
+        adapter = PythonLanguageAdapter()
+        model = adapter.compile({"files": sample_semantic_graph})
         
         # Get symbols from checkout/service.py
         checkout_symbols = model.get_symbols_by_file("checkout/service.py")
-        assert len(checkout_symbols) == 5  # 3 functions + 1 class + 1 method
+        assert len(checkout_symbols) == 6  # 3 functions + 1 class + 1 method + 1 import
         
         # Get symbols from payment/processor.py
         payment_symbols = model.get_symbols_by_file("payment/processor.py")
@@ -241,8 +241,8 @@ class TestRepositoryCompiler:
     
     def test_get_called_by(self, sample_semantic_graph):
         """Test finding who calls a specific symbol."""
-        compiler = RepositoryCompiler()
-        model = compiler.compile(sample_semantic_graph)
+        adapter = PythonLanguageAdapter()
+        model = adapter.compile({"files": sample_semantic_graph})
         
         # Find who calls charge_card
         charge_card_id = "python://checkout/service.py::charge_card"
@@ -254,8 +254,8 @@ class TestRepositoryCompiler:
     
     def test_empty_semantic_graph(self):
         """Test compilation with empty semantic graph."""
-        compiler = RepositoryCompiler()
-        model = compiler.compile({})
+        adapter = PythonLanguageAdapter()
+        model = adapter.compile({"files": {}})
         
         assert model is not None
         assert len(model.symbols) == 0
@@ -265,11 +265,11 @@ class TestRepositoryCompiler:
     
     def test_deterministic_output(self, sample_semantic_graph):
         """Test that compilation is deterministic."""
-        compiler = RepositoryCompiler()
+        adapter = PythonLanguageAdapter()
         
         # Compile twice
-        model1 = compiler.compile(sample_semantic_graph)
-        model2 = compiler.compile(sample_semantic_graph)
+        model1 = adapter.compile({"files": sample_semantic_graph})
+        model2 = adapter.compile({"files": sample_semantic_graph})
         
         # Results should be identical
         assert model1.symbols == model2.symbols

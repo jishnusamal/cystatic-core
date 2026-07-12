@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from repository.model import (
+from language_adapters.model import (
     RepositoryModel,
     Symbol,
     SymbolKind,

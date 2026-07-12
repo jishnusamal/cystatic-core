@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import FrozenSet
 
-from repository.model import Symbol
+from language_adapters.model import Symbol
 from .changes import (
     FunctionBodyChange,
     SignatureChange,

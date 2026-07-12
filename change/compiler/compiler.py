@@ -20,6 +20,7 @@ from change.model import (
     InterfaceChange,
     EndpointAnnotationChange,
 )
+from language_adapters.model import RepositoryModel
 
 
 class ChangeCompiler:

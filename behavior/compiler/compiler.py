@@ -8,6 +8,7 @@ from .passes import (
     BehaviorGraphPass,
 )
 from behavior.model import BehaviorModel
+from language_adapters.model import RepositoryModel
 
 
 class BehaviorCompiler:

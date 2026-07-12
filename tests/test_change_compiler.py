@@ -3,7 +3,7 @@
 import pytest
 from dataclasses import dataclass
 
-from repository.model import (
+from language_adapters.model import (
     Symbol,
     SymbolKind,
     SymbolVisibility,

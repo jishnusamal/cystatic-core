@@ -3,7 +3,7 @@
 from typing import Any
 
 from ..base import ChangeCompilerPass, ChangePassContext
-from repository.model import Symbol
+from language_adapters.model import Symbol
 from change.model import (
     ModifiedSymbol,
     ImportChange,
