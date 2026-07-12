@@ -1,7 +1,7 @@
-"""Data analysis pass for the operational compiler."""
+"""Data compilation pass for the operational compiler."""
 
-from .impl import DataAnalysisPass
+from .impl import DataCompilationPass
 
 __all__ = [
-    "DataAnalysisPass",
+    "DataCompilationPass",
 ]

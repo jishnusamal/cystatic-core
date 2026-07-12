@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from language_adapters.base import BaseLanguageAdapter, ModelCompiler
+from language_adapters.base import BaseLanguageAdapter, _ModelCompiler
 from language_adapters.model import RepositoryModel
 from language_adapters.java.extractors import (
     JavaSymbolExtractor,
@@ -22,7 +22,7 @@ class JavaLanguageAdapter(BaseLanguageAdapter):
     Language adapter for Java repositories.
 
     Uses focused extractors for all semantic categories, then compiles
-    the extracted data into a RepositoryModel via the shared ModelCompiler.
+    the extracted data into a RepositoryModel via the internal compiler.
 
     Note: This is a simplified implementation using regex-based parsing.
     A production version would use a proper Java parser like JavaParser.
@@ -39,7 +39,7 @@ class JavaLanguageAdapter(BaseLanguageAdapter):
         self._event_extractor = JavaEventExtractor()
         self._test_extractor = JavaTestExtractor()
         self._configuration_extractor = JavaConfigurationExtractor()
-        self._compiler = ModelCompiler()
+        self._compiler = _ModelCompiler()
 
     def get_language(self) -> str:
         """Get the language name this adapter handles."""
@@ -85,7 +85,7 @@ class JavaLanguageAdapter(BaseLanguageAdapter):
             files: Dictionary mapping file paths to file contents
 
         Returns:
-            Semantic graph dictionary
+            Semantic graph dictionary (internal representation)
         """
         semantic_graph: dict[str, dict[str, Any]] = {}
 

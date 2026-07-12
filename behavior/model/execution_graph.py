@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass, field
 
+from language_adapters.model import Evidence
+
 
 @dataclass(frozen=True)
 class ExecutionNode:
@@ -14,9 +16,11 @@ class ExecutionNode:
     Attributes:
         symbol_id: The symbol id this node represents
         order: Execution order (topological position)
+        evidence: Provenance evidence for this node
     """
     symbol_id: str
     order: int
+    evidence: Evidence | None = None
 
     def __post_init__(self):
         """Validate execution node after initialization."""
@@ -35,10 +39,12 @@ class ExecutionEdge:
         caller_id: Symbol id of the caller
         callee_id: Symbol id of the callee
         call_type: Type of call (direct, indirect, dynamic)
+        evidence: Provenance evidence for this edge
     """
     caller_id: str
     callee_id: str
     call_type: str = "direct"
+    evidence: Evidence | None = None
 
     def __post_init__(self):
         """Validate execution edge after initialization."""
@@ -60,10 +66,12 @@ class ExecutionGraph:
         behavior_id: The behavior this graph belongs to
         nodes: Execution nodes in this graph
         edges: Execution edges in this graph
+        evidence: Provenance evidence for this execution graph
     """
     behavior_id: str
     nodes: tuple[ExecutionNode, ...] = field(default_factory=tuple)
     edges: tuple[ExecutionEdge, ...] = field(default_factory=tuple)
+    evidence: Evidence | None = None
 
     def __post_init__(self):
         """Validate execution graph after initialization."""

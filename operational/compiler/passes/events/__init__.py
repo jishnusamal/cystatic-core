@@ -1,7 +1,7 @@
-"""Event analysis pass for the operational compiler."""
+"""Event compilation pass for the operational compiler."""
 
-from .impl import EventAnalysisPass
+from .impl import EventCompilationPass
 
 __all__ = [
-    "EventAnalysisPass",
+    "EventCompilationPass",
 ]

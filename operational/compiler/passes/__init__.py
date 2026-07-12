@@ -3,22 +3,22 @@
 from .base import OperationalCompilerPass, OperationalPassContext
 from .consistency_validation.impl import ConsistencyValidationPass
 from .model_composition.impl import ModelCompositionPass
-from .dependency.impl import DependencyAnalysisPass
-from .data.impl import DataAnalysisPass
-from .events.impl import EventAnalysisPass
-from .api.impl import APIAnalysisPass
-from .validation.impl import ValidationAnalysisPass
-from .metrics.impl import MetricsPass
+from .dependency.impl import DependencyCompilationPass
+from .data.impl import DataCompilationPass
+from .events.impl import EventCompilationPass
+from .api.impl import APICompilationPass
+from .validation.impl import ValidationCompilationPass
+from .metrics.impl import MetricsCompilationPass
 
 __all__ = [
-    "APIAnalysisPass",
+    "APICompilationPass",
     "ConsistencyValidationPass",
-    "DataAnalysisPass",
-    "DependencyAnalysisPass",
-    "EventAnalysisPass",
-    "MetricsPass",
+    "DataCompilationPass",
+    "DependencyCompilationPass",
+    "EventCompilationPass",
+    "MetricsCompilationPass",
     "ModelCompositionPass",
     "OperationalCompilerPass",
     "OperationalPassContext",
-    "ValidationAnalysisPass",
+    "ValidationCompilationPass",
 ]

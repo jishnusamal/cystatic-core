@@ -1,5 +1,5 @@
-"""Behavior discovery pass package."""
+"""Behavior compilation pass package."""
 
-from .impl import BehaviorDiscoveryPass
+from .impl import BehaviorCompilationPass
 
-__all__ = ["BehaviorDiscoveryPass"]
+__all__ = ["BehaviorCompilationPass"]

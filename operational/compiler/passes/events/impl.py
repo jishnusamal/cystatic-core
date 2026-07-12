@@ -1,4 +1,4 @@
-"""Pass 3 — Event Analysis.
+"""Event Compilation Pass - compiles asynchronous interaction information.
 
 Question: What asynchronous interactions exist?
 
@@ -97,16 +97,16 @@ _EVENT_DECORATORS = {
 }
 
 
-class EventAnalysisPass(OperationalCompilerPass):
+class EventCompilationPass(OperationalCompilerPass):
     """
-    Pass 3 of Operational Analysis compilation.
+    Pass 3 of Operational compilation.
 
-    Analyzes asynchronous interactions affected by the change.
+    Compiles asynchronous interactions affected by the change.
     """
 
     @property
     def name(self) -> str:
-        return "event_analysis"
+        return "event_compilation"
 
     def validate_input(self, context: OperationalPassContext) -> bool:
         """Verify the composed model exists."""
@@ -114,7 +114,7 @@ class EventAnalysisPass(OperationalCompilerPass):
 
     def run(self, context: OperationalPassContext) -> OperationalPassContext:
         """
-        Execute event analysis on the composed model.
+        Execute event compilation on the composed model.
 
         Args:
             context: Pass context with composed_model set.

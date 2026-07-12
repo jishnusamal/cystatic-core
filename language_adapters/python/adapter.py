@@ -3,7 +3,7 @@
 import ast
 from typing import Any
 
-from language_adapters.base import BaseLanguageAdapter, ModelCompiler
+from language_adapters.base import BaseLanguageAdapter, _ModelCompiler
 from language_adapters.model import RepositoryModel
 from language_adapters.python.extractors import (
     PythonSymbolExtractor,
@@ -23,7 +23,7 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
     Language adapter for Python repositories.
 
     Uses focused extractors for all semantic categories, then compiles
-    the extracted data into a RepositoryModel via the shared ModelCompiler.
+    the extracted data into a RepositoryModel via the internal compiler.
     """
 
     def __init__(self):
@@ -37,7 +37,7 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
         self._event_extractor = PythonEventExtractor()
         self._test_extractor = PythonTestExtractor()
         self._configuration_extractor = PythonConfigurationExtractor()
-        self._compiler = ModelCompiler()
+        self._compiler = _ModelCompiler()
 
     def get_language(self) -> str:
         """Get the language name this adapter handles."""
@@ -65,7 +65,7 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
 
         Args:
             repository_input: Repository snapshot containing:
-                - files: dict[file_path, file_content] or pre-built semantic graph
+                - files: dict[file_path, file_content]
                 - language: str (should be "python")
 
         Returns:
@@ -73,11 +73,8 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
         """
         files = repository_input.get('files', {})
 
-        # Check if files is already a semantic graph (for testing) or raw file contents
-        if files and isinstance(next(iter(files.values())), dict):
-            semantic_graph = files
-        else:
-            semantic_graph = self._build_semantic_graph(files)
+        # Build semantic graph from raw file contents
+        semantic_graph = self._build_semantic_graph(files)
 
         return self._compiler.compile(semantic_graph, self.get_language())
 
@@ -89,7 +86,7 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
             files: Dictionary mapping file paths to file contents
 
         Returns:
-            Semantic graph dictionary
+            Semantic graph dictionary (internal representation)
         """
         semantic_graph: dict[str, dict[str, Any]] = {}
 

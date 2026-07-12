@@ -4,7 +4,7 @@ from typing import Any
 
 from .passes import (
     BehaviorPassContext,
-    BehaviorDiscoveryPass,
+    BehaviorCompilationPass,
     BehaviorGraphPass,
 )
 from behavior.model import BehaviorModel
@@ -25,7 +25,7 @@ class BehaviorCompiler:
     def __init__(self):
         """Initialize the compiler with all passes."""
         self.passes = [
-            BehaviorDiscoveryPass(),
+            BehaviorCompilationPass(),
             BehaviorGraphPass(),
         ]
 

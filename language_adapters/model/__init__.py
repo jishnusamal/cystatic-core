@@ -1,6 +1,14 @@
 """Model package - language-independent repository representation."""
 
 from .symbol import Symbol, SymbolKind, SymbolVisibility
+from .evidence import (
+    Evidence,
+    FileLocation,
+    SymbolReference,
+    CallReference,
+    ImportReference,
+    AnnotationReference,
+)
 from .graphs import (
     CallEdge,
     CallGraph,
@@ -30,6 +38,13 @@ __all__ = [
     "Symbol",
     "SymbolKind",
     "SymbolVisibility",
+    # Evidence
+    "Evidence",
+    "FileLocation",
+    "SymbolReference",
+    "CallReference",
+    "ImportReference",
+    "AnnotationReference",
     # Graphs
     "CallEdge",
     "CallGraph",

@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from .evidence import Evidence
+
 
 class EventOperationKind(str, Enum):
     """Type of event operation."""
@@ -31,6 +33,7 @@ class EventConstruct:
         framework: Framework identifying the event system
         file: Source file where the event operation occurs
         line: Line number where the event operation occurs
+        evidence: Provenance evidence for this event construct
         metadata: Additional framework-specific metadata
     """
     symbol_id: str
@@ -39,6 +42,7 @@ class EventConstruct:
     framework: str = ""
     file: str = ""
     line: int = 0
+    evidence: Evidence | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):

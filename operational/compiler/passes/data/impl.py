@@ -1,4 +1,5 @@
-"""Pass 2 — Data Analysis.
+"""Data Compilation Pass - compiles persistent state information.
+
 
 Question: What persistent state does the behavior affect?
 
@@ -25,7 +26,6 @@ from operational.compiler.passes.base import (
     OperationalPassContext,
 )
 from language_adapters.model import Symbol, SymbolKind
-
 
 @dataclass(frozen=True)
 class DataModel:
@@ -111,16 +111,16 @@ _SQL_EXTENSIONS = {".sql", ".prisma", ".graphql"}
 _MODEL_SUFFIXES = {"model", "models", "entity", "entities", "schema", "schema", "dto", "dao", "repository"}
 
 
-class DataAnalysisPass(OperationalCompilerPass):
+class DataCompilationPass(OperationalCompilerPass):
     """
-    Pass 2 of Operational Analysis compilation.
+    Pass 2 of Operational compilation.
 
-    Analyzes data/persistent state affected by the change.
+    Compiles data/persistent state affected by the change.
     """
 
     @property
     def name(self) -> str:
-        return "data_analysis"
+        return "data_compilation"
 
     def validate_input(self, context: OperationalPassContext) -> bool:
         """Verify the composed model exists."""

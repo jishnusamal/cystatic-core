@@ -1,4 +1,4 @@
-"""Pass 5 — Validation Analysis.
+"""Validation Compilation Pass - compiles validation evidence.
 
 Question: How is this behavior validated?
 
@@ -55,7 +55,7 @@ class ValidationModel:
     def __post_init__(self):
         """Convert mutable defaults to immutable types."""
         for attr in ("unit_tests", "integration_tests", "e2e_tests", "benchmarks",
-                      "production_replays", "coverage_links"):
+                     "production_replays", "coverage_links"):
             val = getattr(self, attr)
             if isinstance(val, list):
                 object.__setattr__(self, attr, tuple(val))
@@ -91,16 +91,16 @@ _COVERAGE_PATTERNS = {
 }
 
 
-class ValidationAnalysisPass(OperationalCompilerPass):
+class ValidationCompilationPass(OperationalCompilerPass):
     """
-    Pass 5 of Operational Analysis compilation.
+    Pass 5 of Operational compilation.
 
-    Analyzes validation evidence for affected behaviors.
+    Compiles validation evidence for affected behaviors.
     """
 
     @property
     def name(self) -> str:
-        return "validation_analysis"
+        return "validation_compilation"
 
     def validate_input(self, context: OperationalPassContext) -> bool:
         """Verify the composed model exists."""
@@ -108,7 +108,7 @@ class ValidationAnalysisPass(OperationalCompilerPass):
 
     def run(self, context: OperationalPassContext) -> OperationalPassContext:
         """
-        Execute validation analysis on the composed model.
+        Execute validation compilation on the composed model.
 
         Args:
             context: Pass context with composed_model set.

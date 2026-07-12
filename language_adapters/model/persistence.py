@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from .evidence import Evidence
+
 
 class PersistenceModelKind(str, Enum):
     """Type of persistence model."""
@@ -40,6 +42,7 @@ class PersistenceModel:
         framework: ORM/ODM framework (sqlalchemy, django, hibernate, jpa)
         fields: List of field definitions
         relationships: List of relationship definitions
+        evidence: Provenance evidence for this persistence model
         metadata: Additional framework-specific metadata
     """
     symbol_id: str
@@ -49,6 +52,7 @@ class PersistenceModel:
     framework: str = ""
     fields: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     relationships: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+    evidence: Evidence | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -81,6 +85,7 @@ class RepositoryMethod:
         model_symbol_id: Symbol id of the associated model
         framework: Framework identifying the repository system
         query: Underlying query if available
+        evidence: Provenance evidence for this repository method
         metadata: Additional framework-specific metadata
     """
     symbol_id: str
@@ -89,6 +94,7 @@ class RepositoryMethod:
     model_symbol_id: str = ""
     framework: str = ""
     query: str = ""
+    evidence: Evidence | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):

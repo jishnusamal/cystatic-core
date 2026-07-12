@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from .evidence import Evidence
+
 
 class TestFramework(str, Enum):
     """Test framework identifier."""
@@ -50,6 +52,7 @@ class TestDefinition:
         line: Line number where the test is defined
         fixtures: List of fixtures used by this test
         assertions: List of assertion types used
+        evidence: Provenance evidence for this test definition
         metadata: Additional framework-specific metadata
     """
     symbol_id: str
@@ -60,6 +63,7 @@ class TestDefinition:
     line: int = 0
     fixtures: tuple[TestFixture, ...] = field(default_factory=tuple)
     assertions: tuple[str, ...] = field(default_factory=tuple)
+    evidence: Evidence | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):

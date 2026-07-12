@@ -4,6 +4,7 @@ from collections import deque
 
 from ..base import BehaviorCompilerPass, BehaviorPassContext
 from behavior.model import ExecutionGraph, ExecutionNode, ExecutionEdge
+from language_adapters.model import Evidence, FileLocation
 
 
 class BehaviorGraphPass(BehaviorCompilerPass):
@@ -90,11 +91,12 @@ class BehaviorGraphPass(BehaviorCompilerPass):
                 if edge.callee_id not in visited_nodes:
                     queue.append(edge.callee_id)
 
-                # Collect the edge
+                # Collect the edge with evidence
                 collected_edges.append(ExecutionEdge(
                     caller_id=edge.caller_id,
                     callee_id=edge.callee_id,
                     call_type=edge.call_type,
+                    evidence=edge.evidence,
                 ))
 
         # Create execution nodes sorted by order
@@ -103,6 +105,8 @@ class BehaviorGraphPass(BehaviorCompilerPass):
             ExecutionNode(
                 symbol_id=symbol_id,
                 order=order,
+                evidence=repository_model.get_symbol_by_id(symbol_id).evidence
+                if repository_model.get_symbol_by_id(symbol_id) else None,
             )
             for symbol_id, order in sorted_symbols
         )
@@ -111,4 +115,5 @@ class BehaviorGraphPass(BehaviorCompilerPass):
             behavior_id=behavior.id,
             nodes=execution_nodes,
             edges=tuple(collected_edges),
+            evidence=behavior.evidence,
         )

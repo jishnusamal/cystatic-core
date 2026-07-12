@@ -15,15 +15,15 @@ from language_adapters.model import RepositoryModel
 from operational.model import OperationalChangeModel
 
 from .passes import (
-    APIAnalysisPass,
+    APICompilationPass,
     ConsistencyValidationPass,
-    DataAnalysisPass,
-    DependencyAnalysisPass,
-    EventAnalysisPass,
-    MetricsPass,
+    DataCompilationPass,
+    DependencyCompilationPass,
+    EventCompilationPass,
+    MetricsCompilationPass,
     ModelCompositionPass,
     OperationalPassContext,
-    ValidationAnalysisPass,
+    ValidationCompilationPass,
 )
 
 
@@ -48,13 +48,13 @@ class OperationalCompiler:
             # Phase 4: Composition
             ModelCompositionPass(),
             ConsistencyValidationPass(),
-            # Phase 5: Operational Analysis
-            DependencyAnalysisPass(),
-            DataAnalysisPass(),
-            EventAnalysisPass(),
-            APIAnalysisPass(),
-            ValidationAnalysisPass(),
-            MetricsPass(),
+            # Phase 5: Operational Compilation
+            DependencyCompilationPass(),
+            DataCompilationPass(),
+            EventCompilationPass(),
+            APICompilationPass(),
+            ValidationCompilationPass(),
+            MetricsCompilationPass(),
         ]
 
     def compile(

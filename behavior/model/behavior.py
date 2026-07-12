@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from language_adapters.model import Evidence
+
 
 class BehaviorKind(str, Enum):
     """Type of behavior entry point."""
@@ -31,6 +33,7 @@ class Behavior:
         entry_point: The route or trigger identifier (e.g., "POST /checkout")
         root_symbol_id: Symbol id of the entry point handler
         changed_symbol_ids: Symbol ids of changed symbols within this behavior
+        evidence: Provenance evidence for this behavior
         metadata: Additional metadata
     """
     id: str
@@ -39,6 +42,7 @@ class Behavior:
     entry_point: str
     root_symbol_id: str
     changed_symbol_ids: tuple[str, ...] = field(default_factory=tuple)
+    evidence: Evidence | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):

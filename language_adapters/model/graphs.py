@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass, field
 
+from .evidence import Evidence, FileLocation
+
 
 @dataclass(frozen=True)
 class CallEdge:
@@ -14,12 +16,14 @@ class CallEdge:
         call_type: Type of call (direct, indirect, dynamic)
         file: Source file where the call occurs
         line: Line number where the call occurs
+        evidence: Provenance evidence for this call edge
     """
     caller_id: str
     callee_id: str
     call_type: str = "direct"
     file: str = ""
     line: int = 0
+    evidence: Evidence | None = None
 
     def __post_init__(self):
         """Validate call edge after initialization."""
@@ -27,6 +31,18 @@ class CallEdge:
             raise ValueError("Caller id cannot be empty")
         if not self.callee_id:
             raise ValueError("Callee id cannot be empty")
+        if self.evidence is None and self.file:
+            object.__setattr__(
+                self,
+                'evidence',
+                Evidence(
+                    file_location=FileLocation(
+                        file=self.file,
+                        start_line=max(self.line, 1),
+                        end_line=max(self.line, 1),
+                    ),
+                ),
+            )
 
 
 @dataclass(frozen=True)
@@ -61,10 +77,12 @@ class ReferenceEdge:
         source_id: Symbol id of the source (referencer)
         target_id: Symbol id of the target (referenced)
         relation_type: Type of relationship (import, inheritance, etc.)
+        evidence: Provenance evidence for this reference edge
     """
     source_id: str
     target_id: str
     relation_type: str = "reference"
+    evidence: Evidence | None = None
 
     def __post_init__(self):
         """Validate reference edge after initialization."""
@@ -107,11 +125,13 @@ class TypeRelationshipEdge:
         target_id: Symbol id of the target type
         relation_type: Type of relationship (extends, implements, composes, uses_generic)
         metadata: Additional information about the relationship
+        evidence: Provenance evidence for this type relationship
     """
     source_id: str
     target_id: str
     relation_type: str = "extends"
     metadata: dict[str, str] = field(default_factory=dict)
+    evidence: Evidence | None = None
 
     def __post_init__(self):
         """Validate type relationship edge after initialization."""

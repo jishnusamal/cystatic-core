@@ -581,12 +581,12 @@ class TestOperationalCompiler:
         names = compiler.get_pass_names()
         assert "model_composition" in names
         assert "consistency_validation" in names
-        assert "dependency_analysis" in names
-        assert "data_analysis" in names
-        assert "event_analysis" in names
-        assert "api_analysis" in names
-        assert "validation_analysis" in names
-        assert "discovery_metrics" in names
+        assert "dependency_compilation" in names
+        assert "data_compilation" in names
+        assert "event_compilation" in names
+        assert "api_compilation" in names
+        assert "validation_compilation" in names
+        assert "metrics_compilation" in names
 
     def test_full_compilation(self, sample_repository_model, sample_change_model, sample_behavior_model):
         """Test a full compilation pipeline."""
@@ -842,37 +842,37 @@ class TestOperationalCompiler:
 
 
 # ---------------------------------------------------------------------------
-# Tests: DependencyAnalysisPass
+# Tests: DependencyCompilationPass
 # ---------------------------------------------------------------------------
 
-class TestDependencyAnalysisPass:
+class TestDependencyCompilationPass:
     """Tests for the Dependency Analysis pass."""
 
     def test_pass_name(self):
         """Test the pass name property."""
-        from operational.compiler.passes.dependency import DependencyAnalysisPass
-        pass_ = DependencyAnalysisPass()
-        assert pass_.name == "dependency_analysis"
+        from operational.compiler.passes.dependency import DependencyCompilationPass
+        pass_ = DependencyCompilationPass()
+        assert pass_.name == "dependency_compilation"
 
     def test_validate_input_no_model(self):
         """Test validate_input returns False when no composed model."""
-        from operational.compiler.passes.dependency import DependencyAnalysisPass
-        pass_ = DependencyAnalysisPass()
+        from operational.compiler.passes.dependency import DependencyCompilationPass
+        pass_ = DependencyCompilationPass()
         context = OperationalPassContext()
         assert pass_.validate_input(context) is False
 
     def test_validate_input_with_model(self, sample_operational_model):
         """Test validate_input returns True when composed model present."""
-        from operational.compiler.passes.dependency import DependencyAnalysisPass
-        pass_ = DependencyAnalysisPass()
+        from operational.compiler.passes.dependency import DependencyCompilationPass
+        pass_ = DependencyCompilationPass()
         context = OperationalPassContext()
         context.composed_model = sample_operational_model
         assert pass_.validate_input(context) is True
 
     def test_dependency_model_creation(self, sample_operational_model):
         """Test that dependency analysis produces a DependencyModel."""
-        from operational.compiler.passes.dependency import DependencyAnalysisPass
-        pass_ = DependencyAnalysisPass()
+        from operational.compiler.passes.dependency import DependencyCompilationPass
+        pass_ = DependencyCompilationPass()
         context = OperationalPassContext()
         context.composed_model = sample_operational_model
 
@@ -888,8 +888,8 @@ class TestDependencyAnalysisPass:
 
     def test_dependency_model_empty_behavior(self, sample_repository_model, sample_change_model):
         """Test dependency analysis with empty behavior model."""
-        from operational.compiler.passes.dependency import DependencyAnalysisPass
-        pass_ = DependencyAnalysisPass()
+        from operational.compiler.passes.dependency import DependencyCompilationPass
+        pass_ = DependencyCompilationPass()
         behavior_model = TestHelper.create_behavior_model()
         model = OperationalChangeModel(
             repository=sample_repository_model,
@@ -907,29 +907,29 @@ class TestDependencyAnalysisPass:
 
 
 # ---------------------------------------------------------------------------
-# Tests: DataAnalysisPass
+# Tests: DataCompilationPass
 # ---------------------------------------------------------------------------
 
-class TestDataAnalysisPass:
+class TestDataCompilationPass:
     """Tests for the Data Analysis pass."""
 
     def test_pass_name(self):
         """Test the pass name property."""
-        from operational.compiler.passes.data import DataAnalysisPass
-        pass_ = DataAnalysisPass()
-        assert pass_.name == "data_analysis"
+        from operational.compiler.passes.data import DataCompilationPass
+        pass_ = DataCompilationPass()
+        assert pass_.name == "data_compilation"
 
     def test_validate_input_no_model(self):
         """Test validate_input returns False when no composed model."""
-        from operational.compiler.passes.data import DataAnalysisPass
-        pass_ = DataAnalysisPass()
+        from operational.compiler.passes.data import DataCompilationPass
+        pass_ = DataCompilationPass()
         context = OperationalPassContext()
         assert pass_.validate_input(context) is False
 
     def test_data_model_creation(self, sample_operational_model):
         """Test that data analysis produces a DataModel."""
-        from operational.compiler.passes.data import DataAnalysisPass
-        pass_ = DataAnalysisPass()
+        from operational.compiler.passes.data import DataCompilationPass
+        pass_ = DataCompilationPass()
         context = OperationalPassContext()
         context.composed_model = sample_operational_model
 
@@ -944,8 +944,8 @@ class TestDataAnalysisPass:
 
     def test_data_model_with_model_class(self, sample_repository_model, sample_change_model):
         """Test data analysis detects model classes when reachable."""
-        from operational.compiler.passes.data import DataAnalysisPass
-        pass_ = DataAnalysisPass()
+        from operational.compiler.passes.data import DataCompilationPass
+        pass_ = DataCompilationPass()
 
         # Create a model class symbol that is also an affected symbol
         model_sym = TestHelper.create_symbol(
@@ -987,29 +987,29 @@ class TestDataAnalysisPass:
 
 
 # ---------------------------------------------------------------------------
-# Tests: EventAnalysisPass
+# Tests: EventCompilationPass
 # ---------------------------------------------------------------------------
 
-class TestEventAnalysisPass:
+class TestEventCompilationPass:
     """Tests for the Event Analysis pass."""
 
     def test_pass_name(self):
         """Test the pass name property."""
-        from operational.compiler.passes.events import EventAnalysisPass
-        pass_ = EventAnalysisPass()
-        assert pass_.name == "event_analysis"
+        from operational.compiler.passes.events import EventCompilationPass
+        pass_ = EventCompilationPass()
+        assert pass_.name == "event_compilation"
 
     def test_validate_input_no_model(self):
         """Test validate_input returns False when no composed model."""
-        from operational.compiler.passes.events import EventAnalysisPass
-        pass_ = EventAnalysisPass()
+        from operational.compiler.passes.events import EventCompilationPass
+        pass_ = EventCompilationPass()
         context = OperationalPassContext()
         assert pass_.validate_input(context) is False
 
     def test_event_model_creation(self, sample_operational_model):
         """Test that event analysis produces an EventModel."""
-        from operational.compiler.passes.events import EventAnalysisPass
-        pass_ = EventAnalysisPass()
+        from operational.compiler.passes.events import EventCompilationPass
+        pass_ = EventCompilationPass()
         context = OperationalPassContext()
         context.composed_model = sample_operational_model
 
@@ -1024,29 +1024,29 @@ class TestEventAnalysisPass:
 
 
 # ---------------------------------------------------------------------------
-# Tests: APIAnalysisPass
+# Tests: APICompilationPass
 # ---------------------------------------------------------------------------
 
-class TestAPIAnalysisPass:
+class TestAPICompilationPass:
     """Tests for the API Analysis pass."""
 
     def test_pass_name(self):
         """Test the pass name property."""
-        from operational.compiler.passes.api import APIAnalysisPass
-        pass_ = APIAnalysisPass()
-        assert pass_.name == "api_analysis"
+        from operational.compiler.passes.api import APICompilationPass
+        pass_ = APICompilationPass()
+        assert pass_.name == "api_compilation"
 
     def test_validate_input_no_model(self):
         """Test validate_input returns False when no composed model."""
-        from operational.compiler.passes.api import APIAnalysisPass
-        pass_ = APIAnalysisPass()
+        from operational.compiler.passes.api import APICompilationPass
+        pass_ = APICompilationPass()
         context = OperationalPassContext()
         assert pass_.validate_input(context) is False
 
     def test_api_model_creation(self, sample_operational_model):
         """Test that API analysis produces an APIModel."""
-        from operational.compiler.passes.api import APIAnalysisPass
-        pass_ = APIAnalysisPass()
+        from operational.compiler.passes.api import APICompilationPass
+        pass_ = APICompilationPass()
         context = OperationalPassContext()
         context.composed_model = sample_operational_model
 
@@ -1063,8 +1063,8 @@ class TestAPIAnalysisPass:
 
     def test_api_model_detects_rest_endpoint(self, sample_repository_model, sample_change_model, sample_behavior_model):
         """Test that API analysis detects affected REST endpoints."""
-        from operational.compiler.passes.api import APIAnalysisPass
-        pass_ = APIAnalysisPass()
+        from operational.compiler.passes.api import APICompilationPass
+        pass_ = APICompilationPass()
 
         model = OperationalChangeModel(
             repository=sample_repository_model,
@@ -1083,29 +1083,29 @@ class TestAPIAnalysisPass:
 
 
 # ---------------------------------------------------------------------------
-# Tests: ValidationAnalysisPass
+# Tests: ValidationCompilationPass
 # ---------------------------------------------------------------------------
 
-class TestValidationAnalysisPass:
+class TestValidationCompilationPass:
     """Tests for the Validation Analysis pass."""
 
     def test_pass_name(self):
         """Test the pass name property."""
-        from operational.compiler.passes.validation import ValidationAnalysisPass
-        pass_ = ValidationAnalysisPass()
-        assert pass_.name == "validation_analysis"
+        from operational.compiler.passes.validation import ValidationCompilationPass
+        pass_ = ValidationCompilationPass()
+        assert pass_.name == "validation_compilation"
 
     def test_validate_input_no_model(self):
         """Test validate_input returns False when no composed model."""
-        from operational.compiler.passes.validation import ValidationAnalysisPass
-        pass_ = ValidationAnalysisPass()
+        from operational.compiler.passes.validation import ValidationCompilationPass
+        pass_ = ValidationCompilationPass()
         context = OperationalPassContext()
         assert pass_.validate_input(context) is False
 
     def test_validation_model_creation(self, sample_operational_model):
         """Test that validation analysis produces a ValidationModel."""
-        from operational.compiler.passes.validation import ValidationAnalysisPass
-        pass_ = ValidationAnalysisPass()
+        from operational.compiler.passes.validation import ValidationCompilationPass
+        pass_ = ValidationCompilationPass()
         context = OperationalPassContext()
         context.composed_model = sample_operational_model
 
@@ -1122,29 +1122,29 @@ class TestValidationAnalysisPass:
 
 
 # ---------------------------------------------------------------------------
-# Tests: MetricsPass
+# Tests: MetricsCompilationPass
 # ---------------------------------------------------------------------------
 
-class TestMetricsPass:
+class TestMetricsCompilationPass:
     """Tests for the Discovery Metrics pass."""
 
     def test_pass_name(self):
         """Test the pass name property."""
-        from operational.compiler.passes.metrics import MetricsPass
-        pass_ = MetricsPass()
-        assert pass_.name == "discovery_metrics"
+        from operational.compiler.passes.metrics import MetricsCompilationPass
+        pass_ = MetricsCompilationPass()
+        assert pass_.name == "metrics_compilation"
 
     def test_validate_input_no_model(self):
         """Test validate_input returns False when no composed model."""
-        from operational.compiler.passes.metrics import MetricsPass
-        pass_ = MetricsPass()
+        from operational.compiler.passes.metrics import MetricsCompilationPass
+        pass_ = MetricsCompilationPass()
         context = OperationalPassContext()
         assert pass_.validate_input(context) is False
 
     def test_metrics_in_metadata(self, sample_operational_model):
         """Test that metrics are stored in context metadata."""
-        from operational.compiler.passes.metrics import MetricsPass
-        pass_ = MetricsPass()
+        from operational.compiler.passes.metrics import MetricsCompilationPass
+        pass_ = MetricsCompilationPass()
         context = OperationalPassContext()
         context.composed_model = sample_operational_model
 
@@ -1164,8 +1164,8 @@ class TestMetricsPass:
 
     def test_metrics_counts(self, sample_operational_model):
         """Test that metrics counts are reasonable."""
-        from operational.compiler.passes.metrics import MetricsPass
-        pass_ = MetricsPass()
+        from operational.compiler.passes.metrics import MetricsCompilationPass
+        pass_ = MetricsCompilationPass()
         context = OperationalPassContext()
         context.composed_model = sample_operational_model
 

@@ -1,4 +1,4 @@
-"""Pass 4 — API Analysis.
+"""API Compilation Pass - compiles externally visible interface information.
 
 Question: Which externally visible interfaces are affected?
 
@@ -65,16 +65,16 @@ _GRAPHQL_TYPE_PATTERNS = {
 }
 
 
-class APIAnalysisPass(OperationalCompilerPass):
+class APICompilationPass(OperationalCompilerPass):
     """
-    Pass 4 of Operational Analysis compilation.
+    Pass 4 of Operational compilation.
 
-    Analyzes externally visible interfaces affected by the change.
+    Compiles externally visible interfaces affected by the change.
     """
 
     @property
     def name(self) -> str:
-        return "api_analysis"
+        return "api_compilation"
 
     def validate_input(self, context: OperationalPassContext) -> bool:
         """Verify the composed model exists."""
@@ -82,7 +82,7 @@ class APIAnalysisPass(OperationalCompilerPass):
 
     def run(self, context: OperationalPassContext) -> OperationalPassContext:
         """
-        Execute API analysis on the composed model.
+        Execute API compilation on the composed model.
 
         Args:
             context: Pass context with composed_model set.

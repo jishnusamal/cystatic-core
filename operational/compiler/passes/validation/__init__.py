@@ -1,7 +1,7 @@
-"""Validation analysis pass for the operational compiler."""
+"""Validation compilation pass for the operational compiler."""
 
-from .impl import ValidationAnalysisPass
+from .impl import ValidationCompilationPass
 
 __all__ = [
-    "ValidationAnalysisPass",
+    "ValidationCompilationPass",
 ]

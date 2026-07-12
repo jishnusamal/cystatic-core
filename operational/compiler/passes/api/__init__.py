@@ -1,7 +1,7 @@
-"""API analysis pass for the operational compiler."""
+"""API compilation pass for the operational compiler."""
 
-from .impl import APIAnalysisPass
+from .impl import APICompilationPass
 
 __all__ = [
-    "APIAnalysisPass",
+    "APICompilationPass",
 ]

@@ -1,7 +1,7 @@
-"""Discovery metrics pass for the operational compiler."""
+"""Metrics compilation pass for the operational compiler."""
 
-from .impl import MetricsPass
+from .impl import MetricsCompilationPass
 
 __all__ = [
-    "MetricsPass",
+    "MetricsCompilationPass",
 ]

@@ -1,4 +1,4 @@
-"""Behavior Discovery Pass - identifies which behavioral units are affected."""
+"""Behavior Compilation Pass - identifies which behavioral units are affected."""
 
 from collections import deque
 
@@ -6,9 +6,9 @@ from ..base import BehaviorCompilerPass, BehaviorPassContext
 from behavior.model import Behavior, BehaviorKind
 
 
-class BehaviorDiscoveryPass(BehaviorCompilerPass):
+class BehaviorCompilationPass(BehaviorCompilerPass):
     """
-    Pass 1: Behavior Discovery
+    Pass 1: Behavior Compilation
 
     For each changed symbol, discover the enclosing behavioral unit by
     traversing the call graph upward to find entry points.
@@ -19,11 +19,11 @@ class BehaviorDiscoveryPass(BehaviorCompilerPass):
 
     @property
     def name(self) -> str:
-        return "behavior_discovery"
+        return "behavior_compilation"
 
     def run(self, context: BehaviorPassContext) -> BehaviorPassContext:
         """
-        Execute behavior discovery pass.
+        Execute behavior compilation pass.
 
         Args:
             context: Pass context with change model and repository model
@@ -210,6 +210,7 @@ class BehaviorDiscoveryPass(BehaviorCompilerPass):
             entry_point=entry_point.route,
             root_symbol_id=entry_point.handler_id,
             changed_symbol_ids=(changed_symbol_id,),
+            evidence=entry_point.evidence,
             metadata={
                 'handler_id': entry_point.handler_id,
                 'route': entry_point.route,
@@ -248,6 +249,7 @@ class BehaviorDiscoveryPass(BehaviorCompilerPass):
                 entry_point=behavior.entry_point,
                 root_symbol_id=behavior.root_symbol_id,
                 changed_symbol_ids=tuple(sorted(changed_ids)),
+                evidence=behavior.evidence,
                 metadata=behavior.metadata,
             )
             updated_behaviors.append(updated_behavior)

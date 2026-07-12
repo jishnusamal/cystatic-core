@@ -1,7 +1,7 @@
-"""Dependency analysis pass for the operational compiler."""
+"""Dependency compilation pass for the operational compiler."""
 
-from .impl import DependencyAnalysisPass
+from .impl import DependencyCompilationPass
 
 __all__ = [
-    "DependencyAnalysisPass",
+    "DependencyCompilationPass",
 ]

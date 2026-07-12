@@ -2,10 +2,10 @@
 
 from .adapter import BaseLanguageAdapter
 from .extractor import BaseExtractor
-from .compiler import ModelCompiler
+from .compiler import _ModelCompiler
 
 __all__ = [
     "BaseLanguageAdapter",
     "BaseExtractor",
-    "ModelCompiler",
+    "_ModelCompiler",
 ]

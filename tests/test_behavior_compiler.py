@@ -422,14 +422,14 @@ class TestBehaviorCompiler:
         """Test that the compiler initializes with correct passes."""
         compiler = BehaviorCompiler()
         assert len(compiler.passes) == 2
-        assert compiler.passes[0].name == "behavior_discovery"
+        assert compiler.passes[0].name == "behavior_compilation"
         assert compiler.passes[1].name == "behavior_graph"
 
     def test_compiler_pass_names(self):
         """Test getting pass names."""
         compiler = BehaviorCompiler()
         names = compiler.get_pass_names()
-        assert names == ["behavior_discovery", "behavior_graph"]
+        assert names == ["behavior_compilation", "behavior_graph"]
 
     def test_compile_no_changes(self, sample_repository_model):
         """Test compiling with no changes."""

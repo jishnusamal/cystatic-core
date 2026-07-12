@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from .evidence import Evidence
+
 
 class ConfigReferenceKind(str, Enum):
     """Type of configuration reference."""
@@ -29,6 +31,7 @@ class ConfigurationReference:
         file: Source file where the reference occurs
         line: Line number where the reference occurs
         default_value: Default value if specifiable in code
+        evidence: Provenance evidence for this configuration reference
         metadata: Additional framework-specific metadata
     """
     symbol_id: str
@@ -38,6 +41,7 @@ class ConfigurationReference:
     file: str = ""
     line: int = 0
     default_value: str = ""
+    evidence: Evidence | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):

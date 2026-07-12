@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Any
 
 from .symbol import Symbol
+from .evidence import Evidence, FileLocation
 from .graphs import CallGraph, ReferenceGraph, TypeRelationshipGraph
 from .persistence import PersistenceModel, RepositoryMethod
 from .events import EventConstruct
@@ -38,11 +39,13 @@ class EntryPoint:
         kind: Type of entry point
         route: Route or trigger identifier (e.g., "POST /checkout")
         handler_id: Symbol id of the handler function/method
+        evidence: Provenance evidence for this entry point
         metadata: Additional framework-specific metadata
     """
     kind: EntryPointKind
     route: str
     handler_id: str
+    evidence: Evidence | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -60,6 +63,20 @@ class EntryPoint:
         if isinstance(self.kind, str):
             object.__setattr__(self, 'kind', EntryPointKind(self.kind))
 
+        if self.evidence is None:
+            object.__setattr__(
+                self,
+                'evidence',
+                Evidence(
+                    file_location=FileLocation(
+                        file=self.handler_id.split('://')[1].split('::')[0]
+                        if '://' in self.handler_id else '',
+                        start_line=1,
+                        end_line=1,
+                    ),
+                ),
+            )
+
 
 @dataclass(frozen=True)
 class AsyncEntryPoint:
@@ -73,12 +90,14 @@ class AsyncEntryPoint:
         handler_id: Symbol id of the handler function/method
         trigger: Trigger identifier (queue name, cron expression, event name)
         framework: Framework identifying the async system
+        evidence: Provenance evidence for this async entry point
         metadata: Additional framework-specific metadata
     """
     kind: EntryPointKind
     handler_id: str
     trigger: str
     framework: str = ""
+    evidence: Evidence | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -91,6 +110,19 @@ class AsyncEntryPoint:
             object.__setattr__(self, 'kind', EntryPointKind(self.kind))
         if isinstance(self.metadata, dict):
             object.__setattr__(self, 'metadata', dict(self.metadata))
+        if self.evidence is None:
+            object.__setattr__(
+                self,
+                'evidence',
+                Evidence(
+                    file_location=FileLocation(
+                        file=self.handler_id.split('://')[1].split('::')[0]
+                        if '://' in self.handler_id else '',
+                        start_line=1,
+                        end_line=1,
+                    ),
+                ),
+            )
 
 
 @dataclass(frozen=True)

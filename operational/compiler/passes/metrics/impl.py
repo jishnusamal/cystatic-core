@@ -1,4 +1,4 @@
-"""Pass 6 — Discovery Metrics.
+"""Metrics Compilation Pass - compiles observable discovery metrics.
 
 Question: How much engineering discovery does this change require?
 
@@ -65,16 +65,16 @@ class DiscoveryMetrics:
     traversal_size: int = 0
 
 
-class MetricsPass(OperationalCompilerPass):
+class MetricsCompilationPass(OperationalCompilerPass):
     """
-    Pass 6 of Operational Analysis compilation.
+    Pass 6 of Operational compilation.
 
     Aggregates observable discovery metrics from all prior passes.
     """
 
     @property
     def name(self) -> str:
-        return "discovery_metrics"
+        return "metrics_compilation"
 
     def validate_input(self, context: OperationalPassContext) -> bool:
         """Verify the composed model exists."""

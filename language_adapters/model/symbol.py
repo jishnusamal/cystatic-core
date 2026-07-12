@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from .evidence import Evidence, FileLocation
+
 
 class SymbolKind(str, Enum):
     """Type of symbol."""
@@ -28,7 +30,7 @@ class SymbolVisibility(str, Enum):
     PACKAGE = "package"
 
 
-@dataclass
+@dataclass(frozen=True)
 class Symbol:
     """
     Represents a discovered symbol in the repository.
@@ -44,6 +46,7 @@ class Symbol:
         file: Source file path
         range: (start_line, end_line) tuple
         visibility: Access visibility
+        evidence: Provenance evidence for this symbol
         properties: Additional language-specific metadata
     """
     id: str
@@ -53,6 +56,7 @@ class Symbol:
     file: str
     range: tuple[int, int]
     visibility: SymbolVisibility = SymbolVisibility.PUBLIC
+    evidence: Evidence | None = None
     properties: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -71,6 +75,19 @@ class Symbol:
             raise ValueError(f"Symbol range start cannot exceed end: {self.range}")
         if isinstance(self.properties, dict):
             object.__setattr__(self, 'properties', dict(self.properties))
+        if self.evidence is None:
+            # Auto-generate evidence from file and range
+            object.__setattr__(
+                self,
+                'evidence',
+                Evidence(
+                    file_location=FileLocation(
+                        file=self.file,
+                        start_line=self.range[0] + 1,  # Convert 0-based to 1-based
+                        end_line=self.range[1] + 1,
+                    )
+                ),
+            )
 
     def __hash__(self):
         """Hash based on stable identifier only."""
