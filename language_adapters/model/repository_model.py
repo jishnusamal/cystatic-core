@@ -5,7 +5,11 @@ from enum import Enum
 from typing import Any
 
 from .symbol import Symbol
-from .graphs import CallGraph, ReferenceGraph
+from .graphs import CallGraph, ReferenceGraph, TypeRelationshipGraph
+from .persistence import PersistenceModel, RepositoryMethod
+from .events import EventConstruct
+from .tests import TestDefinition
+from .configuration import ConfigurationReference
 
 
 class EntryPointKind(str, Enum):
@@ -17,6 +21,9 @@ class EntryPointKind(str, Enum):
     SCHEDULED_JOB = "scheduled_job"
     WORKER_ENTRY = "worker_entry"
     EVENT_CONSUMER = "event_consumer"
+    QUEUE_CONSUMER = "queue_consumer"
+    ASYNC_WORKER = "async_worker"
+    EVENT_LISTENER = "event_listener"
 
 
 @dataclass(frozen=True)
@@ -48,10 +55,42 @@ class EntryPoint:
             raise ValueError("Entry point handler id cannot be empty")
         if isinstance(self.metadata, dict):
             object.__setattr__(self, 'metadata', dict(self.metadata))
-        
+
         # Convert string kind to EntryPointKind if needed
         if isinstance(self.kind, str):
             object.__setattr__(self, 'kind', EntryPointKind(self.kind))
+
+
+@dataclass(frozen=True)
+class AsyncEntryPoint:
+    """
+    Represents an asynchronous entry point discovered in the repository.
+
+    Examples: queue consumers, worker jobs, scheduled jobs, event listeners.
+
+    Attributes:
+        kind: Type of async entry point
+        handler_id: Symbol id of the handler function/method
+        trigger: Trigger identifier (queue name, cron expression, event name)
+        framework: Framework identifying the async system
+        metadata: Additional framework-specific metadata
+    """
+    kind: EntryPointKind
+    handler_id: str
+    trigger: str
+    framework: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        """Validate async entry point after initialization."""
+        if not self.kind:
+            raise ValueError("Entry point kind cannot be empty")
+        if not self.handler_id:
+            raise ValueError("Handler id cannot be empty")
+        if isinstance(self.kind, str):
+            object.__setattr__(self, 'kind', EntryPointKind(self.kind))
+        if isinstance(self.metadata, dict):
+            object.__setattr__(self, 'metadata', dict(self.metadata))
 
 
 @dataclass(frozen=True)
@@ -69,13 +108,27 @@ class RepositoryModel:
         symbols: All discovered symbols in the repository
         call_graph: Repository-wide call graph
         reference_graph: Repository-wide reference graph
+        type_relationship_graph: Repository-wide type relationship graph
         entry_points: Discovered entry points
+        async_entry_points: Discovered async entry points
+        persistence_models: Discovered ORM/ODM persistence models
+        repository_methods: Discovered repository/data access methods
+        event_constructs: Discovered event operations (publish, emit, etc.)
+        test_definitions: Discovered test classes and methods
+        configuration_references: Discovered config references (env vars, etc.)
         metadata: Additional repository-level metadata
     """
     symbols: frozenset[Symbol]
     call_graph: CallGraph
     reference_graph: ReferenceGraph
+    type_relationship_graph: TypeRelationshipGraph = field(default_factory=lambda: TypeRelationshipGraph())
     entry_points: tuple[EntryPoint, ...] = field(default_factory=tuple)
+    async_entry_points: tuple[AsyncEntryPoint, ...] = field(default_factory=tuple)
+    persistence_models: tuple[PersistenceModel, ...] = field(default_factory=tuple)
+    repository_methods: tuple[RepositoryMethod, ...] = field(default_factory=tuple)
+    event_constructs: tuple[EventConstruct, ...] = field(default_factory=tuple)
+    test_definitions: tuple[TestDefinition, ...] = field(default_factory=tuple)
+    configuration_references: tuple[ConfigurationReference, ...] = field(default_factory=tuple)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -84,6 +137,18 @@ class RepositoryModel:
             object.__setattr__(self, 'symbols', frozenset(self.symbols))
         if not isinstance(self.entry_points, tuple):
             object.__setattr__(self, 'entry_points', tuple(self.entry_points))
+        if not isinstance(self.async_entry_points, tuple):
+            object.__setattr__(self, 'async_entry_points', tuple(self.async_entry_points))
+        if not isinstance(self.persistence_models, tuple):
+            object.__setattr__(self, 'persistence_models', tuple(self.persistence_models))
+        if not isinstance(self.repository_methods, tuple):
+            object.__setattr__(self, 'repository_methods', tuple(self.repository_methods))
+        if not isinstance(self.event_constructs, tuple):
+            object.__setattr__(self, 'event_constructs', tuple(self.event_constructs))
+        if not isinstance(self.test_definitions, tuple):
+            object.__setattr__(self, 'test_definitions', tuple(self.test_definitions))
+        if not isinstance(self.configuration_references, tuple):
+            object.__setattr__(self, 'configuration_references', tuple(self.configuration_references))
         if isinstance(self.metadata, dict):
             object.__setattr__(self, 'metadata', dict(self.metadata))
 
@@ -114,6 +179,10 @@ class RepositoryModel:
         """Get all entry points that reference this symbol."""
         return tuple(ep for ep in self.entry_points if ep.handler_id == symbol_id)
 
+    def get_async_entry_points_for_symbol(self, symbol_id: str) -> tuple[AsyncEntryPoint, ...]:
+        """Get all async entry points that reference this symbol."""
+        return tuple(aep for aep in self.async_entry_points if aep.handler_id == symbol_id)
+
     def get_references_for(self, symbol_id: str) -> tuple:
         """Get all reference edges where this symbol is the source."""
         return self.reference_graph.get_references_for(symbol_id)
@@ -121,3 +190,7 @@ class RepositoryModel:
     def get_referenced_by(self, symbol_id: str) -> tuple:
         """Get all reference edges where this symbol is the target."""
         return self.reference_graph.get_referenced_by(symbol_id)
+
+    def get_type_relationships_for(self, symbol_id: str) -> tuple:
+        """Get all type relationships where this symbol is the source."""
+        return self.type_relationship_graph.get_relationships_for(symbol_id)

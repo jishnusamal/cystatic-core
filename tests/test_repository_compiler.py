@@ -128,7 +128,14 @@ class TestPythonLanguageAdapter:
             "symbol_collection",
             "reference_resolution",
             "call_graph",
-            "endpoint_discovery"
+            "endpoint_discovery",
+            "type_relationships",
+            "async_entry_points",
+            "persistence_models",
+            "repository_methods",
+            "event_constructs",
+            "test_definitions",
+            "configuration_references",
         ]
     
     def test_full_compilation(self, sample_semantic_graph):

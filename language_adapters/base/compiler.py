@@ -11,31 +11,44 @@ from language_adapters.model import (
     CallGraph,
     ReferenceEdge,
     ReferenceGraph,
+    TypeRelationshipEdge,
+    TypeRelationshipGraph,
     EntryPoint,
     EntryPointKind,
+    AsyncEntryPoint,
+    PersistenceModel,
+    PersistenceModelKind,
+    RepositoryMethod,
+    RepositoryMethodKind,
+    EventConstruct,
+    EventOperationKind,
+    TestDefinition,
+    TestFramework,
+    TestFixture,
+    ConfigurationReference,
+    ConfigReferenceKind,
 )
 
 
 class ModelCompiler:
     """
     Language-agnostic compiler that transforms a semantic graph into a RepositoryModel.
-    
+
     The semantic graph is a dict[file_path, file_data] where each file_data contains
-    the extracted semantic elements (functions, classes, imports, function_calls, 
-    rest_endpoints) produced by language-specific extractors.
-    
-    This replaces the duplicated _compile_to_model methods previously inlined in 
-    each language adapter.
+    the extracted semantic elements produced by language-specific extractors.
+
+    This is the core compilation pipeline that runs multiple passes over the extracted
+    data to build a complete, language-independent RepositoryModel.
     """
-    
+
     def compile(self, semantic_graph: dict[str, dict[str, Any]], language: str) -> RepositoryModel:
         """
         Compile a semantic graph into a RepositoryModel.
-        
+
         Args:
             semantic_graph: Dict mapping file paths to extracted file data
             language: Programming language identifier
-            
+
         Returns:
             RepositoryModel containing the complete repository representation
         """
@@ -43,32 +56,81 @@ class ModelCompiler:
         symbol_index: dict[str, Symbol] = {}
         call_graph_edges: list[CallEdge] = []
         reference_graph_edges: list[ReferenceEdge] = []
+        type_relationship_edges: list[TypeRelationshipEdge] = []
         entry_points: list[EntryPoint] = []
-        
+        async_entry_points: list[AsyncEntryPoint] = []
+        persistence_models: list[PersistenceModel] = []
+        repository_methods: list[RepositoryMethod] = []
+        event_constructs: list[EventConstruct] = []
+        test_definitions: list[TestDefinition] = []
+        configuration_references: list[ConfigurationReference] = []
+
         # Pass 1: Symbol Collection
         for file_path, file_data in semantic_graph.items():
             self._collect_symbols(file_path, language, file_data, symbols, symbol_index)
-        
+
         # Pass 2: Reference Resolution (imports)
         for symbol in symbols:
             if symbol.kind == SymbolKind.IMPORT:
                 self._resolve_import_references(symbol, symbol_index, reference_graph_edges)
-        
+
         # Pass 3: Call Graph
         for file_path, file_data in semantic_graph.items():
             for call in file_data.get('function_calls', []):
                 self._process_call(call, symbol_index, call_graph_edges)
-        
+
         # Pass 4: Endpoint Discovery
         for file_path, file_data in semantic_graph.items():
             for endpoint in file_data.get('rest_endpoints', []):
                 self._process_rest_endpoint(endpoint, file_path, language, symbol_index, entry_points)
-        
+
+        # Pass 5: Type Relationships
+        for file_path, file_data in semantic_graph.items():
+            for rel in file_data.get('type_relationships', []):
+                self._process_type_relationship(rel, type_relationship_edges)
+
+        # Pass 6: Async Entry Points
+        for file_path, file_data in semantic_graph.items():
+            for aep in file_data.get('async_entry_points', []):
+                self._process_async_entry_point(aep, file_path, language, symbol_index, async_entry_points)
+
+        # Pass 7: Persistence Models
+        for file_path, file_data in semantic_graph.items():
+            for pm in file_data.get('persistence_models', []):
+                self._process_persistence_model(pm, persistence_models)
+
+        # Pass 8: Repository Methods
+        for file_path, file_data in semantic_graph.items():
+            for rm in file_data.get('repository_methods', []):
+                self._process_repository_method(rm, repository_methods)
+
+        # Pass 9: Event Constructs
+        for file_path, file_data in semantic_graph.items():
+            for ev in file_data.get('event_constructs', []):
+                self._process_event_construct(ev, event_constructs)
+
+        # Pass 10: Test Definitions
+        for file_path, file_data in semantic_graph.items():
+            for td in file_data.get('test_definitions', []):
+                self._process_test_definition(td, test_definitions)
+
+        # Pass 11: Configuration References
+        for file_path, file_data in semantic_graph.items():
+            for cr in file_data.get('configuration_references', []):
+                self._process_configuration_reference(cr, configuration_references)
+
         return RepositoryModel(
             symbols=frozenset(symbols),
             call_graph=CallGraph(edges=tuple(call_graph_edges)),
             reference_graph=ReferenceGraph(edges=tuple(reference_graph_edges)),
+            type_relationship_graph=TypeRelationshipGraph(edges=tuple(type_relationship_edges)),
             entry_points=tuple(entry_points),
+            async_entry_points=tuple(async_entry_points),
+            persistence_models=tuple(persistence_models),
+            repository_methods=tuple(repository_methods),
+            event_constructs=tuple(event_constructs),
+            test_definitions=tuple(test_definitions),
+            configuration_references=tuple(configuration_references),
         )
     
     def _collect_symbols(
@@ -295,3 +357,204 @@ class ModelCompiler:
         )
         
         entry_points.append(entry_point)
+
+    def _process_type_relationship(
+        self,
+        rel: dict[str, Any],
+        type_relationship_edges: list[TypeRelationshipEdge],
+    ) -> None:
+        """Process a type relationship and create a TypeRelationshipEdge."""
+        source = rel.get('source_sym', '')
+        target = rel.get('target_sym', '')
+        relation_type = rel.get('relation_type', 'extends')
+        metadata = rel.get('metadata', {})
+
+        if not source or not target:
+            return
+
+        edge = TypeRelationshipEdge(
+            source_id=source,
+            target_id=target,
+            relation_type=relation_type,
+            metadata=metadata,
+        )
+        type_relationship_edges.append(edge)
+
+    def _process_async_entry_point(
+        self,
+        aep: dict[str, Any],
+        file_path: str,
+        language: str,
+        symbol_index: dict[str, Symbol],
+        async_entry_points: list[AsyncEntryPoint],
+    ) -> None:
+        """Process an async entry point."""
+        kind = aep.get('kind', 'worker_entry')
+        handler_name = aep.get('handler', '')
+        trigger = aep.get('trigger', '')
+        framework = aep.get('framework', '')
+
+        if not handler_name:
+            return
+
+        handler_id = f"{language}://{file_path}::{handler_name}"
+        metadata = aep.get('metadata', {})
+
+        async_ep = AsyncEntryPoint(
+            kind=kind,
+            handler_id=handler_id,
+            trigger=trigger,
+            framework=framework,
+            metadata=metadata,
+        )
+        async_entry_points.append(async_ep)
+
+    def _process_persistence_model(
+        self,
+        pm: dict[str, Any],
+        persistence_models: list[PersistenceModel],
+    ) -> None:
+        """Process a persistence model construct."""
+        symbol_id = pm.get('symbol_id', '')
+        name = pm.get('name', '')
+        kind = pm.get('kind', 'table')
+        table_name = pm.get('table_name', '')
+        framework = pm.get('framework', '')
+        fields = tuple(pm.get('fields', []))
+        relationships = tuple(pm.get('relationships', []))
+
+        if not symbol_id or not name:
+            return
+
+        model = PersistenceModel(
+            symbol_id=symbol_id,
+            name=name,
+            kind=kind,
+            table_name=table_name,
+            framework=framework,
+            fields=fields,
+            relationships=relationships,
+            metadata=pm.get('metadata', {}),
+        )
+        persistence_models.append(model)
+
+    def _process_repository_method(
+        self,
+        rm: dict[str, Any],
+        repository_methods: list[RepositoryMethod],
+    ) -> None:
+        """Process a repository method."""
+        symbol_id = rm.get('symbol_id', '')
+        name = rm.get('name', '')
+        kind = rm.get('kind', 'custom')
+        model_id = rm.get('model_symbol_id', '')
+        framework = rm.get('framework', '')
+        query = rm.get('query', '')
+
+        if not symbol_id or not name:
+            return
+
+        method = RepositoryMethod(
+            symbol_id=symbol_id,
+            name=name,
+            kind=kind,
+            model_symbol_id=model_id,
+            framework=framework,
+            query=query,
+            metadata=rm.get('metadata', {}),
+        )
+        repository_methods.append(method)
+
+    def _process_event_construct(
+        self,
+        ev: dict[str, Any],
+        event_constructs: list[EventConstruct],
+    ) -> None:
+        """Process an event construct."""
+        symbol_id = ev.get('symbol_id', '')
+        operation_kind = ev.get('operation_kind', 'publish')
+        event_name = ev.get('event_name', '')
+        framework = ev.get('framework', '')
+        file_path = ev.get('file', '')
+        line = ev.get('line', 0)
+
+        if not symbol_id:
+            return
+
+        ec = EventConstruct(
+            symbol_id=symbol_id,
+            operation_kind=operation_kind,
+            event_name=event_name,
+            framework=framework,
+            file=file_path,
+            line=line,
+            metadata=ev.get('metadata', {}),
+        )
+        event_constructs.append(ec)
+
+    def _process_test_definition(
+        self,
+        td: dict[str, Any],
+        test_definitions: list[TestDefinition],
+    ) -> None:
+        """Process a test definition."""
+        symbol_id = td.get('symbol_id', '')
+        name = td.get('name', '')
+        kind = td.get('kind', 'function')
+        framework = td.get('framework', 'other')
+        file_path = td.get('file', '')
+        line = td.get('line', 0)
+        fixtures = tuple(
+            TestFixture(**f) if isinstance(f, dict) else f
+            for f in td.get('fixtures', [])
+        )
+        assertions = tuple(td.get('assertions', []))
+
+        if not symbol_id or not name:
+            return
+
+        test_def = TestDefinition(
+            symbol_id=symbol_id,
+            name=name,
+            kind=kind,
+            framework=framework,
+            file=file_path,
+            line=line,
+            fixtures=fixtures,
+            assertions=assertions,
+            metadata=td.get('metadata', {}),
+        )
+        test_definitions.append(test_def)
+
+        # Also process nested test methods if this is a test class
+        for method_data in td.get('test_methods', []):
+            self._process_test_definition(method_data, test_definitions)
+
+    def _process_configuration_reference(
+        self,
+        cr: dict[str, Any],
+        configuration_references: list[ConfigurationReference],
+    ) -> None:
+        """Process a configuration reference."""
+        symbol_id = cr.get('symbol_id', '')
+        config_key = cr.get('config_key', '')
+        kind = cr.get('kind', 'environment_variable')
+        framework = cr.get('framework', '')
+        file_path = cr.get('file', '')
+        line = cr.get('line', 0)
+        default_value = cr.get('default_value', '')
+
+        if not config_key:
+            return
+
+        config_ref = ConfigurationReference(
+            symbol_id=symbol_id,
+            config_key=config_key,
+            kind=kind,
+            framework=framework,
+            file=file_path,
+            line=line,
+            default_value=default_value,
+            metadata=cr.get('metadata', {}),
+        )
+        configuration_references.append(config_ref)
