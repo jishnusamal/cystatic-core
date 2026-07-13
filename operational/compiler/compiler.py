@@ -4,7 +4,7 @@ Transforms deterministic models (Repository, Change, Behavior) into a single
 immutable OperationalChangeModel enriched with dependency, data, event, API,
 validation, and metrics models.
 
-This is the linker and analysis stage in the cystatic compilation pipeline.
+This is the linker and compilation stage in the cystatic compilation pipeline.
 """
 
 from typing import Any
@@ -36,7 +36,7 @@ class OperationalCompiler:
     It orchestrates the execution of all compiler passes in order.
 
     Phase 4: Model composition + consistency validation
-    Phase 5: Dependency, data, event, API, validation, and metrics analysis
+    Phase 5: Dependency, data, event, API, validation, and metrics compilation
 
     Input: RepositoryModel + ChangeModel + BehaviorModel
     Output: OperationalChangeModel with all optional models populated

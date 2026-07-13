@@ -29,6 +29,8 @@ from language_adapters.model import (
     ConfigReferenceKind,
     Evidence,
     FileLocation,
+    ImportReference,
+    CallReference,
 )
 
 

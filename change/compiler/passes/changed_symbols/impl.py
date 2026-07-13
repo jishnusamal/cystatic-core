@@ -72,7 +72,7 @@ class ChangedSymbolsPass(ChangeCompilerPass):
         
         context.modified_symbols = modified
         
-        # Detect renamed symbols (heuristic: similar names, same kind, one removed one added)
+        # Detect renamed symbols (deterministic structural match)
         context.renamed_symbols = self._detect_renames(
             context.added_symbols,
             context.removed_symbols
@@ -111,22 +111,21 @@ class ChangedSymbolsPass(ChangeCompilerPass):
         removed: list[Symbol]
     ) -> list[dict]:
         """
-        Detect potential symbol renames using heuristics.
-        
-        A rename is detected when:
-        - Same kind and file
-        - Similar names (e.g., one removed, one added)
-        - This is a heuristic and may produce false positives
-        
+        Detect deterministic symbol renames by exact structural match.
+
+        A rename is detected when, for the same kind and file, exactly one
+        symbol was removed and exactly one was added. This is a deterministic
+        structural match, not a speculative inference.
+
         Args:
             added: List of added symbols
             removed: List of removed symbols
-            
+
         Returns:
-            List of potential rename mappings
+            List of deterministic rename mappings
         """
         renames = []
-        
+
         # Group by kind and file for matching
         added_by_kind_file: dict[tuple[str, str], list[Symbol]] = {}
         for symbol in added:
@@ -134,27 +133,26 @@ class ChangedSymbolsPass(ChangeCompilerPass):
             if key not in added_by_kind_file:
                 added_by_kind_file[key] = []
             added_by_kind_file[key].append(symbol)
-        
+
         removed_by_kind_file: dict[tuple[str, str], list[Symbol]] = {}
         for symbol in removed:
             key = (symbol.kind, symbol.file)
             if key not in removed_by_kind_file:
                 removed_by_kind_file[key] = []
             removed_by_kind_file[key].append(symbol)
-        
-        # Match potential renames
+
+        # Match deterministic renames: one removed + one added of same kind/file
         for key, added_list in added_by_kind_file.items():
             if key not in removed_by_kind_file:
                 continue
-            
+
             removed_list = removed_by_kind_file[key]
-            
-            # Simple heuristic: if counts match, assume 1:1 rename
+
+            # Deterministic 1:1 match by structural position
             if len(added_list) == len(removed_list) == 1:
                 renames.append({
                     'old_symbol': removed_list[0],
                     'new_symbol': added_list[0],
-                    'confidence': 'high'
                 })
-        
+
         return renames

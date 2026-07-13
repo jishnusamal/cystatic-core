@@ -16,7 +16,7 @@ class BehaviorCompiler:
     Compiles a Change Model + Repository Model into a Behavior Model.
 
     This is the main entry point for Phase 3 compilation.
-    It orchestrates the execution of all compiler passes in order.
+    It orchestrates the execution of all compilation passes in order.
 
     Input: ChangeModel + RepositoryModel
     Output: BehaviorModel containing affected behaviors and execution graphs

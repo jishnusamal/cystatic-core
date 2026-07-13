@@ -28,7 +28,7 @@ class ChangeCompiler:
     Compiles a git diff into a Change Model.
     
     This is the main entry point for Phase 2 compilation.
-    It orchestrates the execution of all compiler passes in order.
+    It orchestrates the execution of all compilation passes in order.
     
     Input: Git diff data with old and new repository models
     Output: ChangeModel containing the complete change representation
