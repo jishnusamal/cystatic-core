@@ -4,7 +4,7 @@
     {
       "label": "Run API",
       "type": "shell",
-      "command": "infisical run -- uv run uvicorn api.main:app --reload",
+      "command": "infisical run -- uv run uvicorn api.app:app --reload",
       "group": "build"
     },
     {

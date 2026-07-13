@@ -1,0 +1,115 @@
+"""Pipeline execution context.
+
+Tracks runtime state through the pipeline execution.
+No compiler logic - pure orchestration state.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+from language_adapters.model import RepositoryModel
+from change.model import ChangeModel
+from behavior.model import BehaviorModel
+from operational.model import OperationalChangeModel
+
+
+@dataclass
+class PipelineContext:
+    """
+    Runtime state for a single pipeline execution.
+    
+    Tracks all intermediate artifacts and metadata through the pipeline.
+    This is NOT a compiler context - it's pure orchestration state.
+    """
+    
+    # Input
+    repository: str
+    base_sha: str | None = None
+    head_sha: str | None = None
+    diff_data: dict[str, Any] | None = None
+    
+    # Intermediate artifacts
+    repository_model: RepositoryModel | None = None
+    change_model: ChangeModel | None = None
+    behavior_model: BehaviorModel | None = None
+    ocm: OperationalChangeModel | None = None
+    
+    # Metadata
+    language: str | None = None
+    adapter: str | None = None
+    request_id: str | None = None
+    installation_id: str | None = None
+    
+    # Timing
+    compile_started_at: float | None = None
+    repository_compile_time: float | None = None
+    change_compile_time: float | None = None
+    behavior_compile_time: float | None = None
+    operational_compile_time: float | None = None
+    render_time: float | None = None
+    total_time: float | None = None
+    
+    # Errors
+    error: Exception | None = None
+    
+    def mark_compilation_start(self) -> None:
+        """Record the start time of compilation."""
+        import time
+        self.compile_started_at = time.time()
+    
+    def mark_repository_compiled(self) -> None:
+        """Record repository compilation completion."""
+        import time
+        if self.compile_started_at:
+            self.repository_compile_time = time.time() - self.compile_started_at
+    
+    def mark_change_compiled(self) -> None:
+        """Record change compilation completion."""
+        import time
+        if self.compile_started_at:
+            self.change_compile_time = time.time() - self.compile_started_at
+    
+    def mark_behavior_compiled(self) -> None:
+        """Record behavior compilation completion."""
+        import time
+        if self.compile_started_at:
+            self.behavior_compile_time = time.time() - self.compile_started_at
+    
+    def mark_operational_compiled(self) -> None:
+        """Record operational compilation completion."""
+        import time
+        if self.compile_started_at:
+            self.operational_compile_time = time.time() - self.compile_started_at
+    
+    def mark_render_complete(self) -> None:
+        """Record rendering completion."""
+        import time
+        if self.compile_started_at:
+            self.render_time = time.time() - self.compile_started_at
+    
+    def mark_complete(self) -> None:
+        """Record total execution time."""
+        import time
+        if self.compile_started_at:
+            self.total_time = time.time() - self.compile_started_at
+    
+    def to_dict(self) -> dict[str, Any]:
+        """Convert context to dictionary for logging/serialization."""
+        return {
+            "repository": self.repository,
+            "base_sha": self.base_sha,
+            "head_sha": self.head_sha,
+            "language": self.language,
+            "adapter": self.adapter,
+            "request_id": self.request_id,
+            "installation_id": self.installation_id,
+            "repository_compile_time": self.repository_compile_time,
+            "change_compile_time": self.change_compile_time,
+            "behavior_compile_time": self.behavior_compile_time,
+            "operational_compile_time": self.operational_compile_time,
+            "render_time": self.render_time,
+            "total_time": self.total_time,
+            "has_error": self.error is not None,
+        }
