@@ -12,18 +12,58 @@ Factor is a **blast-radius and refactor-risk analysis engine** for code changes.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│                        Source Adapters (VCS)                              │
-│  ┌──────────────────────┐  ┌──────────────────────┐  ┌────────────────┐  │
-│  │ GitHub Adapter       │  │ GitLab Adapter (stub) │  │ Direct API     │  │
-│  │ - github_client.py   │  │                       │  │ (future)       │  │
-│  │ - auth.py            │  │                       │  │                │  │
-│  │ - bot.py             │  │                       │  │                │  │
-│  │ - event_handler.py   │  │                       │  │                │  │
-│  │ - webhook.py         │  │                       │  │                │  │
-│  └──────────┬───────────┘  └───────────────────────┘  └────────────────┘  │
-└─────────────┼────────────────────────────────────────────────────────────┘
-              │
-              ▼
+│                        Integration Layer (Platform-Agnostic)              │
+│  ┌──────────────────────────────────────────────────────────────────┐    │
+│  │              Integration Registry (Central Orchestrator)          │    │
+│  │  - Manages multiple platform providers                           │    │
+│  │  - Lazy initialization and caching                               │    │
+│  └──────────────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    Provider Interfaces (Abstractions)                     │
+│                                                                          │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────┐   │
+│  │RepositoryProvider│  │  EventProvider   │  │ InstallationProvider │   │
+│  │- fetch_repository│  │- verify webhook  │  │- get_installation    │   │
+│  │- fetch_diff      │  │- parse event     │  │- authenticate        │   │
+│  │- fetch_file      │  │                  │  │                      │   │
+│  │- fetch_tree      │  │                  │  │                      │   │
+│  │- fetch_commit    │  │                  │  │                      │   │
+│  └──────────────────┘  └──────────────────┘  └──────────────────────┘   │
+│                                                                          │
+│  ┌──────────────────────────────────────────────────────────────────┐    │
+│  │                    OutputProvider                                 │    │
+│  │  - publish(result)  — Post new output                             │    │
+│  │  - update(id, result) — Update existing output                    │    │
+│  │  - delete(id)       — Remove output                               │    │
+│  └──────────────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    Runtime Models (Platform-Agnostic)                     │
+│                                                                          │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────┐   │
+│  │RepositoryReference│  │PullRequestReference│  │   DiffSnapshot       │   │
+│  │- provider         │  │- number           │  │- files               │   │
+│  │- owner            │  │- base_sha         │  │- hunks               │   │
+│  │- repository       │  │- head_sha         │  │- additions           │   │
+│  │- default_branch   │  │- title            │  │- deletions           │   │
+│  └──────────────────┘  └──────────────────┘  └──────────────────────┘   │
+│                                                                          │
+│  ┌──────────────────────────────────────────────────────────────────┐    │
+│  │                    AnalysisRequest                                │    │
+│  │  - repository: RepositoryReference                                │    │
+│  │  - pull_request: PullRequestReference | None                       │    │
+│  │  - diff: DiffSnapshot                                             │    │
+│  │  - trigger: AnalysisTrigger (webhook, manual, scheduled)           │    │
+│  │  - metadata: dict[str, Any]                                        │    │
+│  └──────────────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                    Language Adapters (Static Analysis)                    │
 │                                                                          │
@@ -54,8 +94,8 @@ Factor is a **blast-radius and refactor-risk analysis engine** for code changes.
 │  │  └──────────────────────┬───────────────────────────────────┘    │    │
 │  └─────────────────────────┼────────────────────────────────────────┘    │
 └────────────────────────────┼─────────────────────────────────────────────┘
-                             │
-                             ▼
+                              │
+                              ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                    Compilation Pipeline (4 Phases)                        │
 │                                                                          │
@@ -138,8 +178,53 @@ Factor is a **blast-radius and refactor-risk analysis engine** for code changes.
 │  │  └──────────────────────────────────────────────────────────┘    │    │
 │  └──────────────────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────────────────┘
-                             │
-                             ▼
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    Runtime Pipeline                                     │
+│  ┌──────────────────────────────────────────────────────────────────┐    │
+│  │  Pipeline (orchestration)                                       │    │
+│  │  1. Receive AnalysisRequest from EventProvider                   │    │
+│  │  2. Use RepositoryProvider to fetch repository snapshot          │    │
+│  │  3. Run compilation pipeline (Phases 1-5)                        │    │
+│  │  4. Use Renderer to format OperationalChangeModel                │    │
+│  │  5. Use OutputProvider to publish result                         │    │
+│  └──────────────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    Integrations (Platform Implementations)               │
+│                                                                          │
+│  ┌──────────────────────────────────────────────────────────────────┐    │
+│  │  GitHub Integration                                             │    │
+│  │  ┌────────────────┐  ┌────────────────┐  ┌──────────────────┐  │    │
+│  │  │GitHubRepository│  │GitHubWebhook   │  │ GitHubComment    │  │    │
+│  │  │Provider        │  │Provider        │  │ Provider         │  │    │
+│  │  │- fetch_repo    │  │- verify        │  │- publish         │  │    │
+│  │  │- fetch_diff    │  │- parse         │  │- update          │  │    │
+│  │  │- fetch_file    │  │                │  │- delete          │  │    │
+│  │  │- fetch_tree    │  │                │  │                  │  │    │
+│  │  │- fetch_commit  │  │                │  │                  │  │    │
+│  │  └────────────────┘  └────────────────┘  └──────────────────┘  │    │
+│  │                                                                  │    │
+│  │  ┌──────────────────────────────────────────────────────────┐  │    │
+│  │  │  GitHubIntegration (façade)                               │  │    │
+│  │  │  - Composes all providers                                 │  │    │
+│  │  │  - register() method for IntegrationRegistry              │  │    │
+│  │  └──────────────────────────────────────────────────────────┘  │    │
+│  └──────────────────────────────────────────────────────────────────┘    │
+│                                                                          │
+│  ┌──────────────────────────────────────────────────────────────────┐    │
+│  │  GitLab Integration (future)                                    │    │
+│  │  ┌────────────────┐  ┌────────────────┐  ┌──────────────────┐  │    │
+│  │  │GitLabRepository│  │GitLabWebhook   │  │ GitLabComment    │  │    │
+│  │  │Provider        │  │Provider        │  │ Provider         │  │    │
+│  │  └────────────────┘  └────────────────┘  └──────────────────┘  │    │
+│  └──────────────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                    Observability (Sentry)                                 │
 │  ┌──────────────────────────────────────────────────────────────────┐    │
@@ -309,6 +394,112 @@ A frozen dataclass containing:
 
 ---
 
+## Runtime Layer
+
+**Location:** `runtime/`
+
+The runtime layer orchestrates the compilation pipeline and manages integration with external platforms. It provides a platform-agnostic interface between the compiler and external services.
+
+### Runtime Models
+
+**Location:** `runtime/models/`
+
+Platform-agnostic data models that abstract platform-specific details:
+
+- **`RepositoryReference`** — Identifies a repository (provider, owner, name, default_branch)
+- **`PullRequestReference`** — Identifies a PR (number, base_sha, head_sha, title)
+- **`DiffSnapshot`** — Platform-agnostic diff representation (files, hunks, additions, deletions)
+- **`AnalysisRequest`** — Encapsulates a complete analysis request (repository, PR, diff, trigger, metadata)
+- **`AnalysisTrigger`** — Enum: webhook, manual, scheduled
+
+These models ensure the compiler never sees platform-specific payloads (GitHub webhooks, GitLab notes, etc.).
+
+### Provider Interfaces
+
+**Location:** `integrations/base/`
+
+Abstract base classes that define contracts for platform integrations:
+
+- **`RepositoryProvider`** — Fetch repository data (snapshot, diff, files, tree, commits)
+- **`EventProvider`** — Verify and parse webhook events into AnalysisRequest objects
+- **`InstallationProvider`** — Manage platform app installations and authentication
+- **`OutputProvider`** — Publish, update, and delete analysis results
+
+All provider methods are async for scalability. The compiler depends only on these interfaces, not on any specific platform implementation.
+
+### Integration Registry
+
+**Location:** `integrations/base/registry.py`
+
+Central registry for managing multiple platform providers:
+
+```python
+class IntegrationRegistry:
+    def register(self, integration: BaseIntegration) -> None
+    def get_repository_provider(self, provider_type: str) -> RepositoryProvider
+    def get_event_provider(self, provider_type: str) -> EventProvider
+    def get_installation_provider(self, provider_type: str) -> InstallationProvider
+    def get_output_provider(self, provider_type: str) -> OutputProvider
+```
+
+The registry enables multiple platform integrations to coexist and be selected at runtime based on the request context.
+
+### Runtime Pipeline
+
+**Location:** `runtime/pipeline/pipeline.py`
+
+Orchestrates the analysis workflow:
+
+1. Receives `AnalysisRequest` from `EventProvider`
+2. Uses `RepositoryProvider` to fetch repository snapshot and diff
+3. Runs compilation pipeline (Phases 1-5)
+4. Uses `Renderer` to format `OperationalChangeModel`
+5. Uses `OutputProvider` to publish result
+
+The pipeline depends only on provider interfaces, making it platform-agnostic.
+
+---
+
+## Integrations
+
+**Location:** `integrations/`
+
+Platform-specific implementations of provider interfaces.
+
+### GitHub Integration
+
+**Location:** `integrations/github/`
+
+| Component | Purpose |
+|-----------|---------|
+| `GitHubRepositoryProvider` | Implements `RepositoryProvider` — fetches repos, diffs, files, trees, commits |
+| `GitHubWebhookProvider` | Implements `EventProvider` — verifies webhooks, parses PR/push/installation events |
+| `GitHubCommentProvider` | Implements `OutputProvider` — publishes/updates/deletes PR comments |
+| `GitHubAppAuth` | JWT generation, installation token caching, authentication |
+| `GitHubClient` | Thin HTTP wrapper with retry logic |
+| `GitHubIntegration` | Façade composing all providers, provides `register()` method |
+
+### GitLab Integration (Future)
+
+**Location:** `integrations/gitlab/` (stub for future implementation)
+
+Follows the same provider pattern as GitHub integration.
+
+---
+
+## Renderers
+
+**Location:** `runtime/renderers/`
+
+Pure functions that transform `OperationalChangeModel` into platform-agnostic output formats:
+
+- **`json_renderer.py`** — Renders to JSON format
+- **`github_renderer.py`** — Renders to GitHub Markdown comment format
+
+Renderers are pure transformations with no side effects. They do not make API calls or depend on platform-specific logic.
+
+---
+
 ## Language Adapters
 
 **Location:** `language_adapters/`
@@ -367,29 +558,6 @@ BaseLanguageAdapter (abstract)
 
 ---
 
-## Source Adapters
-
-**Location:** `source_adapters/`
-
-Source control integration for fetching diffs and posting results.
-
-### GitHub Adapter
-**Location:** `source_adapters/github/`
-
-| File | Purpose |
-|------|---------|
-| `github_client.py` | GitHub API client (fetch diffs, file snapshots, SHAs) |
-| `auth.py` | Installation auth, JWT generation, token exchange |
-| `bot.py` | Post comments to PRs |
-| `event_handler.py` | Dispatch webhook events to analysis jobs |
-| `comment_formatter.py` | Render structured PR comments |
-| `webhook.py` | Parse webhooks + signature validation |
-
-### GitLab Adapter
-**Location:** `source_adapters/gitlab/` (stub for future implementation)
-
----
-
 ## Instrumentation
 
 **Location:** `instrumentation/sentry/`
@@ -400,68 +568,94 @@ Sentry integration for error tracking and performance monitoring:
 
 ---
 
+## Error Models
+
+**Location:** `errors/`
+
+Hierarchical error types for different failure modes:
+
+- **`AuthenticationError`** — Base authentication failures
+- **`RepositoryError`** — Base repository errors
+  - `RepositoryNotFound` — Repository does not exist
+  - `RepositoryAccessDenied` — Insufficient permissions
+- **`WebhookError`** — Base webhook errors
+  - `WebhookVerificationError` — Invalid webhook signature
+- **`RendererError`** — Base rendering errors
+  - `RenderingError` — Failed to render output
+- **`PipelineError`** — Base pipeline errors
+  - `PipelineExecutionError` — Pipeline execution failed
+
+All errors are immutable dataclasses with structured error codes and messages.
+
+---
+
 ## Data Flow
 
 ```
-Source Code Repository
+Platform Event (GitHub webhook, GitLab webhook, manual trigger)
     │
     ▼
-Language Adapter (Python/Java)
-    │ - Parse source files
-    │ - Extract symbols, calls, endpoints, etc.
-    │ - Detect frameworks
+EventProvider.verify() + EventProvider.parse()
+    │ - Verify webhook signature
+    │ - Parse platform-specific payload
+    │ - Convert to AnalysisRequest
+    ▼
+AnalysisRequest (platform-agnostic)
     │
     ▼
-ModelCompiler (Phase 1)
-    │ - 11 passes over semantic graph
+RepositoryProvider.fetch_repository() + fetch_diff()
+    │ - Fetch repository snapshot
+    │ - Fetch diff between commits
+    │ - Convert to platform-agnostic models
+    ▼
+RepositorySnapshot + DiffSnapshot
     │
     ▼
-RepositoryModel
+Compilation Pipeline (Phases 1-5)
+    │ - Language Adapter: Parse source code
+    │ - ModelCompiler: Build RepositoryModel
+    │ - ChangeCompiler: Build ChangeModel
+    │ - BehaviorCompiler: Build BehaviorModel
+    │ - OperationalCompiler: Build OperationalChangeModel
+    ▼
+OperationalChangeModel
     │
-    ├──► ChangeCompiler (Phase 2)
-    │    │ - Compare old vs new RepositoryModel
-    │    │ - Classify changes per symbol
-    │    │
+    ├──► Renderer (pure function)
+    │    │ - Transform to output format (JSON, Markdown)
     │    ▼
-    │   ChangeModel
+    │   Rendered Output (string/dict)
     │
-    ├──► BehaviorCompiler (Phase 3)
-    │    │ - Discover affected behaviors
-    │    │ - Build execution graphs
-    │    │
-    │    ▼
-    │   BehaviorModel
-    │
-    └──► OperationalCompiler (Phase 4/5)
-         │ - Compose all models
-         │ - Validate consistency
-         │ - Enrich with operational analysis
-         │
+    └──► OutputProvider.publish()
+         │ - Post to platform (GitHub PR comment, GitLab note, etc.)
          ▼
-        OperationalChangeModel
-            │
-            ├──► Persist to database
-            │
-            ├──► Post PR comment (GitHub/GitLab)
-            │
-            └──► Return to caller
+        Published Result
 ```
 
 ---
 
 ## Key Design Decisions
 
-1. **4-Phase Compilation Pipeline** — Analysis is organized as sequential compilation phases, each producing a deterministic, immutable model. This enables independent testing, caching, and debugging of each phase.
+1. **Provider Pattern** — All external service interactions are abstracted behind provider interfaces (`RepositoryProvider`, `EventProvider`, `OutputProvider`, `InstallationProvider`). This enables multiple platform implementations (GitHub, GitLab, etc.) without changing the compiler or runtime pipeline.
 
-2. **Pass-Based Architecture** — Each compiler executes a sequence of passes, where each pass has a single responsibility and transforms a shared context. Passes are composable and independently testable.
+2. **Platform-Agnostic Models** — Runtime models (`RepositoryReference`, `PullRequestReference`, `DiffSnapshot`, `AnalysisRequest`) abstract platform-specific details. The compiler never sees platform-specific payloads.
 
-3. **Language-Agnostic Core** — Language adapters produce a common semantic graph format. The `ModelCompiler` and all subsequent phases operate on language-agnostic models, enabling multi-language support.
+3. **Dependency Inversion** — The runtime pipeline depends on abstractions (provider interfaces) not concretions (GitHub, GitLab). This enables testing with mock providers and adding new platforms without modifying the pipeline.
 
-4. **Deterministic Models** — All models (`RepositoryModel`, `ChangeModel`, `BehaviorModel`, `OperationalChangeModel`) are frozen dataclasses, ensuring immutability and deterministic behavior.
+4. **Compiler Isolation** — Compiler modules (`behavior/`, `change/`, `operational/`, `language_adapters/`) have zero imports from integration or API layers. They depend only on language-agnostic models.
 
-5. **Graceful Degradation** — Phase 5 extension models (`dependency`, `data`, `event`, `api`, `validation`, `metrics`) are optional. The system degrades gracefully if any analysis pass fails.
+5. **4-Phase Compilation Pipeline** — Analysis is organized as sequential compilation phases, each producing a deterministic, immutable model. This enables independent testing, caching, and debugging of each phase.
 
-6. **Independent Extractors** — Each language adapter has independent extractors for different semantic concerns (symbols, calls, endpoints, persistence, etc.). Extractors can be added or modified without affecting others.
+6. **Pass-Based Architecture** — Each compiler executes a sequence of passes, where each pass has a single responsibility and transforms a shared context. Passes are composable and independently testable.
+
+7. **Language-Agnostic Core** — Language adapters produce a common semantic graph format. The `ModelCompiler` and all subsequent phases operate on language-agnostic models, enabling multi-language support.
+
+8. **Deterministic Models** — All models (`RepositoryModel`, `ChangeModel`, `BehaviorModel`, `OperationalChangeModel`) are frozen dataclasses, ensuring immutability and deterministic behavior.
+
+9. **Graceful Degradation** — Phase 5 extension models (`dependency`, `data`, `event`, `api`, `validation`, `metrics`) are optional. The system degrades gracefully if any analysis pass fails.
+
+10. **Independent Extractors** — Each language adapter has independent extractors for different semantic concerns (symbols, calls, endpoints, persistence, etc.). Extractors can be added or modified without affecting others.
+
+11. **Pure Renderers** — Renderers are pure functions from `OperationalChangeModel` to output formats. They have no side effects and make no API calls. The `OutputProvider` handles publishing.
 
 ---
 
@@ -470,10 +664,10 @@ RepositoryModel
 | Component | Technology |
 |-----------|-----------|
 | Language | Python 3.12+ |
-| Data Models | Pydantic / Frozen dataclasses |
+| Data Models | Frozen dataclasses |
 | Testing | pytest |
 | Static Analysis | Python AST, Java parser |
-| VCS Integration | GitHub API |
+| VCS Integration | GitHub API (pluggable for GitLab, etc.) |
 | Observability | Sentry |
 | Package Management | uv + pyproject.toml |
 
@@ -484,25 +678,59 @@ RepositoryModel
 ```
 cystatic-core/
 │
-├── language_adapters/          Per-language static analysis
-│   ├── base/                   Base classes and shared compiler
-│   │   ├── adapter.py          BaseLanguageAdapter (abstract)
-│   │   ├── compiler.py         ModelCompiler (11 passes)
-│   │   ├── extractor.py        Base extractor interface
-│   │   ├── normalization.py    Data normalization utilities
-│   │   └── parser.py           Base parser interface
-│   ├── model/                  Language-agnostic data models
-│   │   ├── repository_model.py RepositoryModel
-│   │   ├── symbol.py           Symbol, SymbolKind, SymbolVisibility
-│   │   ├── graphs.py           CallGraph, ReferenceGraph, TypeRelationshipGraph
-│   │   ├── configuration.py    ConfigurationReference
-│   │   ├── events.py           EventConstruct
-│   │   ├── persistence.py      PersistenceModel, RepositoryMethod
-│   │   └── tests.py            TestDefinition, TestFramework, TestFixture
-│   ├── python/                 Python adapter
-│   │   ├── adapter.py          PythonAdapter
-│   │   ├── parser/             Python AST parser
-│   │   └── extractors/         Python-specific extractors (9)
+├── runtime/                      Runtime layer (platform-agnostic)
+│   ├── models/                   Runtime data models
+│   │   ├── repository.py         RepositoryReference, RepositorySnapshot
+│   │   ├── pull_request.py       PullRequestReference
+│   │   ├── diff.py               DiffSnapshot, DiffFile, DiffHunk
+│   │   └── analysis.py           AnalysisRequest, AnalysisTrigger
+│   ├── pipeline/                 Runtime orchestration
+│   │   ├── pipeline.py           Pipeline (orchestrates compilation)
+│   │   └── context.py            Pipeline context
+│   ├── renderers/                Output formatters (pure functions)
+│   │   ├── json_renderer.py      JSON format renderer
+│   │   └── github_renderer.py    GitHub Markdown renderer
+│   ├── storage/                  Data persistence
+│   │   └── repository_store.py   Repository snapshot storage
+│   ├── language/                 Language detection
+│   │   └── detection.py          Language detection utilities
+│   └── errors.py                 Error imports
+│
+├── integrations/                 Platform integrations
+│   ├── base/                     Provider interfaces and registry
+│   │   ├── repository_provider.py    RepositoryProvider ABC
+│   │   ├── event_provider.py         EventProvider ABC
+│   │   ├── installation_provider.py  InstallationProvider ABC
+│   │   ├── output_provider.py        OutputProvider ABC
+│   │   └── registry.py               IntegrationRegistry
+│   ├── github/                   GitHub integration
+│   │   ├── provider.py           GitHubIntegration (façade)
+│   │   ├── repositories.py       GitHubRepositoryProvider
+│   │   ├── webhooks.py           GitHubWebhookProvider
+│   │   ├── comments.py           GitHubCommentProvider
+│   │   ├── auth.py               GitHubAppAuth
+│   │   └── client.py             GitHubClient (HTTP wrapper)
+│   └── gitlab/                   GitLab integration (future)
+│
+├── language_adapters/            Per-language static analysis
+│   ├── base/                     Base classes and shared compiler
+│   │   ├── adapter.py            BaseLanguageAdapter (abstract)
+│   │   ├── compiler.py           ModelCompiler (11 passes)
+│   │   ├── extractor.py          Base extractor interface
+│   │   ├── normalization.py      Data normalization utilities
+│   │   └── parser.py             Base parser interface
+│   ├── model/                    Language-agnostic data models
+│   │   ├── repository_model.py   RepositoryModel
+│   │   ├── symbol.py             Symbol, SymbolKind, SymbolVisibility
+│   │   ├── graphs.py             CallGraph, ReferenceGraph, TypeRelationshipGraph
+│   │   ├── configuration.py      ConfigurationReference
+│   │   ├── events.py             EventConstruct
+│   │   ├── persistence.py        PersistenceModel, RepositoryMethod
+│   │   └── tests.py              TestDefinition, TestFramework, TestFixture
+│   ├── python/                   Python adapter
+│   │   ├── adapter.py            PythonAdapter
+│   │   ├── parser/               Python AST parser
+│   │   └── extractors/           Python-specific extractors (9)
 │   │       ├── calls/
 │   │       ├── configuration/
 │   │       ├── entrypoints/
@@ -512,10 +740,10 @@ cystatic-core/
 │   │       ├── symbols/
 │   │       ├── tests/
 │   │       └── types/
-│   └── java/                   Java adapter
-│       ├── adapter.py          JavaAdapter
-│       ├── parser/             Java parser
-│       └── extractors/         Java-specific extractors (9)
+│   └── java/                     Java adapter
+│       ├── adapter.py            JavaAdapter
+│       ├── parser/               Java parser
+│       └── extractors/           Java-specific extractors (9)
 │           ├── calls/
 │           ├── configuration/
 │           ├── entrypoints/
@@ -526,34 +754,34 @@ cystatic-core/
 │           ├── tests/
 │           └── types/
 │
-├── change/                     Phase 2: Change Compilation
+├── change/                       Phase 2: Change Compilation
 │   ├── compiler/
-│   │   ├── compiler.py         ChangeCompiler
+│   │   ├── compiler.py           ChangeCompiler
 │   │   └── passes/
-│   │       ├── base.py         ChangePassContext, ChangeCompilerPass
+│   │       ├── base.py           ChangePassContext, ChangeCompilerPass
 │   │       ├── changed_symbols/    ChangedSymbolsPass
 │   │       └── change_classification/ ChangeClassificationPass
 │   └── model/
-│       ├── change_model.py     ChangeModel
-│       └── changes.py          Change types (FunctionBodyChange, etc.)
+│       ├── change_model.py       ChangeModel
+│       └── changes.py            Change types (FunctionBodyChange, etc.)
 │
-├── behavior/                   Phase 3: Behavior Compilation
+├── behavior/                     Phase 3: Behavior Compilation
 │   ├── compiler/
-│   │   ├── compiler.py         BehaviorCompiler
+│   │   ├── compiler.py           BehaviorCompiler
 │   │   └── passes/
-│   │       ├── base.py         BehaviorPassContext, BehaviorCompilerPass
+│   │       ├── base.py           BehaviorPassContext, BehaviorCompilerPass
 │   │       ├── behavior_discovery/ BehaviorDiscoveryPass
 │   │       └── behavior_graph/     BehaviorGraphPass
 │   └── model/
-│       ├── behavior_model.py   BehaviorModel
-│       ├── behavior.py         Behavior
-│       └── execution_graph.py  ExecutionGraph
+│       ├── behavior_model.py     BehaviorModel
+│       ├── behavior.py           Behavior
+│       └── execution_graph.py    ExecutionGraph
 │
-├── operational/                Phase 4/5: Operational Compilation
+├── operational/                  Phase 4/5: Operational Compilation
 │   ├── compiler/
-│   │   ├── compiler.py         OperationalCompiler
+│   │   ├── compiler.py           OperationalCompiler
 │   │   └── passes/
-│   │       ├── base.py         OperationalPassContext, OperationalCompilerPass
+│   │       ├── base.py           OperationalPassContext, OperationalCompilerPass
 │   │       ├── model_composition/     ModelCompositionPass
 │   │       ├── consistency_validation/ ConsistencyValidationPass
 │   │       ├── dependency/            DependencyAnalysisPass
@@ -563,37 +791,44 @@ cystatic-core/
 │   │       ├── validation/            ValidationAnalysisPass
 │   │       └── metrics/               MetricsPass
 │   └── model/
-│       └── model.py            OperationalChangeModel
+│       └── model.py              OperationalChangeModel
 │
-├── source_adapters/            VCS integration
-│   ├── github/
-│   │   ├── github_client.py    GitHub API client
-│   │   ├── auth.py             Installation auth
-│   │   ├── bot.py              PR comment posting
-│   │   ├── event_handler.py    Webhook event dispatch
-│   │   ├── comment_formatter.py PR comment rendering
-│   │   └── webhook.py          Webhook parsing + validation
-│   └── gitlab/                 GitLab stub
+├── errors/                       Error models
+│   ├── __init__.py               Error exports
+│   ├── authentication.py         AuthenticationError
+│   ├── repository.py             RepositoryError, RepositoryNotFound, RepositoryAccessDenied
+│   ├── webhook.py                WebhookError, WebhookVerificationError
+│   ├── renderer.py               RendererError, RenderingError
+│   └── pipeline.py               PipelineError, PipelineExecutionError
 │
-├── instrumentation/            Observability
+├── instrumentation/              Observability
 │   └── sentry/
-│       ├── sentry.py           Sentry initialization
-│       └── contexts.py         Per-request context
+│       ├── sentry.py             Sentry initialization
+│       └── contexts.py           Per-request context
 │
-├── tests/                      Test suite
+├── api/                          API layer (orchestration only)
+│   ├── app.py                    FastAPI application
+│   ├── settings.py               API configuration
+│   └── routes/
+│       └── github.py             GitHub webhook endpoints
+│
+├── tests/                        Test suite
 │   ├── test_repository_compiler.py   Phase 1 tests
 │   ├── test_change_compiler.py       Phase 2 tests
 │   ├── test_behavior_compiler.py     Phase 3 tests
 │   └── test_operational_compiler.py  Phase 4/5 tests
 │
-├── templates/                  PR comment templates
-├── pyproject.toml              Project configuration
-├── pylock.toml                 Dependency lock
-├── requirements.txt            Requirements
-├── uv.lock                     uv lock file
-├── pytest.ini                  pytest configuration
-├── .clinerules                 Agent rules
-└── README.md                   Project overview
+├── templates/                    PR comment templates
+│   └── github_comment.md         GitHub comment template
+│
+├── pyproject.toml                Project configuration
+├── pylock.toml                   Dependency lock
+├── requirements.txt              Requirements
+├── uv.lock                       uv lock file
+├── pytest.ini                    pytest configuration
+├── .clinerules                   Agent rules
+├── README.md                     Project overview
+└── MIGRATION_GUIDE.md            Migration guide for new architecture
 ```
 
 ---
@@ -608,3 +843,20 @@ Factor uses a **4-phase compilation pipeline** where each phase produces a deter
 4. **Phase 4/5 (Operational)** — The `OperationalCompiler` composes all models and enriches them with dependency, data, event, API, validation, and metrics analysis.
 
 The architecture is designed for **modularity, determinism, and extensibility** — each phase and pass can be developed, tested, and debugged independently.
+
+### Runtime Platform Architecture
+
+The runtime layer provides a **platform-agnostic orchestration layer** that separates the deterministic compiler from external platform dependencies:
+
+- **Provider Pattern** — Four interfaces (`RepositoryProvider`, `EventProvider`, `InstallationProvider`, `OutputProvider`) abstract all external service interactions
+- **Runtime Models** — Platform-agnostic dataclasses (`RepositoryReference`, `PullRequestReference`, `DiffSnapshot`, `AnalysisRequest`) ensure the compiler never sees platform-specific payloads
+- **Integration Registry** — Central registry manages multiple platform providers, enabling GitHub, GitLab, or any other platform to be added without modifying the compiler
+- **Dependency Inversion** — The pipeline depends on abstractions (interfaces) not concretions (GitHub), enabling testing with mocks and easy addition of new platforms
+- **Pure Renderers** — Renderers remain pure functions from `OperationalChangeModel` to output formats with no side effects
+
+This architecture ensures:
+- ✅ Compiler has no dependency on GitHub/HTTP/FastAPI
+- ✅ All platform logic isolated under `integrations/`
+- ✅ Runtime communicates through interfaces and shared models
+- ✅ API layer performs only orchestration
+- ✅ Adding new integrations requires only implementing providers

@@ -10,40 +10,55 @@ from fastapi.responses import JSONResponse
 
 from api.schemas.github import AnalysisRequest, AnalysisResponse, WebhookResponse
 from api.settings import get_settings
+from integrations.base import InstallationProvider, OutputProvider, RepositoryProvider
+from integrations.base.registry import get_registry
 from runtime.errors import InvalidWebhook, MissingWebhookPayload, PipelineExecutionError
-from runtime.github_auth import GitHubAppAuth
+from runtime.models import AnalysisTrigger
 from runtime.pipeline.context import PipelineContext
 from runtime.pipeline.pipeline import Pipeline
-from runtime.renderers.github_renderer import GitHubRenderer
-from runtime.renderers.json_renderer import JSONRenderer
-from source_adapters.github.bot import GitHubWebhookBot
 
 router = APIRouter(tags=["github"])
 
 # Global instances (in production, use dependency injection)
 _pipeline: Pipeline | None = None
-_github_auth: GitHubAppAuth | None = None
+_integration_registry: Any | None = None
+
+
+def get_integration_registry() -> Any:
+    """Get or create the global integration registry."""
+    global _integration_registry
+    if _integration_registry is None:
+        from integrations.github.provider import GitHubIntegration
+        _integration_registry = get_registry()
+        
+        # Register GitHub integration
+        settings = get_settings()
+        github_integration = GitHubIntegration(
+            app_id=settings.GITHUB_APP_CLIENT_ID,
+            private_key=settings.GITHUB_PRIVATE_KEY,
+            client_secret=settings.GITHUB_CLIENT_SECRET,
+            webhook_secret=settings.GITHUB_APP_WEBHOOK_SECRET,
+        )
+        github_integration.register(_integration_registry)
+    
+    return _integration_registry
 
 
 def get_pipeline() -> Pipeline:
     """Get or create the global pipeline instance."""
     global _pipeline
     if _pipeline is None:
-        _pipeline = Pipeline()
-    return _pipeline
-
-
-def get_github_auth() -> GitHubAppAuth:
-    """Get or create the global GitHub App auth instance."""
-    global _github_auth
-    if _github_auth is None:
-        settings = get_settings()
-        _github_auth = GitHubAppAuth(
-            app_id=settings.GITHUB_APP_CLIENT_ID,
-            private_key=settings.GITHUB_PRIVATE_KEY,
-            client_secret=settings.GITHUB_CLIENT_SECRET,
+        registry = get_integration_registry()
+        
+        # Get providers from registry
+        repository_provider = registry.get_repository_provider("github")
+        output_provider = registry.get_output_provider("github")
+        
+        _pipeline = Pipeline(
+            repository_provider=repository_provider,
+            output_provider=output_provider,
         )
-    return _github_auth
+    return _pipeline
 
 
 @router.post("/github", response_model=WebhookResponse)
@@ -60,6 +75,10 @@ async def github_webhook(
     Returns 200 OK immediately and processes the analysis asynchronously.
     """
     settings = get_settings()
+    registry = get_integration_registry()
+    
+    # Get event provider from registry
+    event_provider = registry.get_event_provider("github")
     
     # Verify webhook signature
     signature = request.headers.get("X-Hub-Signature-256")
@@ -70,8 +89,7 @@ async def github_webhook(
     
     # Verify signature
     if webhook_secret:
-        bot = GitHubWebhookBot()
-        if not bot.verify_webhook_signature(body, signature, webhook_secret):
+        if not await event_provider.verify(body, signature, webhook_secret):
             raise InvalidWebhook("Invalid webhook signature")
     
     # Parse payload
@@ -80,32 +98,37 @@ async def github_webhook(
     except json.JSONDecodeError:
         raise MissingWebhookPayload("Invalid JSON payload")
     
-    # Extract webhook context
-    bot = GitHubWebhookBot()
+    # Parse event into AnalysisRequest
     try:
-        context = bot.extract_webhook_context(payload, delivery_id=request.headers.get("X-GitHub-Delivery"))
+        analysis_request = await event_provider.parse(payload)
     except ValueError as exc:
         raise MissingWebhookPayload(str(exc)) from exc
     
-    # Check if we should process this event
-    event_name = request.headers.get("X-GitHub-Event")
-    if not bot.should_process_webhook_event(event_name, context.action):
+    # Check if this is a pull request event we should process
+    if not analysis_request.is_pull_request:
         return JSONResponse(
-            content={"status": "ignored", "message": f"Event {event_name}/{context.action} not processed"},
+            content={"status": "ignored", "message": "Not a pull request event"},
+            status_code=200,
+        )
+    
+    # Check if we should process this action
+    action = analysis_request.metadata.get("action") if analysis_request.metadata else None
+    allowed_actions = {"opened", "reopened", "synchronize", "ready_for_review"}
+    if action not in allowed_actions:
+        return JSONResponse(
+            content={"status": "ignored", "message": f"Action {action} not processed"},
             status_code=200,
         )
     
     # Extract installation ID for authentication
-    installation_id = payload.get("installation", {}).get("id")
+    installation_id = analysis_request.metadata.get("installation_id") if analysis_request.metadata else None
     
     # Schedule background analysis
     background_tasks.add_task(
         _process_pr_analysis,
-        repository=context.repo,
-        pr_number=context.pr_number,
-        action=context.action,
+        request=analysis_request,
         installation_id=installation_id,
-        delivery_id=context.delivery_id,
+        delivery_id=analysis_request.metadata.get("delivery_id") if analysis_request.metadata else None,
     )
     
     return JSONResponse(
@@ -124,19 +147,78 @@ async def analyze_repository(
     Accepts repository references or raw diffs and returns analysis results.
     """
     pipeline = get_pipeline()
+    registry = get_integration_registry()
     
     try:
-        # Run pipeline
-        context = await pipeline.run_diff(
-            repository=analysis_request.repository,
-            base_sha=analysis_request.base_sha or "main",
-            head_sha=analysis_request.head_sha or "main",
-            diff_data=analysis_request.diff_data or {},
+        # Convert API request to runtime model
+        from runtime.models import (
+            RepositoryReference,
+            PullRequestReference,
+            DiffSnapshot,
+            AnalysisTrigger,
         )
         
+        repo_ref = RepositoryReference(
+            provider="github",
+            owner=analysis_request.repository.split("/")[0],
+            repository=analysis_request.repository.split("/")[1],
+            default_branch=analysis_request.base_sha or "main",
+        )
+        
+        pr_ref = None
+        if analysis_request.pr_number:
+            pr_ref = PullRequestReference(
+                number=analysis_request.pr_number,
+                base_sha=analysis_request.base_sha or "main",
+                head_sha=analysis_request.head_sha or "main",
+                title="",
+            )
+        
+        diff_snapshot = None
+        if analysis_request.diff_data:
+            # Convert diff data to DiffSnapshot
+            from runtime.models.diff import DiffFile, DiffHunk
+            files = []
+            for file_data in analysis_request.diff_data.get("files", []):
+                hunks = []
+                for hunk_data in file_data.get("hunks", []):
+                    hunk = DiffHunk(
+                        file_path=hunk_data.get("file_path", ""),
+                        source_start=hunk_data.get("source_start", 0),
+                        source_length=hunk_data.get("source_length", 0),
+                        target_start=hunk_data.get("target_start", 0),
+                        target_length=hunk_data.get("target_length", 0),
+                        added_lines=tuple(hunk_data.get("added_lines", [])),
+                        removed_lines=tuple(hunk_data.get("removed_lines", [])),
+                        lines=tuple(hunk_data.get("lines", [])),
+                    )
+                    hunks.append(hunk)
+                
+                diff_file = DiffFile(
+                    file_path=file_data.get("file_path", ""),
+                    added_lines=tuple(file_data.get("added_lines", [])),
+                    removed_lines=tuple(file_data.get("removed_lines", [])),
+                    hunks=tuple(hunks),
+                )
+                files.append(diff_file)
+            
+            diff_snapshot = DiffSnapshot(files=tuple(files))
+        
+        request = AnalysisRequest(
+            repository=repo_ref,
+            pull_request=pr_ref,
+            diff=diff_snapshot,
+            trigger=AnalysisTrigger.MANUAL,
+        )
+        
+        # Run pipeline
+        context = await pipeline.run(request)
+        
+        if context.error:
+            raise HTTPException(status_code=500, detail=str(context.error))
+        
         # Render results
-        renderer = JSONRenderer()
-        result = renderer.render(context.ocm)
+        result = pipeline.render_json(context)
         
         return AnalysisResponse(
             repository=analysis_request.repository,
@@ -163,9 +245,7 @@ async def analyze_repository(
 
 
 async def _process_pr_analysis(
-    repository: str,
-    pr_number: int,
-    action: str,
+    request: AnalysisRequest,
     installation_id: int | None,
     delivery_id: str | None,
 ) -> None:
@@ -173,106 +253,45 @@ async def _process_pr_analysis(
     Background task to process PR analysis.
     
     Args:
-        repository: Repository identifier
-        pr_number: Pull request number
-        action: Webhook action
+        request: Analysis request
         installation_id: GitHub App installation ID
         delivery_id: Webhook delivery ID
     """
-    settings = get_settings()
     pipeline = get_pipeline()
-    
-    # Get authenticated GitHub bot for this installation
-    github_auth = get_github_auth()
-    try:
-        bot = github_auth.get_authenticated_bot(installation_id) if installation_id else GitHubWebhookBot()
-    except Exception as exc:
-        # Log error but don't fail the webhook
-        print(f"Failed to authenticate with GitHub: {exc}")
-        return
+    registry = get_integration_registry()
     
     try:
-        # Step 1: Fetch PR diff
-        print(f"Fetching diff for {repository} PR #{pr_number}")
-        diff_ir = bot.fetch_diff(repository, pr_number)
-        
-        # Convert DiffIR to dict format expected by pipeline
-        diff_data = {
-            "files": [
-                {
-                    "file_path": f.file_path,
-                    "added_lines": f.added_lines,
-                    "removed_lines": f.removed_lines,
-                    "hunks": [
-                        {
-                            "file_path": h.file_path,
-                            "source_start": h.source_start,
-                            "source_length": h.source_length,
-                            "target_start": h.target_start,
-                            "target_length": h.target_length,
-                            "added_lines": h.added_lines,
-                            "removed_lines": h.removed_lines,
-                            "lines": [
-                                {
-                                    "line_type": line.line_type,
-                                    "content": line.content,
-                                    "source_line_no": line.source_line_no,
-                                    "target_line_no": line.target_line_no,
-                                }
-                                for line in h.lines
-                            ],
-                        }
-                        for h in f.hunks
-                    ],
-                }
-                for f in diff_ir.files
-            ]
-        }
-        
-        # Step 2: Get base and head SHAs
-        base_sha = bot.get_head_sha(repository, pr_number)  # This gets head, we need base too
-        # For now, use head_sha as both (proper implementation would fetch both)
-        head_sha = base_sha
-        
-        # Step 3: Run pipeline
-        print(f"Running pipeline for {repository} PR #{pr_number}")
-        context = await pipeline.run_pr(
-            repository=repository,
-            pr_number=pr_number,
-            base_sha=base_sha,
-            head_sha=head_sha,
-            diff_data=diff_data,
-            request_id=delivery_id,
-            installation_id=installation_id,
-        )
+        # Run pipeline
+        context = await pipeline.run(request)
         
         if context.error:
-            print(f"Pipeline failed for {repository} PR #{pr_number}: {context.error}")
+            print(f"Pipeline failed for {request.repository.full_name}: {context.error}")
             return
         
-        # Step 4: Render GitHub comment using Jinja2 template
-        print(f"Rendering GitHub comment for {repository} PR #{pr_number}")
-        renderer = GitHubRenderer()
-        comment = renderer.render(
-            context.ocm,
-            {
-                "repository": repository,
-                "pr_number": pr_number,
-                "base_sha": context.base_sha,
-                "head_sha": context.head_sha,
-                "language": context.language or "unknown",
-                "total_time": f"{context.total_time:.2f}" if context.total_time else "N/A",
-            },
-        )
+        # Publish output using output provider
+        output_provider = registry.get_output_provider("github")
         
-        # Step 5: Post comment to GitHub
-        print(f"Posting comment to {repository} PR #{pr_number}")
-        bot.post_comment(repository, pr_number, comment)
+        destination = {
+            "repo": request.repository.full_name,
+            "pr_number": str(request.pull_request.number) if request.pull_request else None,
+            "base_sha": request.pull_request.base_sha if request.pull_request else "",
+            "head_sha": request.pull_request.head_sha if request.pull_request else "",
+            "language": context.language or "unknown",
+            "total_time": f"{context.total_time:.2f}" if context.total_time else "N/A",
+        }
         
-        print(f"Successfully analyzed {repository} PR #{pr_number}")
+        # Get authentication token if needed
+        if installation_id:
+            installation_provider = registry.get_installation_provider("github")
+            token = await installation_provider.authenticate(str(installation_id))
+            destination["token"] = token
         
+        await output_provider.publish(context.ocm, destination)
+        
+        print(f"Successfully analyzed {request.repository.full_name}")
+    
     except Exception as exc:
         # Log error but don't fail the webhook
-        print(f"Error processing PR analysis for {repository} PR #{pr_number}: {exc}")
+        print(f"Error processing PR analysis for {request.repository.full_name}: {exc}")
         import traceback
         traceback.print_exc()

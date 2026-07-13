@@ -9,10 +9,10 @@ import hashlib
 
 class SentryInstrumentation:
     def __init__(self, settings: Any) -> None:
-        self.dsn = settings.sentry_dsn
-        self.enabled = bool(settings.sentry_dsn)
-        self.app_env = settings.app_env
-        self.app_version = settings.app_version
+        self.dsn = settings.SENTRY_DSN
+        self.enabled = bool(settings.SENTRY_DSN)
+        self.app_env = settings.APP_ENV
+        self.app_version = settings.APP_VERSION
 
     def init(self) -> None:
         if not self.enabled:

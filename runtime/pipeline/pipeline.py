@@ -12,6 +12,12 @@ from typing import Any
 from change.compiler import ChangeCompiler
 from behavior.compiler import BehaviorCompiler
 from operational.compiler import OperationalCompiler
+from integrations.base import (
+    EventProvider,
+    InstallationProvider,
+    OutputProvider,
+    RepositoryProvider,
+)
 from runtime.errors import (
     CompilationTimeout,
     DiffFetchFailed,
@@ -24,6 +30,7 @@ from runtime.errors import (
     RepositoryNotSupported,
 )
 from runtime.language.detection import LanguageAdapterFactory, get_language_factory
+from runtime.models import AnalysisRequest, AnalysisTrigger
 from runtime.pipeline.context import PipelineContext
 from runtime.renderers.github_renderer import GitHubRenderer
 from runtime.renderers.json_renderer import JSONRenderer
@@ -42,12 +49,19 @@ class Pipeline:
     5. Rendering
     
     This is the runtime - no compiler logic lives here.
+    
+    Pipeline depends only on:
+    - RepositoryProvider
+    - Renderer
+    - OutputProvider
     """
     
     def __init__(
         self,
         repository_store: RepositoryStore | None = None,
         language_factory: LanguageAdapterFactory | None = None,
+        repository_provider: RepositoryProvider | None = None,
+        output_provider: OutputProvider | None = None,
     ) -> None:
         """
         Initialize the pipeline.
@@ -55,9 +69,13 @@ class Pipeline:
         Args:
             repository_store: Storage backend for repository models
             language_factory: Factory for creating language adapters
+            repository_provider: Provider for fetching repository data
+            output_provider: Provider for publishing results
         """
         self.repository_store = repository_store
         self.language_factory = language_factory or get_language_factory()
+        self.repository_provider = repository_provider
+        self.output_provider = output_provider
         
         # Compilers (reused across executions)
         self._change_compiler = ChangeCompiler()
@@ -68,49 +86,33 @@ class Pipeline:
         self._json_renderer = JSONRenderer()
         self._github_renderer: GitHubRenderer | None = None
     
-    async def run_pr(
-        self,
-        repository: str,
-        pr_number: int,
-        base_sha: str | None = None,
-        head_sha: str | None = None,
-        diff_data: dict[str, Any] | None = None,
-        request_id: str | None = None,
-        installation_id: str | None = None,
-    ) -> PipelineContext:
+    async def run(self, request: AnalysisRequest) -> PipelineContext:
         """
-        Run the pipeline for a pull request.
+        Run the pipeline for an analysis request.
         
         Args:
-            repository: Repository identifier (e.g., "owner/repo")
-            pr_number: Pull request number
-            base_sha: Base commit SHA
-            head_sha: Head commit SHA
-            diff_data: Pre-fetched diff data (optional)
-            request_id: Request identifier for tracking
-            installation_id: GitHub installation ID
+            request: Analysis request with repository, PR, and diff info
             
         Returns:
             PipelineContext with all results
         """
         context = PipelineContext(
-            repository=repository,
-            base_sha=base_sha,
-            head_sha=head_sha,
-            diff_data=diff_data,
-            request_id=request_id,
-            installation_id=installation_id,
+            repository=request.repository.full_name,
+            request_id=request.metadata.get("delivery_id") if request.metadata else None,
         )
         
         try:
             context.mark_compilation_start()
             
             # Step 1: Get or compile repository model
-            await self._ensure_repository_model(context)
+            await self._ensure_repository_model(context, request)
             
             # Step 2: Fetch diff if not provided
-            if context.diff_data is None:
-                await self._fetch_diff(context)
+            if context.diff_data is None and request.has_diff:
+                context.diff_data = request.diff
+            
+            if context.diff_data is None and self.repository_provider:
+                await self._fetch_diff(context, request)
             
             # Step 3: Compile change model
             await self._compile_change(context)
@@ -130,65 +132,13 @@ class Pipeline:
         
         return context
     
-    async def run_diff(
-        self,
-        repository: str,
-        base_sha: str,
-        head_sha: str,
-        diff_data: dict[str, Any],
-        request_id: str | None = None,
-    ) -> PipelineContext:
-        """
-        Run the pipeline for a raw diff.
-        
-        Args:
-            repository: Repository identifier
-            base_sha: Base commit SHA
-            head_sha: Head commit SHA
-            diff_data: Raw diff data
-            request_id: Request identifier for tracking
-            
-        Returns:
-            PipelineContext with all results
-        """
-        context = PipelineContext(
-            repository=repository,
-            base_sha=base_sha,
-            head_sha=head_sha,
-            diff_data=diff_data,
-            request_id=request_id,
-        )
-        
-        try:
-            context.mark_compilation_start()
-            
-            # Step 1: Get or compile repository model
-            await self._ensure_repository_model(context)
-            
-            # Step 2: Compile change model
-            await self._compile_change(context)
-            
-            # Step 3: Compile behavior model
-            await self._compile_behavior(context)
-            
-            # Step 4: Compile operational model
-            await self._compile_operational(context)
-            
-            context.mark_complete()
-            
-        except Exception as exc:
-            context.error = exc
-            context.mark_complete()
-            raise
-        
-        return context
-    
-    async def _ensure_repository_model(self, context: PipelineContext) -> None:
+    async def _ensure_repository_model(self, context: PipelineContext, request: AnalysisRequest) -> None:
         """
         Ensure repository model is available (load from cache or compile).
         
         Args:
             context: Pipeline context
+            request: Analysis request
             
         Raises:
             RepositoryNotSupported: If language is not supported
@@ -196,8 +146,8 @@ class Pipeline:
         """
         # Try to load from cache first
         if self.repository_store is not None:
-            ref = context.head_sha or context.base_sha or "main"
-            cached_model = await self.repository_store.load(context.repository, ref)
+            ref = request.pull_request.head_sha if request.pull_request else request.repository.default_branch
+            cached_model = await self.repository_store.load(request.repository.full_name, ref)
             if cached_model is not None:
                 context.repository_model = cached_model
                 context.language = cached_model.language
@@ -207,30 +157,88 @@ class Pipeline:
         
         # Need to compile repository model
         # This requires fetching the repository source
-        # For now, raise an error - the actual fetching will be done by the caller
+        if self.repository_provider is None:
+            raise RepositoryNotInstalled(
+                "Repository model compilation requires a repository provider. "
+                "No repository provider configured.",
+                details={"repository": request.repository.full_name},
+            )
+        
+        # Fetch repository snapshot
+        snapshot = await self.repository_provider.fetch_repository(request.repository)
+        
+        # Detect language and compile
+        # This is a simplified version - actual implementation would use language adapters
         raise RepositoryNotInstalled(
-            "Repository model compilation requires source fetching. "
-            "This should be handled by the caller before pipeline execution.",
-            details={"repository": context.repository},
+            "Repository model compilation from snapshot not yet fully implemented.",
+            details={"repository": request.repository.full_name},
         )
     
-    async def _fetch_diff(self, context: PipelineContext) -> None:
+    async def _fetch_diff(self, context: PipelineContext, request: AnalysisRequest) -> None:
         """
         Fetch diff for the repository.
         
         Args:
             context: Pipeline context
+            request: Analysis request
             
         Raises:
             DiffFetchFailed: If diff fetching fails
         """
-        # This is a placeholder - actual diff fetching should be done by the caller
-        # The pipeline expects diff_data to be provided
-        if context.diff_data is None:
+        if self.repository_provider is None:
             raise DiffFetchFailed(
-                "Diff data not provided. Caller must fetch and provide diff.",
+                "Diff fetching requires a repository provider. "
+                "No repository provider configured.",
                 details={"repository": context.repository},
             )
+        
+        if not request.pull_request:
+            raise DiffFetchFailed(
+                "Diff fetching requires a pull request",
+                details={"repository": context.repository},
+            )
+        
+        diff = await self.repository_provider.fetch_diff(
+            request.repository,
+            request.pull_request.base_sha,
+            request.pull_request.head_sha,
+        )
+        
+        # Convert DiffSnapshot to dict format expected by compilers
+        context.diff_data = self._diff_snapshot_to_dict(diff)
+    
+    def _diff_snapshot_to_dict(self, diff: Any) -> dict[str, Any]:
+        """Convert DiffSnapshot to dictionary format.
+        
+        Args:
+            diff: DiffSnapshot object
+            
+        Returns:
+            Dictionary format for compilers
+        """
+        return {
+            "files": [
+                {
+                    "file_path": f.file_path,
+                    "added_lines": list(f.added_lines),
+                    "removed_lines": list(f.removed_lines),
+                    "hunks": [
+                        {
+                            "file_path": h.file_path,
+                            "source_start": h.source_start,
+                            "source_length": h.source_length,
+                            "target_start": h.target_start,
+                            "target_length": h.target_length,
+                            "added_lines": list(h.added_lines),
+                            "removed_lines": list(h.removed_lines),
+                            "lines": list(h.lines),
+                        }
+                        for h in f.hunks
+                    ],
+                }
+                for f in diff.files
+            ]
+        }
     
     async def _compile_change(self, context: PipelineContext) -> None:
         """
@@ -384,5 +392,37 @@ class Pipeline:
         except Exception as exc:
             raise PipelineExecutionError(
                 f"GitHub rendering failed: {exc}",
+                details={"repository": context.repository},
+            ) from exc
+    
+    async def publish_output(
+        self,
+        context: PipelineContext,
+        destination: dict[str, Any],
+    ) -> str | None:
+        """
+        Publish the analysis result using the output provider.
+        
+        Args:
+            context: Pipeline context with OCM
+            destination: Destination information
+            
+        Returns:
+            Published content identifier or None
+            
+        Raises:
+            PipelineExecutionError: If publishing fails
+        """
+        if context.ocm is None:
+            raise PipelineExecutionError("No OCM available to publish")
+        
+        if self.output_provider is None:
+            raise PipelineExecutionError("No output provider configured")
+        
+        try:
+            return await self.output_provider.publish(context.ocm, destination)
+        except Exception as exc:
+            raise PipelineExecutionError(
+                f"Output publishing failed: {exc}",
                 details={"repository": context.repository},
             ) from exc

@@ -5,6 +5,15 @@ No generic exceptions outside the pipeline.
 
 from __future__ import annotations
 
+from errors import (
+    AuthenticationError,
+    PipelineExecutionError,
+    RenderingError,
+    RepositoryAccessDenied,
+    RepositoryNotFound,
+    WebhookVerificationError,
+)
+
 
 class PipelineError(Exception):
     """Base exception for all pipeline errors."""
