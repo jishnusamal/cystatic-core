@@ -127,14 +127,14 @@ class ChangedSymbolsPass(ChangeCompilerPass):
         renames = []
 
         # Group by kind and file for matching
-        added_by_kind_file: dict[tuple[str, str], list[Symbol]] = {}
+        added_by_kind_file: dict[tuple[Any, str], list[Symbol]] = {}
         for symbol in added:
             key = (symbol.kind, symbol.file)
             if key not in added_by_kind_file:
                 added_by_kind_file[key] = []
             added_by_kind_file[key].append(symbol)
 
-        removed_by_kind_file: dict[tuple[str, str], list[Symbol]] = {}
+        removed_by_kind_file: dict[tuple[Any, str], list[Symbol]] = {}
         for symbol in removed:
             key = (symbol.kind, symbol.file)
             if key not in removed_by_kind_file:

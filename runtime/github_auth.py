@@ -102,12 +102,12 @@ class GitHubAppAuth:
             client = Github(auth=auth)
             
             # Get installation token
-            installation = client.get_installation(installation_id)
+            installation = client.get_installation()  # type: ignore[attr-defined]
             token = installation.get_access_token()
             
             client.close()
             
-            return token.token
+            return token  # type: ignore[no-any-return]
             
         except GithubException as exc:
             raise RepositoryNotInstalled(

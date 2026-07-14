@@ -103,11 +103,6 @@ class CacheWriteFailed(PipelineError):
 
 # Pipeline execution errors
 
-class PipelineExecutionError(PipelineError):
-    """Raised when pipeline execution fails."""
-    pass
-
-
 class CompilationTimeout(PipelineError):
     """Raised when compilation exceeds timeout."""
     pass

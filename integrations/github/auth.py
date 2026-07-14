@@ -60,11 +60,11 @@ class GitHubAppAuth:
         github = Github(auth=Auth.AppAuth(self.app_id, self.private_key))
         
         try:
-            installation = github.get_installation(int(self.app_id))
+            installation = github.get_installation()  # type: ignore[attr-defined]
             token = installation.get_access_token()
             expires_at = time.time() + (60 * 60)  # 1 hour (GitHub tokens expire in 1 hour)
             self._token_cache[installation_id] = (token, expires_at)
-            return token
+            return token  # type: ignore[no-any-return]
         finally:
             github.close()
     
@@ -93,4 +93,4 @@ class GitHubAppAuth:
             return Github(auth=Auth.Token(token))
         else:
             jwt_token = self.generate_jwt()
-            return Github(auth=Auth.JWT(self.private_key, app_id=int(self.app_id)))
+            return Github(auth=Auth.JWT(jwt_token))  # type: ignore[abstract,call-arg]

@@ -7,7 +7,7 @@ validation, and metrics models.
 This is the linker and compilation stage in the cystatic compilation pipeline.
 """
 
-from typing import Any
+from typing import Any, cast
 
 from behavior.model import BehaviorModel
 from change.model import ChangeModel
@@ -102,7 +102,7 @@ class OperationalCompiler:
             )
 
         # Return the enriched model
-        return context.composed_model
+        return cast(OperationalChangeModel, context.composed_model)
 
     def compile_with_errors(
         self,

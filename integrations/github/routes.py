@@ -1,4 +1,4 @@
-"""GitHub webhook and API routes."""
+"""GitHub integration routes for FastAPI."""
 
 from __future__ import annotations
 
@@ -8,12 +8,10 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from api.schemas.github import AnalysisRequest, AnalysisResponse, WebhookResponse
-from api.settings import get_settings
 from integrations.base import InstallationProvider, OutputProvider, RepositoryProvider
 from integrations.base.registry import get_registry
 from runtime.errors import InvalidWebhook, MissingWebhookPayload, PipelineExecutionError
-from runtime.models import AnalysisTrigger
+from runtime.models import AnalysisRequest, AnalysisTrigger
 from runtime.pipeline.context import PipelineContext
 from runtime.pipeline.pipeline import Pipeline
 
@@ -21,15 +19,17 @@ router = APIRouter(tags=["github"])
 
 # Global instances (in production, use dependency injection)
 _pipeline: Pipeline | None = None
-_integration_registry: Any | None = None
+_registry: Any | None = None
 
 
-def get_integration_registry() -> Any:
+def get_registry_instance() -> Any:
     """Get or create the global integration registry."""
-    global _integration_registry
-    if _integration_registry is None:
+    global _registry
+    if _registry is None:
         from integrations.github.provider import GitHubIntegration
-        _integration_registry = get_registry()
+        from api.settings import get_settings
+        
+        _registry = get_registry()
         
         # Register GitHub integration
         settings = get_settings()
@@ -39,16 +39,16 @@ def get_integration_registry() -> Any:
             client_secret=settings.GITHUB_CLIENT_SECRET,
             webhook_secret=settings.GITHUB_APP_WEBHOOK_SECRET,
         )
-        github_integration.register(_integration_registry)
+        github_integration.register(_registry)
     
-    return _integration_registry
+    return _registry
 
 
-def get_pipeline() -> Pipeline:
+def get_pipeline_instance() -> Pipeline:
     """Get or create the global pipeline instance."""
     global _pipeline
     if _pipeline is None:
-        registry = get_integration_registry()
+        registry = get_registry_instance()
         
         # Get providers from registry
         repository_provider = registry.get_repository_provider("github")
@@ -61,7 +61,7 @@ def get_pipeline() -> Pipeline:
     return _pipeline
 
 
-@router.post("/github", response_model=WebhookResponse)
+@router.post("/github", response_model=dict[str, Any])
 async def github_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -74,8 +74,10 @@ async def github_webhook(
     
     Returns 200 OK immediately and processes the analysis asynchronously.
     """
+    from api.settings import get_settings
+    
     settings = get_settings()
-    registry = get_integration_registry()
+    registry = get_registry_instance()
     
     # Get event provider from registry
     event_provider = registry.get_event_provider("github")
@@ -137,17 +139,17 @@ async def github_webhook(
     )
 
 
-@router.post("/v1/analyze", response_model=AnalysisResponse)
+@router.post("/v1/analyze", response_model=dict[str, Any])
 async def analyze_repository(
-    analysis_request: AnalysisRequest,
-) -> AnalysisResponse:
+    analysis_request: dict[str, Any],
+) -> JSONResponse:
     """
     Public API endpoint to analyze a repository.
     
     Accepts repository references or raw diffs and returns analysis results.
     """
-    pipeline = get_pipeline()
-    registry = get_integration_registry()
+    pipeline = get_pipeline_instance()
+    registry = get_registry_instance()
     
     try:
         # Convert API request to runtime model
@@ -157,29 +159,28 @@ async def analyze_repository(
             DiffSnapshot,
             AnalysisTrigger,
         )
+        from runtime.models.diff import DiffFile, DiffHunk
         
         repo_ref = RepositoryReference(
             provider="github",
-            owner=analysis_request.repository.split("/")[0],
-            repository=analysis_request.repository.split("/")[1],
-            default_branch=analysis_request.base_sha or "main",
+            owner=analysis_request["repository"].split("/")[0],
+            repository=analysis_request["repository"].split("/")[1],
+            default_branch=analysis_request.get("base_sha") or "main",
         )
         
         pr_ref = None
-        if analysis_request.pr_number:
+        if analysis_request.get("pr_number"):
             pr_ref = PullRequestReference(
-                number=analysis_request.pr_number,
-                base_sha=analysis_request.base_sha or "main",
-                head_sha=analysis_request.head_sha or "main",
+                number=analysis_request["pr_number"],
+                base_sha=analysis_request.get("base_sha") or "main",
+                head_sha=analysis_request.get("head_sha") or "main",
                 title="",
             )
         
         diff_snapshot = None
-        if analysis_request.diff_data:
-            # Convert diff data to DiffSnapshot
-            from runtime.models.diff import DiffFile, DiffHunk
+        if analysis_request.get("diff_data"):
             files = []
-            for file_data in analysis_request.diff_data.get("files", []):
+            for file_data in analysis_request["diff_data"].get("files", []):
                 hunks = []
                 for hunk_data in file_data.get("hunks", []):
                     hunk = DiffHunk(
@@ -204,7 +205,7 @@ async def analyze_repository(
             
             diff_snapshot = DiffSnapshot(files=tuple(files))
         
-        request = AnalysisRequest(
+        analysis_request_obj = AnalysisRequest(
             repository=repo_ref,
             pull_request=pr_ref,
             diff=diff_snapshot,
@@ -212,7 +213,7 @@ async def analyze_repository(
         )
         
         # Run pipeline
-        context = await pipeline.run(request)
+        context = await pipeline.run(analysis_request_obj)
         
         if context.error:
             raise HTTPException(status_code=500, detail=str(context.error))
@@ -220,26 +221,29 @@ async def analyze_repository(
         # Render results
         result = pipeline.render_json(context)
         
-        return AnalysisResponse(
-            repository=analysis_request.repository,
-            language=context.language or "unknown",
-            change_summary=result.get("change", {}),
-            behavior_summary=result.get("behavior", {}),
-            operational_summary={
-                k: v for k, v in result.items()
-                if k in ["dependency", "data", "event", "api", "validation", "metrics"]
+        return JSONResponse(
+            content={
+                "repository": analysis_request["repository"],
+                "language": context.language or "unknown",
+                "change_summary": result.get("change", {}),
+                "behavior_summary": result.get("behavior", {}),
+                "operational_summary": {
+                    k: v for k, v in result.items()
+                    if k in ["dependency", "data", "event", "api", "validation", "metrics"]
+                },
+                "timing": {
+                    "repository": context.repository_compile_time or 0.0,
+                    "change": context.change_compile_time or 0.0,
+                    "behavior": context.behavior_compile_time or 0.0,
+                    "operational": context.operational_compile_time or 0.0,
+                    "total": context.total_time or 0.0,
+                },
             },
-            timing={
-                "repository": context.repository_compile_time or 0.0,
-                "change": context.change_compile_time or 0.0,
-                "behavior": context.behavior_compile_time or 0.0,
-                "operational": context.operational_compile_time or 0.0,
-                "total": context.total_time or 0.0,
-            },
+            status_code=200,
         )
     
     except PipelineExecutionError as exc:
-        raise HTTPException(status_code=500, detail=str(exc.message)) from exc
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc
 
@@ -257,8 +261,8 @@ async def _process_pr_analysis(
         installation_id: GitHub App installation ID
         delivery_id: Webhook delivery ID
     """
-    pipeline = get_pipeline()
-    registry = get_integration_registry()
+    pipeline = get_pipeline_instance()
+    registry = get_registry_instance()
     
     try:
         # Run pipeline

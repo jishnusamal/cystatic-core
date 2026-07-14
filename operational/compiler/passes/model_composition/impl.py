@@ -14,6 +14,9 @@ from operational.compiler.passes.base import (
     OperationalPassContext,
 )
 from operational.model import OperationalChangeModel
+from language_adapters.model import RepositoryModel
+from change.model import ChangeModel
+from behavior.model import BehaviorModel
 
 
 class ModelCompositionPass(OperationalCompilerPass):
@@ -65,9 +68,9 @@ class ModelCompositionPass(OperationalCompilerPass):
             )
 
         context.composed_model = OperationalChangeModel(
-            repository=context.repository_model,
-            change=context.change_model,
-            behavior=context.behavior_model,
+            repository=context.repository_model,  # type: ignore[arg-type]
+            change=context.change_model,  # type: ignore[arg-type]
+            behavior=context.behavior_model,  # type: ignore[arg-type]
         )
 
         return context

@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from typing import Any
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes.github import router as github_router
+from integrations.github.routes import router as github_router
 from api.routes.health import router as health_router
 from api.settings import get_settings
 

@@ -16,13 +16,14 @@ This is the public operational surface.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from operational.compiler.passes.base import (
     OperationalCompilerPass,
     OperationalPassContext,
 )
-from language_adapters.model import EntryPoint, EntryPointKind, Symbol
+from language_adapters.model import EntryPoint, EntryPointKind, RepositoryModel, Symbol
+from operational.model import OperationalChangeModel
 
 
 @dataclass(frozen=True)
@@ -94,6 +95,9 @@ class APICompilationPass(OperationalCompilerPass):
             return context
 
         model = context.composed_model
+        if model is None:
+            return context
+        
         repo = model.repository
         behavior = model.behavior
         change = model.change
@@ -218,7 +222,7 @@ class APICompilationPass(OperationalCompilerPass):
 
     @staticmethod
     def _is_reachable_to_affected(
-        repo: "RepositoryModel",
+        repo: RepositoryModel,
         start_id: str,
         affected_ids: set[str],
     ) -> bool:

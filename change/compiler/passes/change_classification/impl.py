@@ -44,7 +44,7 @@ class ChangeClassificationPass(ChangeCompilerPass):
             Updated context with classified changes
         """
         # Classify changes for each modified symbol
-        symbol_changes = {}
+        symbol_changes: dict[str, list[Any]] = {}
         
         for modified_data in context.modified_symbols:
             symbol = modified_data['symbol']
@@ -65,7 +65,7 @@ class ChangeClassificationPass(ChangeCompilerPass):
         
         return context
     
-    def _classify_symbol_changes(self, old_symbol: Symbol, new_symbol: Symbol) -> list:
+    def _classify_symbol_changes(self, old_symbol: Symbol, new_symbol: Symbol) -> list[Any]:
         """
         Classify what changed between old and new symbol versions.
         
@@ -76,7 +76,7 @@ class ChangeClassificationPass(ChangeCompilerPass):
         Returns:
             List of change objects describing what changed
         """
-        changes = []
+        changes: list[Any] = []
         
         # Check for function body changes
         if self._has_body_change(old_symbol, new_symbol):
@@ -216,7 +216,7 @@ class ChangeClassificationPass(ChangeCompilerPass):
         
         return None
     
-    def _detect_changed_imports(self, context: ChangePassContext) -> list[dict]:
+    def _detect_changed_imports(self, context: ChangePassContext) -> list[dict[str, Any]]:
         """
         Detect changed imports by comparing old and new repository models.
         
@@ -226,7 +226,7 @@ class ChangeClassificationPass(ChangeCompilerPass):
         Returns:
             List of import changes
         """
-        changed_imports = []
+        changed_imports: list[dict[str, Any]] = []
         
         old_model = context.metadata.get('old_repository_model')
         new_model = context.metadata.get('new_repository_model')
@@ -276,7 +276,7 @@ class ChangeClassificationPass(ChangeCompilerPass):
         
         return changed_imports
     
-    def _detect_changed_endpoints(self, context: ChangePassContext) -> list[dict]:
+    def _detect_changed_endpoints(self, context: ChangePassContext) -> list[dict[str, Any]]:
         """
         Detect changed endpoints by comparing old and new repository models.
         
@@ -286,7 +286,7 @@ class ChangeClassificationPass(ChangeCompilerPass):
         Returns:
             List of endpoint changes
         """
-        changed_endpoints = []
+        changed_endpoints: list[dict[str, Any]] = []
         
         old_model = context.metadata.get('old_repository_model')
         new_model = context.metadata.get('new_repository_model')

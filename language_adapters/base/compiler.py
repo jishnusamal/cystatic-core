@@ -349,6 +349,9 @@ class _ModelCompiler:
         callee_id = self._resolve_callee_id(callee_name, caller_id, symbol_index)
 
         if callee_id:
+            caller_symbol = symbol_index.get(caller_id)
+            caller_file = caller_symbol.file if caller_symbol else call_file
+            
             edge = CallEdge(
                 caller_id=caller_id,
                 callee_id=callee_id,
@@ -357,7 +360,7 @@ class _ModelCompiler:
                 line=call_line,
                 evidence=Evidence(
                     file_location=FileLocation(
-                        file=call_file or (symbol_index.get(caller_id).file if caller_id in symbol_index else ''),
+                        file=call_file or caller_file,
                         start_line=max(call_line, 1),
                         end_line=max(call_line, 1),
                     ),
@@ -366,7 +369,7 @@ class _ModelCompiler:
                             caller_symbol_id=caller_id,
                             callee_name=callee_name,
                             location=FileLocation(
-                                file=call_file or (symbol_index.get(caller_id).file if caller_id in symbol_index else ''),
+                                file=call_file or caller_file,
                                 start_line=max(call_line, 1),
                                 end_line=max(call_line, 1),
                             ),

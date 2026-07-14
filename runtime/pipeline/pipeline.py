@@ -109,7 +109,7 @@ class Pipeline:
             
             # Step 2: Fetch diff if not provided
             if context.diff_data is None and request.has_diff:
-                context.diff_data = request.diff
+                context.diff_data = self._diff_snapshot_to_dict(request.diff) if hasattr(request.diff, 'files') else request.diff
             
             if context.diff_data is None and self.repository_provider:
                 await self._fetch_diff(context, request)
@@ -150,8 +150,8 @@ class Pipeline:
             cached_model = await self.repository_store.load(request.repository.full_name, ref)
             if cached_model is not None:
                 context.repository_model = cached_model
-                context.language = cached_model.language
-                context.adapter = cached_model.language
+                context.language = cached_model.metadata.get('language')
+                context.adapter = cached_model.metadata.get('language')
                 context.mark_repository_compiled()
                 return
         

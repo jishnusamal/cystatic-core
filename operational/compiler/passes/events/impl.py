@@ -17,13 +17,14 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import FrozenSet
+from typing import FrozenSet, cast
 
 from operational.compiler.passes.base import (
     OperationalCompilerPass,
     OperationalPassContext,
 )
 from language_adapters.model import Symbol, SymbolKind
+from operational.model import OperationalChangeModel
 
 
 @dataclass(frozen=True)
@@ -126,6 +127,9 @@ class EventCompilationPass(OperationalCompilerPass):
             return context
 
         model = context.composed_model
+        if model is None:
+            return context
+        
         repo = model.repository
         behavior = model.behavior
         change = model.change

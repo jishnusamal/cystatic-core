@@ -20,12 +20,19 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
+from typing import cast
 
 from operational.compiler.passes.base import (
     OperationalCompilerPass,
     OperationalPassContext,
 )
 from language_adapters.model import Symbol
+from operational.model import OperationalChangeModel
+from operational.compiler.passes.dependency.impl import DependencyModel
+from operational.compiler.passes.data.impl import DataModel
+from operational.compiler.passes.events.impl import EventModel
+from operational.compiler.passes.api.impl import APIModel
+from operational.compiler.passes.validation.impl import ValidationModel
 
 
 @dataclass(frozen=True)
@@ -94,6 +101,8 @@ class MetricsCompilationPass(OperationalCompilerPass):
             return context
 
         model = context.composed_model
+        if model is None:
+            return context
 
         # 1. Behavior count
         behaviors = len(model.behavior.behaviors)
@@ -101,9 +110,10 @@ class MetricsCompilationPass(OperationalCompilerPass):
         # 2. Service count (from dependency model)
         services = 0
         if model.dependency is not None:
+            dependency = cast(DependencyModel, model.dependency)
             # Count distinct services from cross-service references
             services_in_refs: set[str] = set()
-            for src, tgt, _sid in model.dependency.cross_service_references:
+            for src, tgt, _sid in dependency.cross_service_references:
                 services_in_refs.add(src)
                 services_in_refs.add(tgt)
             services = len(services_in_refs) if services_in_refs else 1
@@ -111,53 +121,60 @@ class MetricsCompilationPass(OperationalCompilerPass):
         # 3. Dependency fan-out
         dependency_fan_out = 0
         if model.dependency is not None:
-            dependency_fan_out = sum(model.dependency.fan_out.values())
+            dependency = cast(DependencyModel, model.dependency)
+            dependency_fan_out = sum(dependency.fan_out.values())
 
         # 4. Execution depth
         execution_depth = 0
         if model.dependency is not None:
-            execution_depth = model.dependency.dependency_depth
+            dependency = cast(DependencyModel, model.dependency)
+            execution_depth = dependency.dependency_depth
 
         # 5. Data stores
         data_stores = 0
         if model.data is not None:
-            data_stores = len(model.data.external_storage)
-            if model.data.tables:
-                data_stores = max(data_stores, len(model.data.tables))
+            data = cast(DataModel, model.data)
+            data_stores = len(data.external_storage)
+            if data.tables:
+                data_stores = max(data_stores, len(data.tables))
 
         # 6. Events
         events = 0
         if model.event is not None:
-            events = len(model.event.published_events) + len(model.event.consumed_events)
+            event = cast(EventModel, model.event)
+            events = len(event.published_events) + len(event.consumed_events)
 
         # 7. APIs
         apis = 0
         if model.api is not None:
+            api = cast(APIModel, model.api)
             apis = (
-                len(model.api.rest)
-                + len(model.api.graphql)
-                + len(model.api.rpc)
-                + len(model.api.cli)
-                + len(model.api.cron)
-                + len(model.api.workers)
+                len(api.rest)
+                + len(api.graphql)
+                + len(api.rpc)
+                + len(api.cli)
+                + len(api.cron)
+                + len(api.workers)
             )
 
         # 8. Validation breadth
         validation_breadth = 0
         if model.validation is not None:
+            validation = cast(ValidationModel, model.validation)
             validation_breadth = (
-                len(model.validation.unit_tests)
-                + len(model.validation.integration_tests)
-                + len(model.validation.e2e_tests)
-                + len(model.validation.benchmarks)
+                len(validation.unit_tests)
+                + len(validation.integration_tests)
+                + len(validation.e2e_tests)
+                + len(validation.benchmarks)
             )
 
         # 9. Traversal size: total symbols analyzed
         traversal_size = 0
         if model.dependency is not None:
+            dependency = cast(DependencyModel, model.dependency)
             traversal_size = (
-                len(model.dependency.callers)
-                + len(model.dependency.dependents)
+                len(dependency.callers)
+                + len(dependency.dependents)
             )
         traversal_size += len(model.repository.symbols)
 

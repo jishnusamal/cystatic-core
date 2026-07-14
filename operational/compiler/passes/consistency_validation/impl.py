@@ -11,10 +11,13 @@ Checks:
 This is compiler validation, not business validation.
 """
 
+from typing import cast
+
 from operational.compiler.passes.base import (
     OperationalCompilerPass,
     OperationalPassContext,
 )
+from operational.model import OperationalChangeModel
 
 
 class ConsistencyValidationPass(OperationalCompilerPass):
@@ -51,6 +54,9 @@ class ConsistencyValidationPass(OperationalCompilerPass):
             return context
 
         model = context.composed_model
+        if model is None:
+            return context
+        
         errors: list[str] = []
 
         # Build a set of all known symbol IDs from the repository model

@@ -89,8 +89,8 @@ class GitHubRenderer:
             "modified_symbols_count": len(ocm.change.modified_symbols),
             "changed_imports_count": len(ocm.change.changed_imports),
             "changed_endpoints_count": len(ocm.change.changed_endpoints),
-            "added_symbols": [self._render_symbol(s.symbol) for s in ocm.change.added_symbols],
-            "removed_symbols": [self._render_symbol(s.symbol) for s in ocm.change.removed_symbols],
+            "added_symbols": [self._render_symbol(s) for s in ocm.change.added_symbols],
+            "removed_symbols": [self._render_symbol(s) for s in ocm.change.removed_symbols],
             "modified_symbols": [
                 {
                     "symbol": self._render_symbol(m.symbol),

@@ -16,13 +16,14 @@ This is evidence, not recommendations.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from operational.compiler.passes.base import (
     OperationalCompilerPass,
     OperationalPassContext,
 )
-from language_adapters.model import Symbol, SymbolKind
+from language_adapters.model import RepositoryModel, Symbol, SymbolKind
+from operational.model import OperationalChangeModel
 
 
 @dataclass(frozen=True)
@@ -120,6 +121,9 @@ class ValidationCompilationPass(OperationalCompilerPass):
             return context
 
         model = context.composed_model
+        if model is None:
+            return context
+        
         repo = model.repository
         behavior = model.behavior
         change = model.change
@@ -253,7 +257,7 @@ class ValidationCompilationPass(OperationalCompilerPass):
 
     @staticmethod
     def _references_affected(
-        repo: "RepositoryModel",
+        repo: RepositoryModel,
         symbol_id: str,
         affected_ids: set[str],
     ) -> bool:
@@ -266,16 +270,15 @@ class ValidationCompilationPass(OperationalCompilerPass):
         3. File proximity (same file as affected symbol)
         """
         # Check reference graph
-        for edge in repo.reference_graph.edges:
-            source_id, target_id, _rel_type = edge
-            if source_id == symbol_id and target_id in affected_ids:
+        for ref_edge in repo.reference_graph.edges:
+            if ref_edge.source_id == symbol_id and ref_edge.target_id in affected_ids:
                 return True
 
         # Check call graph
-        for edge in repo.call_graph.edges:
-            if edge.caller_id == symbol_id and edge.callee_id in affected_ids:
+        for call_edge in repo.call_graph.edges:
+            if call_edge.caller_id == symbol_id and call_edge.callee_id in affected_ids:
                 return True
-            if edge.callee_id == symbol_id and edge.caller_id in affected_ids:
+            if call_edge.callee_id == symbol_id and call_edge.caller_id in affected_ids:
                 return True
 
         return False

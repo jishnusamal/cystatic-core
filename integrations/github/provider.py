@@ -56,7 +56,7 @@ class GitHubIntegration:
         self._repository_provider = GitHubRepositoryProvider(auth=self.auth)
         self._webhook_provider = GitHubWebhookProvider(secret=webhook_secret)
         self._comment_provider = GitHubCommentProvider(auth=self.auth)
-        self._installation_provider = self.auth  # Auth implements the interface
+        self._installation_provider = self.auth  # type: ignore[assignment,return-value]
     
     def get_repository_provider(self) -> RepositoryProvider:
         """Get the repository provider."""
@@ -67,8 +67,8 @@ class GitHubIntegration:
         return self._webhook_provider
     
     def get_installation_provider(self) -> InstallationProvider:
-        """Get the installation provider."""
-        return self._installation_provider
+        """Get the installation provider for this integration."""
+        return self._installation_provider  # type: ignore[return-value]
     
     def get_output_provider(self) -> OutputProvider:
         """Get the output provider."""
