@@ -10,7 +10,7 @@ This is the linker and compilation stage in the cystatic compilation pipeline.
 from typing import Any, cast
 
 from behavior.model import BehaviorModel
-from change.model import ChangeModel
+from change.model import ChangeModel, RepositoryDelta
 from language_adapters.model import RepositoryModel
 from operational.model import OperationalChangeModel
 
@@ -29,7 +29,7 @@ from .passes import (
 
 class OperationalCompiler:
     """
-    Compiles RepositoryModel + ChangeModel + BehaviorModel into
+    Compiles RepositoryDelta + ChangeModel + BehaviorModel into
     an enriched OperationalChangeModel.
 
     This is the main entry point for operational compilation.
@@ -39,7 +39,7 @@ class OperationalCompiler:
     1. Composition: Model composition + consistency validation
     2. Enrichment: Dependency, data, event, API, validation, and metrics compilation
 
-    Input: RepositoryModel + ChangeModel + BehaviorModel
+    Input: RepositoryDelta + ChangeModel + BehaviorModel
     Output: OperationalChangeModel with all optional models populated
     """
 
@@ -60,17 +60,19 @@ class OperationalCompiler:
 
     def compile(
         self,
-        repository_model: RepositoryModel,
-        change_model: ChangeModel,
-        behavior_model: BehaviorModel,
+        repository_model: RepositoryModel | None = None,
+        change_model: ChangeModel | None = None,
+        behavior_model: BehaviorModel | None = None,
+        repository_delta: RepositoryDelta | None = None,
     ) -> OperationalChangeModel:
         """
         Compile deterministic models into an enriched OperationalChangeModel.
 
         Args:
-            repository_model: RepositoryModel
+            repository_model: RepositoryModel (deprecated, use repository_delta)
             change_model: ChangeModel
             behavior_model: BehaviorModel
+            repository_delta: RepositoryDelta containing both base and head models
 
         Returns:
             OperationalChangeModel with all optional models populated
@@ -78,13 +80,21 @@ class OperationalCompiler:
         Raises:
             ValueError: If consistency validation fails
         """
+        # Support both old and new interface for backward compatibility
+        if repository_delta is not None:
+            head_model = repository_delta.head_model
+        else:
+            head_model = repository_model
+
         # Initialize pass context with models
         context = OperationalPassContext(
-            repository_model=repository_model,
+            repository_model=head_model,
+            repository_delta=repository_delta,
             change_model=change_model,
             behavior_model=behavior_model,
             metadata={
-                'repository_model': repository_model,
+                'repository_model': head_model,
+                'repository_delta': repository_delta,
                 'change_model': change_model,
                 'behavior_model': behavior_model,
             }
@@ -107,9 +117,10 @@ class OperationalCompiler:
 
     def compile_with_errors(
         self,
-        repository_model: RepositoryModel,
-        change_model: ChangeModel,
-        behavior_model: BehaviorModel,
+        repository_model: RepositoryModel | None = None,
+        change_model: ChangeModel | None = None,
+        behavior_model: BehaviorModel | None = None,
+        repository_delta: RepositoryDelta | None = None,
     ) -> tuple[OperationalChangeModel | None, list[str]]:
         """
         Compile and return errors instead of raising.
@@ -118,15 +129,23 @@ class OperationalCompiler:
         without exception handling.
 
         Args:
-            repository_model: RepositoryModel
+            repository_model: RepositoryModel (deprecated, use repository_delta)
             change_model: ChangeModel
             behavior_model: BehaviorModel
+            repository_delta: RepositoryDelta containing both base and head models
 
         Returns:
             Tuple of (OperationalChangeModel or None, list of error strings)
         """
+        # Support both old and new interface for backward compatibility
+        if repository_delta is not None:
+            head_model = repository_delta.head_model
+        else:
+            head_model = repository_model
+
         context = OperationalPassContext(
-            repository_model=repository_model,
+            repository_model=head_model,
+            repository_delta=repository_delta,
             change_model=change_model,
             behavior_model=behavior_model,
         )

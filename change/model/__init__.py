@@ -11,6 +11,7 @@ from .changes import (
     EndpointAnnotationChange,
 )
 from .repository_comparison import RepositoryComparison
+from .repository_delta import RepositoryDelta
 
 __all__ = [
     "ChangeModel",
@@ -25,4 +26,5 @@ __all__ = [
     "InterfaceChange",
     "EndpointAnnotationChange",
     "RepositoryComparison",
+    "RepositoryDelta",
 ]

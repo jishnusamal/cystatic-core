@@ -4,6 +4,14 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+from behavior.model import (
+    ExecutionUnit,
+    ExecutionChain,
+    EntryPoint,
+    TerminalPoint,
+    SharedExecution,
+)
+
 
 @dataclass
 class BehaviorPassContext:
@@ -17,6 +25,21 @@ class BehaviorPassContext:
 
     # Pass 2 output: Execution graphs
     execution_graphs: list = field(default_factory=list)
+
+    # Pass 3 output: Execution chains (ordered execution units)
+    execution_chains: list = field(default_factory=list)
+
+    # Pass 4 output: Entry points
+    entry_points: list = field(default_factory=list)
+
+    # Pass 5 output: Terminal points
+    terminal_points: list = field(default_factory=list)
+
+    # Pass 6 output: Shared executions
+    shared_executions: list = field(default_factory=list)
+
+    # Pass 7 output: Reachable units
+    reachable_units: list = field(default_factory=list)
 
     # Indices for fast lookup during compilation
     symbol_to_behaviors: dict[str, list] = field(default_factory=dict)

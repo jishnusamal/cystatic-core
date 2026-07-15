@@ -34,41 +34,43 @@
   - Changes: {{ modified.changes | map(attribute='type') | join(', ') }}
 {% endfor %}
 {% endif %}
-
-{% if change.changed_imports_count > 0 %}
-### Changed Imports ({{ change.changed_imports_count }})
-{% for imp in change.changed_imports %}
-- `{{ imp.file }}`: {{ imp.change_type }}
-{% endfor %}
-{% endif %}
-
-{% if change.changed_endpoints_count > 0 %}
-### Changed Endpoints ({{ change.changed_endpoints_count }})
-{% for ep in change.changed_endpoints %}
-- `{{ ep.symbol_id }}`: {{ ep.change_type }} ({{ ep.old_method }} → {{ ep.new_method }})
-{% endfor %}
-{% endif %}
 {% else %}
 ## Change Overview
 
 No code changes detected.
 {% endif %}
 
-{% if behavior.behaviors_count > 0 %}
+{% if execution is defined and execution.behaviors_count > 0 %}
 ## Execution Surface
 
-**Affected Behaviors:** {{ behavior.behaviors_count }}
+**Affected Behaviors:** {{ execution.behaviors_count }}
+**Execution Depth:** {{ execution.execution_depth }}
 
-{% for b in behavior.behaviors %}
+{% for b in execution.behaviors %}
 ### {{ b.name }}
 - **Type:** {{ b.type }}
-- **Symbols:** {{ b.symbols | length }}
+- **Entry Point:** {{ b.entry_point }}
+- **Changed Symbols:** {{ b.changed_symbols_count }}
 {% endfor %}
 
-{% if behavior.execution_graphs_count > 0 %}
-### Execution Graphs
-{% for graph in behavior.execution_graphs %}
-- **{{ graph.name }}**: {{ graph.nodes_count }} nodes, {{ graph.edges_count }} edges
+{% if execution.entry_points_count > 0 %}
+### Entry Points
+{% for ep in execution.entry_points %}
+- **{{ ep.kind }}**: {{ ep.route }}
+{% endfor %}
+{% endif %}
+
+{% if execution.terminal_points_count > 0 %}
+### Terminal Points
+{% for tp in execution.terminal_points %}
+- **{{ tp.kind }}**: {{ tp.symbol_id.split('#')[-1] if '#' in tp.symbol_id else tp.symbol_id }}
+{% endfor %}
+{% endif %}
+
+{% if execution.shared_executions_count > 0 %}
+### Shared Executions
+{% for se in execution.shared_executions %}
+- **{{ se.symbol_id.split('#')[-1] if '#' in se.symbol_id else se.symbol_id }}**: used by {{ se.used_by_count }} behaviors
 {% endfor %}
 {% endif %}
 {% endif %}

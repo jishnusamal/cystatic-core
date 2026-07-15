@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from behavior.model import BehaviorModel
-from change.model import ChangeModel
+from change.model import ChangeModel, RepositoryDelta
 from language_adapters.model import RepositoryModel
 from operational.model import OperationalChangeModel
 
@@ -20,6 +20,7 @@ class OperationalPassContext:
 
     # Input models (set before first pass)
     repository_model: RepositoryModel | None = None
+    repository_delta: RepositoryDelta | None = None
     change_model: ChangeModel | None = None
     behavior_model: BehaviorModel | None = None
 

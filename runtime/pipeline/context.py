@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from language_adapters.model import RepositoryModel
-from change.model import ChangeModel
+from change.model import ChangeModel, RepositoryDelta
 from behavior.model import BehaviorModel
 from operational.model import OperationalChangeModel
 
@@ -37,6 +37,9 @@ class PipelineContext:
     # Compiled repository models (immutable once set)
     base_repository_model: RepositoryModel | None = None
     head_repository_model: RepositoryModel | None = None
+    
+    # Repository delta (canonical input for downstream phases)
+    repository_delta: RepositoryDelta | None = None
     
     # Intermediate artifacts
     change_model: ChangeModel | None = None

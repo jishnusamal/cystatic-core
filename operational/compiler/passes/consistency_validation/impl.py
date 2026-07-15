@@ -3,7 +3,9 @@
 Question: Are all referenced entities internally consistent?
 
 Checks:
-- Every changed symbol exists in RepositoryModel.
+- Removed symbols exist in base repository, absent from head.
+- Added symbols absent from base, exist in head repository.
+- Modified symbols exist in both base and head repositories.
 - Every behavior references valid symbols.
 - Every entry point belongs to RepositoryModel.
 - Every execution graph references known nodes.
@@ -27,6 +29,11 @@ class ConsistencyValidationPass(OperationalCompilerPass):
     Validates that all references across the composed models are internally
     consistent. This catches data integrity issues before downstream consumers
     (renderers, AI) process the model.
+
+    Uses RepositoryDelta to validate change types correctly:
+    - Removed symbols must exist in base, be absent from head
+    - Added symbols must be absent from base, exist in head
+    - Modified symbols must exist in both
     """
 
     @property
@@ -56,41 +63,94 @@ class ConsistencyValidationPass(OperationalCompilerPass):
         model = context.composed_model
         if model is None:
             return context
-        
+
         errors: list[str] = []
 
-        # Build a set of all known symbol IDs from the repository model
-        known_symbol_ids = {s.id for s in model.repository.symbols}
+        # Get symbol IDs from both base and head repositories for cross-model validation
+        head_symbol_ids = {s.id for s in model.repository.symbols}
+        base_symbol_ids = set()
+        if context.repository_delta is not None:
+            base_symbol_ids = context.repository_delta.get_base_symbol_ids()
 
-        # 1. Every changed symbol exists in RepositoryModel
+        # 1. Validate changed symbols using cross-model validation
         errors.extend(
-            self._validate_changed_symbols(model, known_symbol_ids)
+            self._validate_changed_symbols_cross_model(
+                model, base_symbol_ids, head_symbol_ids
+            )
         )
 
-        # 2. Every behavior references valid symbols
+        # 2. Every behavior references valid symbols (in head repository)
         errors.extend(
-            self._validate_behavior_symbols(model, known_symbol_ids)
+            self._validate_behavior_symbols(model, head_symbol_ids)
         )
 
         # 3. Every entry point belongs to RepositoryModel
         errors.extend(
-            self._validate_entry_points(model, known_symbol_ids)
+            self._validate_entry_points(model, head_symbol_ids)
         )
 
         # 4. Every execution graph references known nodes
         errors.extend(
-            self._validate_execution_graphs(model, known_symbol_ids)
+            self._validate_execution_graphs(model, head_symbol_ids)
         )
 
         context.consistency_errors = errors
         return context
+
+    def _validate_changed_symbols_cross_model(
+        self,
+        model: "OperationalChangeModel",
+        base_symbol_ids: set[str],
+        head_symbol_ids: set[str],
+    ) -> list[str]:
+        """
+        Validate changed symbols using cross-model validation.
+
+        Removed symbols: must exist in base, be absent from head.
+        Added symbols: must be absent from base, exist in head.
+        Modified symbols: must exist in both base and head.
+        """
+        errors: list[str] = []
+
+        # Check added symbols - should exist in head repository
+        for symbol in model.change.added_symbols:
+            if symbol.id not in head_symbol_ids:
+                errors.append(
+                    f"Added symbol '{symbol.id}' not found in head repository model"
+                )
+
+        # Check removed symbols - should exist in base repository
+        for symbol in model.change.removed_symbols:
+            if symbol.id not in base_symbol_ids:
+                errors.append(
+                    f"Removed symbol '{symbol.id}' not found in base repository model"
+                )
+
+        # Check modified symbols - should exist in both repositories
+        for modified in model.change.modified_symbols:
+            if modified.symbol.id not in base_symbol_ids:
+                errors.append(
+                    f"Modified symbol '{modified.symbol.id}' not found "
+                    "in base repository model"
+                )
+            if modified.symbol.id not in head_symbol_ids:
+                errors.append(
+                    f"Modified symbol '{modified.symbol.id}' not found "
+                    "in head repository model"
+                )
+
+        return errors
 
     def _validate_changed_symbols(
         self,
         model: "OperationalChangeModel",
         known_symbol_ids: set[str],
     ) -> list[str]:
-        """Check that every changed symbol exists in the repository model."""
+        """Check that every changed symbol exists in the repository model.
+
+        Deprecated: Use _validate_changed_symbols_cross_model instead.
+        Kept for backward compatibility.
+        """
         errors: list[str] = []
 
         # Check added symbols

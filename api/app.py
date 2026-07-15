@@ -13,7 +13,7 @@ from api.settings import get_settings
 settings = get_settings()
 
 app = FastAPI(
-    title="Cystatic API",
+    title="Factor API",
     description="Static analysis and change impact detection API",
     version=settings.APP_VERSION,
     docs_url="/docs",
@@ -38,7 +38,7 @@ app.include_router(github_router)
 @app.get("/")
 async def root() -> dict[str, str]:
     """
-    Root endpoint for the Cystatic API.
+    Root endpoint for the Factor API.
     
     Returns basic API information including name, version, and status.
     

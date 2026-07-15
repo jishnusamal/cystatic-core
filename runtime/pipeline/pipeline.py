@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from change.compiler import ChangeCompiler
 from change.model.repository_comparison import RepositoryComparison
+from change.model.repository_delta import RepositoryDelta
 from behavior.compiler import BehaviorCompiler
 from operational.compiler import OperationalCompiler
 from runtime.errors import (
@@ -366,6 +367,15 @@ class Pipeline:
             print(f"[pipeline] Warning: Base and head SHAs are identical ({context.base_sha})")
         
         try:
+            # Create RepositoryDelta - the canonical input for all downstream phases
+            context.repository_delta = RepositoryDelta(
+                base_model=context.base_repository_model,
+                head_model=context.head_repository_model,
+                diff=context.diff_data,
+                base_sha=context.base_sha or "",
+                head_sha=context.head_sha or "",
+            )
+            
             # Create a RepositoryComparison - the dedicated input model for ChangeCompiler
             comparison = RepositoryComparison(
                 base_model=context.base_repository_model,
@@ -397,10 +407,10 @@ class Pipeline:
             PipelineExecutionError: If compilation fails
         """
         # Validate invariants before compilation
-        if context.head_repository_model is None:
+        if context.repository_delta is None:
             raise PipelineExecutionError(
-                "Head repository model not available",
-                details={"repository": context.repository, "head_sha": context.head_sha},
+                "Repository delta not available",
+                details={"repository": context.repository},
             )
         
         if context.change_model is None:
@@ -410,10 +420,10 @@ class Pipeline:
             )
         
         try:
-            # BehaviorCompiler receives head repository model per contract
+            # BehaviorCompiler receives repository_delta for cross-model analysis
             context.behavior_model = self._behavior_compiler.compile(
                 change_model=context.change_model,
-                repository_model=context.head_repository_model,
+                repository_delta=context.repository_delta,
             )
             context.mark_behavior_compiled()
         except Exception as exc:
@@ -433,10 +443,10 @@ class Pipeline:
             PipelineExecutionError: If compilation fails
         """
         # Validate invariants before compilation
-        if context.head_repository_model is None:
+        if context.repository_delta is None:
             raise PipelineExecutionError(
-                "Head repository model not available",
-                details={"repository": context.repository, "head_sha": context.head_sha},
+                "Repository delta not available",
+                details={"repository": context.repository},
             )
         
         if context.change_model is None:
@@ -452,9 +462,9 @@ class Pipeline:
             )
         
         try:
-            # OperationalCompiler receives head repository model per contract
+            # OperationalCompiler receives repository_delta for cross-model validation
             context.ocm = self._operational_compiler.compile(
-                repository_model=context.head_repository_model,
+                repository_delta=context.repository_delta,
                 change_model=context.change_model,
                 behavior_model=context.behavior_model,
             )

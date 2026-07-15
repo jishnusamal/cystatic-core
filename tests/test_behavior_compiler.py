@@ -421,15 +421,28 @@ class TestBehaviorCompiler:
     def test_compiler_initialization(self):
         """Test that the compiler initializes with correct passes."""
         compiler = BehaviorCompiler()
-        assert len(compiler.passes) == 2
+        assert len(compiler.passes) == 7
         assert compiler.passes[0].name == "behavior_compilation"
         assert compiler.passes[1].name == "behavior_graph"
+        assert compiler.passes[2].name == "execution_chain"
+        assert compiler.passes[3].name == "entry_point"
+        assert compiler.passes[4].name == "terminal_point"
+        assert compiler.passes[5].name == "shared_execution"
+        assert compiler.passes[6].name == "reachable_units"
 
     def test_compiler_pass_names(self):
         """Test getting pass names."""
         compiler = BehaviorCompiler()
         names = compiler.get_pass_names()
-        assert names == ["behavior_compilation", "behavior_graph"]
+        assert names == [
+            "behavior_compilation",
+            "behavior_graph",
+            "execution_chain",
+            "entry_point",
+            "terminal_point",
+            "shared_execution",
+            "reachable_units",
+        ]
 
     def test_compile_no_changes(self, sample_repository_model):
         """Test compiling with no changes."""
@@ -625,5 +638,96 @@ class TestBehaviorCompiler:
         context = BehaviorPassContext()
         assert context.behaviors == []
         assert context.execution_graphs == []
+        assert context.execution_chains == []
+        assert context.entry_points == []
+        assert context.terminal_points == []
+        assert context.shared_executions == []
+        assert context.reachable_units == []
         assert context.symbol_to_behaviors == {}
         assert context.metadata == {}
+
+    def test_execution_chains_created(self, sample_repository_model):
+        """Test that execution chains are created for behaviors."""
+        compiler = BehaviorCompiler()
+
+        modified_symbol = TestHelper.create_symbol(
+            "python://checkout.py::validate_coupon",
+            "validate_coupon",
+            SymbolKind.FUNCTION,
+            file="checkout.py",
+        )
+        change_model = TestHelper.create_change_model(
+            modified_symbols=[ModifiedSymbol(symbol=modified_symbol, changes=())],
+        )
+
+        result = compiler.compile(change_model, sample_repository_model)
+
+        # Should have execution chains
+        assert len(result.execution_chains) == 1
+        chain = result.execution_chains[0]
+        assert chain.behavior_id == result.behaviors[0].id
+        assert len(chain.units) > 0
+
+    def test_entry_points_created(self, sample_repository_model):
+        """Test that entry points are created for behaviors."""
+        compiler = BehaviorCompiler()
+
+        modified_symbol = TestHelper.create_symbol(
+            "python://checkout.py::validate_coupon",
+            "validate_coupon",
+            SymbolKind.FUNCTION,
+            file="checkout.py",
+        )
+        change_model = TestHelper.create_change_model(
+            modified_symbols=[ModifiedSymbol(symbol=modified_symbol, changes=())],
+        )
+
+        result = compiler.compile(change_model, sample_repository_model)
+
+        # Should have entry points
+        assert len(result.entry_points) == 1
+        ep = result.entry_points[0]
+        assert ep.behavior_id == result.behaviors[0].id
+        assert ep.symbol_id == result.behaviors[0].root_symbol_id
+        assert ep.kind == "rest_endpoint"
+
+    def test_terminal_points_created(self, sample_repository_model):
+        """Test that terminal points are created for behaviors."""
+        compiler = BehaviorCompiler()
+
+        modified_symbol = TestHelper.create_symbol(
+            "python://checkout.py::validate_coupon",
+            "validate_coupon",
+            SymbolKind.FUNCTION,
+            file="checkout.py",
+        )
+        change_model = TestHelper.create_change_model(
+            modified_symbols=[ModifiedSymbol(symbol=modified_symbol, changes=())],
+        )
+
+        result = compiler.compile(change_model, sample_repository_model)
+
+        # Should have terminal points
+        assert len(result.terminal_points) >= 1
+        # Terminal point should be in the graph
+        tp = result.terminal_points[0]
+        assert tp.behavior_id == result.behaviors[0].id
+
+    def test_execution_depth_calculated(self, sample_repository_model):
+        """Test that execution depth is calculated."""
+        compiler = BehaviorCompiler()
+
+        modified_symbol = TestHelper.create_symbol(
+            "python://checkout.py::validate_coupon",
+            "validate_coupon",
+            SymbolKind.FUNCTION,
+            file="checkout.py",
+        )
+        change_model = TestHelper.create_change_model(
+            modified_symbols=[ModifiedSymbol(symbol=modified_symbol, changes=())],
+        )
+
+        result = compiler.compile(change_model, sample_repository_model)
+
+        # Should have execution depth > 0
+        assert result.execution_depth > 0
