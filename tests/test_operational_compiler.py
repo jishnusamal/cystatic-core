@@ -1,4 +1,4 @@
-"""Tests for the Operational Compiler (Phase 4)."""
+"""Tests for the Operational Compiler."""
 
 from dataclasses import dataclass, field
 from typing import Any
@@ -571,7 +571,7 @@ class TestOperationalCompiler:
     """Tests for the OperationalCompiler."""
 
     def test_compiler_initialization(self):
-        """Test that the compiler initializes with all Phase 4 and 5 passes."""
+        """Test that the compiler initializes with all passes."""
         compiler = OperationalCompiler()
         assert len(compiler.passes) == 8
 
@@ -706,7 +706,7 @@ class TestOperationalCompiler:
         assert len(result.change.added_symbols) == 0
 
     def test_full_compilation_enriches_all_models(self, sample_repository_model, sample_change_model, sample_behavior_model):
-        """Test that full compilation populates all Phase 5 models."""
+        """Test that full compilation populates all optional models."""
         compiler = OperationalCompiler()
         result = compiler.compile(
             repository_model=sample_repository_model,
@@ -714,7 +714,7 @@ class TestOperationalCompiler:
             behavior_model=sample_behavior_model,
         )
 
-        # All Phase 5 models should be populated
+        # All optional models should be populated
         assert result.has_dependency_model()
         assert result.has_data_model()
         assert result.has_event_model()

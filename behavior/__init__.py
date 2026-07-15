@@ -1,1 +1,1 @@
-"""Behavior compilation package - Phase 3 of the Factor pipeline."""
+"""Behavior compilation package - identifies affected behaviors from code changes."""

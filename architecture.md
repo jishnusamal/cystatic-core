@@ -1,4 +1,4 @@
-# Factor — Architecture
+# Factor Architecture
 
 ## What Factor Does
 
@@ -6,42 +6,186 @@ Factor is a **blast-radius and refactor-risk analysis engine** for code changes.
 
 **Core principle:** Evidence-based progressive compression drives the verdict; the LLM is an expert reviewer.
 
+
 ---
 
-## Architecture Diagram
+## Architecture Diagrams
+
+### High-Level System Architecture (Mermaid)
+
+```mermaid
+flowchart TB
+    subgraph API[API Layer - FastAPI]
+        direction TB
+        A1[GET /] --> A2[API Info]
+        A3[GET /v1] --> A4[V1 Endpoints]
+        A5[POST /github] --> A6[Webhook Handler]
+        A7[POST /v1/analyze] --> A8[Manual Analysis]
+    end
+
+    subgraph Integration[Integration Layer]
+        direction TB
+        IR[IntegrationRegistry] --> RP[RepositoryProvider]
+        IR --> EP[EventProvider]
+        IR --> IP[InstallationProvider]
+        IR --> OP[OutputProvider]
+        GI[GitHub Façade] --> GRP[GitHubRepoProvider]
+        GI --> GWP[GitHubWebhookProvider]
+        GI --> GCP[GitHubCommentProvider]
+        GI --> GIA[GitHubAppAuth]
+        GI --> GC[GitHubClient]
+    end
+
+    subgraph Models[Runtime Models]
+        direction TB
+        RR[RepositoryReference]
+        PR[PullRequestReference]
+        DS[DiffSnapshot]
+        AR[AnalysisRequest]
+    end
+
+    subgraph Pipeline[Runtime Pipeline]
+        direction TB
+        PC[Pipeline Orchestrator]
+        CTX[PipelineContext]
+        STORE[RepositoryStore Cache]
+    end
+
+    subgraph RepositoryCompilation[Repository Compilation]
+        direction TB
+        LA[Language Adapter: Python or Java]
+        MC[_ModelCompiler - 11 passes]
+        RM[RepositoryModel]
+        LA --> MC --> RM
+    end
+
+    subgraph ChangeCompilation[Change Compilation]
+        direction TB
+        CC[ChangeCompiler - 2 passes]
+        CP1[Pass 1: ChangedSymbols]
+        CP2[Pass 2: ChangeClassification]
+        CM[ChangeModel]
+        CC --> CP1 --> CP2 --> CM
+    end
+
+    subgraph BehaviorCompilation[Behavior Compilation]
+        direction TB
+        BC[BehaviorCompiler - 2 passes]
+        BP1[Pass 1: BehaviorDiscovery]
+        BP2[Pass 2: BehaviorGraph]
+        BM[BehaviorModel]
+        BC --> BP1 --> BP2 --> BM
+    end
+
+    subgraph OperationalCompilation[Operational Compilation]
+        direction TB
+        OC[OperationalCompiler - 8 passes]
+        P4[Composition: ModelComposition + ConsistencyValidation]
+        P5[Enrichment: Dependency, Data, Event, API, Validation, Metrics]
+        OCM[OperationalChangeModel]
+        OC --> P4 --> P5 --> OCM
+    end
+
+    subgraph Output[Rendering and Publishing]
+        direction TB
+        JR[JSONRenderer - pure function]
+        GR[GitHubRenderer - pure function]
+        OPR[OutputProvider.publish]
+    end
+
+    subgraph Observability[Observability]
+        S[Sentry - error tracking]
+    end
+
+    API --> Integration
+    Integration --> Models
+    Models --> Pipeline
+    Pipeline --> RepositoryCompilation
+    RepositoryCompilation --> ChangeCompilation
+    ChangeCompilation --> BehaviorCompilation
+    BehaviorCompilation --> OperationalCompilation
+    OperationalCompilation --> Output
+    Output --> Observability
+```
+
+### Data Flow Through the Pipeline (Mermaid)
+
+```mermaid
+flowchart LR
+    GIT[Git Repository] --> INT[Integration Layer]
+    INT --> AR[AnalysisRequest]
+    AR --> PL[Pipeline Orchestrator]
+    PL --> P1[RepositoryModel]
+    P1 --> P2[ChangeModel]
+    P2 --> P3[BehaviorModel]
+    P3 --> P4[OperationalChangeModel]
+    P4 --> RENDER[Renderer - pure function]
+    RENDER --> PUB[OutputProvider.publish to PR]
+
+    style GIT fill:#e1f5fe
+    style INT fill:#fff3e0
+    style AR fill:#f3e5f5
+    style PL fill:#fce4ec
+    style P1 fill:#e8f5e9
+    style P2 fill:#e8f5e9
+    style P3 fill:#e8f5e9
+    style P4 fill:#e8f5e9
+    style RENDER fill:#fff8e1
+    style PUB fill:#ffebee
+```
+
+### ASCII Architecture Diagram
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│                        Integration Layer (Platform-Agnostic)              │
+│                         API Layer (FastAPI)                               │
 │  ┌──────────────────────────────────────────────────────────────────┐    │
-│  │              Integration Registry (Central Orchestrator)          │    │
-│  │  - Manages multiple platform providers                           │    │
-│  │  - Lazy initialization and caching                               │    │
+│  │  api/app.py — FastAPI application                                │    │
+│  │  ├── GET  /        → API info                                    │    │
+│  │  ├── GET  /v1      → V1 endpoint list                            │    │
+│  │  ├── POST /github  → GitHub webhook (background tasks)           │    │
+│  │  └── POST /v1/analyze → Manual analysis endpoint                 │    │
 │  └──────────────────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
+                               │
+                               ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
-│                    Provider Interfaces (Abstractions)                     │
-│                                                                          │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────┐   │
-│  │RepositoryProvider│  │  EventProvider   │  │ InstallationProvider │   │
-│  │- fetch_repository│  │- verify webhook  │  │- get_installation    │   │
-│  │- fetch_diff      │  │- parse event     │  │- authenticate        │   │
-│  │- fetch_file      │  │                  │  │                      │   │
-│  │- fetch_tree      │  │                  │  │                      │   │
-│  │- fetch_commit    │  │                  │  │                      │   │
-│  └──────────────────┘  └──────────────────┘  └──────────────────────┘   │
+│                    Integration Layer (Platform-Agnostic)                  │
 │                                                                          │
 │  ┌──────────────────────────────────────────────────────────────────┐    │
-│  │                    OutputProvider                                 │    │
-│  │  - publish(result)  — Post new output                             │    │
-│  │  - update(id, result) — Update existing output                    │    │
-│  │  - delete(id)       — Remove output                               │    │
+│  │              IntegrationRegistry (Central Orchestrator)           │    │
+│  │  ┌──────────────────────────────────────────────────────────┐    │    │
+│  │  │  Manages 4 provider types by platform name:               │    │    │
+│  │  │  - RepositoryProvider (fetch repo, diff, tree, commit)    │    │    │
+│  │  │  - EventProvider (verify & parse webhook payloads)        │    │    │
+│  │  │  - InstallationProvider (authenticate platform installs)  │    │    │
+│  │  │  - OutputProvider (publish/update/delete results)         │    │    │
+│  │  │  Lazy initialization + singleton pattern                  │    │    │
+│  │  └──────────────────────────────────────────────────────────┘    │    │
 │  └──────────────────────────────────────────────────────────────────┘    │
+│                              │                                            │
+│  ┌──────────────────────────────────────────────────────────────────┐    │
+│  │              GitHubIntegration (Façade)                          │    │
+│  │  ┌──────────┐  ┌──────────────┐  ┌──────────┐  ┌─────────────┐  │    │
+│  │  │GitHubRepo│  │ GitHubWebhook│  │GitHubComm│  │GitHubInstall│  │    │
+│  │  │Provider  │  │ Provider     │  │entProv.  │  │ Provider    │  │    │
+│  │  │- fetch   │  │ - verify     │  │- publish  │  │(GitHubApp   │  │    │
+│  │  │  repo    │  │ - parse      │  │- update   │  │ Auth)       │  │    │
+│  │  │- fetch   │  │              │  │- delete   │  │             │  │    │
+│  │  │  diff    │  │              │  │           │  │             │  │    │
+│  │  │- fetch   │  │              │  │           │  │             │  │    │
+│  │  │  file    │  │              │  │           │  │             │  │    │
+│  │  │- fetch   │  │              │  │           │  │             │  │    │
+│  │  │  tree    │  │              │  │           │  │             │  │    │
+│  │  │- fetch   │  │              │  │           │  │             │  │    │
+│  │  │  commit  │  │              │  │           │  │             │  │    │
+│  │  └──────────┘  └──────────────┘  └──────────┘  └─────────────┘  │    │
+│  │  Underlying: auth.py (JWT generation) + client.py (HTTP client) │    │
+│  └──────────────────────────────────────────────────────────────────┘    │
+│  Future: GitLab, Bitbucket, etc. (same interface, new implementation)     │
 └──────────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
+                               │
+                               ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                    Runtime Models (Platform-Agnostic)                     │
 │                                                                          │
@@ -57,21 +201,58 @@ Factor is a **blast-radius and refactor-risk analysis engine** for code changes.
 │  │                    AnalysisRequest                                │    │
 │  │  - repository: RepositoryReference                                │    │
 │  │  - pull_request: PullRequestReference | None                       │    │
-│  │  - diff: DiffSnapshot                                             │    │
-│  │  - trigger: AnalysisTrigger (webhook, manual, scheduled)           │    │
+│  │  - diff: DiffSnapshot | None                                       │    │
+│  │  - trigger: AnalysisTrigger (pull_request, push, manual, scheduled) │   │
 │  │  - metadata: dict[str, Any]                                        │    │
 │  └──────────────────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
+                               │
+                               ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
-│                    Language Adapters (Static Analysis)                    │
+│                    Runtime Pipeline (Orchestration)                       │
+│                                                                          │
+│  ┌──────────────────────────────────────────────────────────────────┐    │
+│  │  Pipeline class                                                  │    │
+│  │  ┌────────────────────────────────────────────────────────────┐  │    │
+│  │  │  1. Ensure Repository Model (cache hit → load, miss →      │  │    │
+│  │  │     fetch snapshot via RepositoryProvider → detect language │  │    │
+│  │  │     → create adapter → compile)                             │  │    │
+│  │  │  2. Fetch Diff (from request or RepositoryProvider)          │  │    │
+│  │  │  3. Compile Change Model (ChangeCompiler)                    │  │    │
+│  │  │  4. Compile Behavior Model (BehaviorCompiler)                │  │    │
+│  │  │  5. Compile Operational Model (OperationalCompiler)          │  │    │
+│  │  │  6. Render (JSON or GitHub Markdown)                         │  │    │
+│  │  │  7. Publish (via OutputProvider)                             │  │    │
+│  │  └────────────────────────────────────────────────────────────┘  │    │
+│  │                                                                  │    │
+│  │  ┌────────────────────────────────────────────────────────────┐  │    │
+│  │  │  PipelineContext (dataclass)                                │  │    │
+│  │  │  Tracks: models, timing, errors, metadata                  │  │    │
+│  │  │  Methods: mark_*_compiled() for timing instrumentation      │  │    │
+│  │  └────────────────────────────────────────────────────────────┘  │    │
+│  └──────────────────────────────────────────────────────────────────┘    │
+│                                                                          │
+│  ┌──────────────────────────────────────────────────────────────────┐    │
+│  │  RepositoryStore (caching layer)                                 │    │
+│  │  - load/save compiled RepositoryModels by (repo, ref)            │    │
+│  │  - Avoids re-compiling unchanged repositories                    │    │
+│  └──────────────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    Repository Compilation                                 │
+│                    (Language Adapter Layer)                               │
 │                                                                          │
 │  ┌──────────────────────────────────────────────────────────────────┐    │
 │  │  BaseLanguageAdapter (abstract)                                  │    │
+│  │  ├── compile(repository_input) → RepositoryModel                 │    │
+│  │  ├── get_language() → str ("python", "java", etc.)               │    │
+│  │  └── get_compiler_passes() → list[str]                           │    │
+│  │                                                                  │    │
 │  │  ┌──────────────────────┐  ┌──────────────────────────────────┐  │    │
 │  │  │ PythonAdapter        │  │ JavaAdapter                      │  │    │
-│  │  │ - AST parsing        │  │ - Java parser                    │  │    │
+│  │  │ - AST parsing        │  │ - Java parser (Tree-sitter)      │  │    │
 │  │  │ - Framework detect   │  │ - Framework detect               │  │    │
 │  │  │   (FastAPI/Flask/    │  │   (Spring Boot/JPA)              │  │    │
 │  │  │    Django/SQLAlchemy)│  │                                  │  │    │
@@ -79,158 +260,142 @@ Factor is a **blast-radius and refactor-risk analysis engine** for code changes.
 │  │             │                                                     │    │
 │  │             ▼                                                     │    │
 │  │  ┌──────────────────────────────────────────────────────────┐    │    │
-│  │  │  ModelCompiler (11 passes)                               │    │    │
-│  │  │  Pass 1:  Symbol Collection                              │    │    │
-│  │  │  Pass 2:  Reference Resolution (imports)                 │    │    │
-│  │  │  Pass 3:  Call Graph                                     │    │    │
-│  │  │  Pass 4:  Endpoint Discovery                             │    │    │
-│  │  │  Pass 5:  Type Relationships                             │    │    │
-│  │  │  Pass 6:  Async Entry Points                             │    │    │
-│  │  │  Pass 7:  Persistence Models                             │    │    │
-│  │  │  Pass 8:  Repository Methods                             │    │    │
-│  │  │  Pass 9:  Event Constructs                               │    │    │
-│  │  │  Pass 10: Test Definitions                               │    │    │
-│  │  │  Pass 11: Configuration References                       │    │    │
-│  │  └──────────────────────┬───────────────────────────────────┘    │    │
-│  └─────────────────────────┼────────────────────────────────────────┘    │
-└────────────────────────────┼─────────────────────────────────────────────┘
-                              │
-                              ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│                    Compilation Pipeline (4 Phases)                        │
-│                                                                          │
-│  ┌──────────────────────────────────────────────────────────────────┐    │
-│  │  Phase 1: Repository Compilation                                 │    │
-│  │  ┌──────────────────────────────────────────────────────────┐    │    │
+│  │  │  _ModelCompiler (11 passes — internal to adapters)       │    │    │
 │  │  │  Input:  Semantic graph (file_path → extracted data)     │    │    │
-│  │  │  Output: RepositoryModel                                 │    │    │
-│  │  │  ─ symbols (functions, classes, methods, imports)        │    │    │
-│  │  │  ─ call_graph (caller → callee edges)                    │    │    │
-│  │  │  ─ reference_graph (import resolution edges)             │    │    │
-│  │  │  ─ type_relationship_graph (inheritance, composition)    │    │    │
-│  │  │  ─ entry_points (REST endpoints)                         │    │    │
-│  │  │  ─ async_entry_points (workers, queues)                  │    │    │
-│  │  │  ─ persistence_models (ORM models, tables)               │    │    │
-│  │  │  ─ repository_methods (data access methods)              │    │    │
-│  │  │  ─ event_constructs (publish/subscribe)                  │    │    │
-│  │  │  ─ test_definitions (test functions, classes)            │    │    │
-│  │  │  ─ configuration_references (env vars, config)           │    │    │
+│  │  │  Output: RepositoryModel (language-agnostic)             │    │    │
+│  │  │                                                          │    │    │
+│  │  │  Pass  1: Symbol Collection (functions, classes, methods)│    │    │
+│  │  │  Pass  2: Reference Resolution (import → symbol links)   │    │    │
+│  │  │  Pass  3: Call Graph (caller → callee edges)              │    │    │
+│  │  │  Pass  4: Endpoint Discovery (REST routes)               │    │    │
+│  │  │  Pass  5: Type Relationships (inheritance, composition)  │    │    │
+│  │  │  Pass  6: Async Entry Points (workers, queues)           │    │    │
+│  │  │  Pass  7: Persistence Models (ORM models, tables)        │    │    │
+│  │  │  Pass  8: Repository Methods (data access methods)       │    │    │
+│  │  │  Pass  9: Event Constructs (publish/subscribe)           │    │    │
+│  │  │  Pass 10: Test Definitions (test functions, classes)     │    │    │
+│  │  │  Pass 11: Configuration References (env vars, config)    │    │    │
 │  │  └──────────────────────────────────────────────────────────┘    │    │
-│  └──────────────────────────────────────────────────────────────────┘    │
-│                             │                                            │
-│                             ▼                                            │
-│  ┌──────────────────────────────────────────────────────────────────┐    │
-│  │  Phase 2: Change Compilation                                    │    │
-│  │  ┌──────────────────────────────────────────────────────────┐    │    │
-│  │  │  Input:  diff_data + old RepositoryModel + new            │    │    │
-│  │  │          RepositoryModel                                  │    │    │
-│  │  │  Output: ChangeModel                                      │    │    │
-│  │  │  ─ added_symbols, removed_symbols                         │    │    │
-│  │  │  ─ modified_symbols (with classified changes)             │    │    │
-│  │  │  ─ changed_imports                                        │    │    │
-│  │  │  ─ changed_endpoints                                      │    │    │
-│  │  │  Passes:                                                  │    │    │
-│  │  │    1. ChangedSymbolsPass                                  │    │    │
-│  │  │    2. ChangeClassificationPass                            │    │    │
-│  │  └──────────────────────────────────────────────────────────┘    │    │
-│  └──────────────────────────────────────────────────────────────────┘    │
-│                             │                                            │
-│                             ▼                                            │
-│  ┌──────────────────────────────────────────────────────────────────┐    │
-│  │  Phase 3: Behavior Compilation                                  │    │
-│  │  ┌──────────────────────────────────────────────────────────┐    │    │
-│  │  │  Input:  ChangeModel + RepositoryModel                    │    │    │
-│  │  │  Output: BehaviorModel                                    │    │    │
-│  │  │  ─ behaviors (affected behaviors with confidence)         │    │    │
-│  │  │  ─ execution_graphs (control flow paths)                  │    │    │
-│  │  │  Passes:                                                  │    │    │
-│  │  │    1. BehaviorDiscoveryPass                               │    │    │
-│  │  │    2. BehaviorGraphPass                                   │    │    │
-│  │  └──────────────────────────────────────────────────────────┘    │    │
-│  └──────────────────────────────────────────────────────────────────┘    │
-│                             │                                            │
-│                             ▼                                            │
-│  ┌──────────────────────────────────────────────────────────────────┐    │
-│  │  Phase 4/5: Operational Compilation                             │    │
-│  │  ┌──────────────────────────────────────────────────────────┐    │    │
-│  │  │  Input:  RepositoryModel + ChangeModel + BehaviorModel    │    │    │
-│  │  │  Output: OperationalChangeModel                           │    │    │
-│  │  │  ─ repository (Phase 1)                                   │    │    │
-│  │  │  ─ change (Phase 2)                                       │    │    │
-│  │  │  ─ behavior (Phase 3)                                     │    │    │
-│  │  │  ─ dependency (Phase 5)                                   │    │    │
-│  │  │  ─ data (Phase 5)                                         │    │    │
-│  │  │  ─ event (Phase 5)                                        │    │    │
-│  │  │  ─ api (Phase 5)                                          │    │    │
-│  │  │  ─ validation (Phase 5)                                   │    │    │
-│  │  │  ─ metrics (Phase 5)                                      │    │    │
-│  │  │  Passes:                                                  │    │    │
-│  │  │  Phase 4:                                                 │    │    │
-│  │  │    1. ModelCompositionPass                                │    │    │
-│  │  │    2. ConsistencyValidationPass                           │    │    │
-│  │  │  Phase 5:                                                 │    │    │
-│  │  │    3. DependencyAnalysisPass                              │    │    │
-│  │  │    4. DataAnalysisPass                                    │    │    │
-│  │  │    5. EventAnalysisPass                                   │    │    │
-│  │  │    6. APIAnalysisPass                                     │    │    │
-│  │  │    7. ValidationAnalysisPass                              │    │    │
-│  │  │    8. MetricsPass                                         │    │    │
-│  │  └──────────────────────────────────────────────────────────┘    │    │
-│  └──────────────────────────────────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│                    Runtime Pipeline                                     │
-│  ┌──────────────────────────────────────────────────────────────────┐    │
-│  │  Pipeline (orchestration)                                       │    │
-│  │  1. Receive AnalysisRequest from EventProvider                   │    │
-│  │  2. Use RepositoryProvider to fetch repository snapshot          │    │
-│  │  3. Run compilation pipeline (Phases 1-5)                        │    │
-│  │  4. Use Renderer to format OperationalChangeModel                │    │
-│  │  5. Use OutputProvider to publish result                         │    │
-│  └──────────────────────────────────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│                    Integrations (Platform Implementations)               │
-│                                                                          │
-│  ┌──────────────────────────────────────────────────────────────────┐    │
-│  │  GitHub Integration                                             │    │
-│  │  ┌────────────────┐  ┌────────────────┐  ┌──────────────────┐  │    │
-│  │  │GitHubRepository│  │GitHubWebhook   │  │ GitHubComment    │  │    │
-│  │  │Provider        │  │Provider        │  │ Provider         │  │    │
-│  │  │- fetch_repo    │  │- verify        │  │- publish         │  │    │
-│  │  │- fetch_diff    │  │- parse         │  │- update          │  │    │
-│  │  │- fetch_file    │  │                │  │- delete          │  │    │
-│  │  │- fetch_tree    │  │                │  │                  │  │    │
-│  │  │- fetch_commit  │  │                │  │                  │  │    │
-│  │  └────────────────┘  └────────────────┘  └──────────────────┘  │    │
 │  │                                                                  │    │
-│  │  ┌──────────────────────────────────────────────────────────┐  │    │
-│  │  │  GitHubIntegration (façade)                               │  │    │
-│  │  │  - Composes all providers                                 │  │    │
-│  │  │  - register() method for IntegrationRegistry              │  │    │
-│  │  └──────────────────────────────────────────────────────────┘  │    │
-│  └──────────────────────────────────────────────────────────────────┘    │
-│                                                                          │
-│  ┌──────────────────────────────────────────────────────────────────┐    │
-│  │  GitLab Integration (future)                                    │    │
-│  │  ┌────────────────┐  ┌────────────────┐  ┌──────────────────┐  │    │
-│  │  │GitLabRepository│  │GitLabWebhook   │  │ GitLabComment    │  │    │
-│  │  │Provider        │  │Provider        │  │ Provider         │  │    │
-│  │  └────────────────┘  └────────────────┘  └──────────────────┘  │    │
+│  │  Language-specific extractors per language produce the           │    │
+│  │  semantic graph consumed by _ModelCompiler:                       │    │
+│  │  - symbols/, calls/, imports/, types/, entrypoints/              │    │
+│  │  - persistence/, events/, configuration/, tests/                 │    │
 │  └──────────────────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    Change Compilation                                      │
+│                                                                          │
+│  ┌──────────────────────────────────────────────────────────────────┐    │
+│  │  ChangeCompiler                                                  │    │
+│  │  Input:  diff_data + old RepositoryModel + new RepositoryModel   │    │
+│  │  Output: ChangeModel (frozen dataclass)                          │    │
+│  │  ┌──────────────────────────────────────────────────────────┐    │    │
+│  │  │  Pass 1: ChangedSymbolsPass                               │    │    │
+│  │  │  - Computes O(1) set difference: added ∩ removed ∩        │    │    │
+│  │  │    modified symbols between old and new RepositoryModels   │    │    │
+│  │  │  - Tracks changed imports and endpoints                    │    │    │
+│  │  │                                                              │    │    │
+│  │  │  Pass 2: ChangeClassificationPass                          │    │    │
+│  │  │  - Classifies each changed symbol into change types:        │    │    │
+│  │  │    FunctionBodyChange, SignatureChange, VisibilityChange,   │    │    │
+│  │  │    DecoratorChange, SuperclassChange, InterfaceChange,      │    │    │
+│  │  │    EndpointAnnotationChange                                 │    │    │
+│  │  └──────────────────────────────────────────────────────────┘    │    │
+│  └──────────────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    Behavior Compilation                                    │
+│                                                                          │
+│  ┌──────────────────────────────────────────────────────────────────┐    │
+│  │  BehaviorCompiler                                                │    │
+│  │  Input:  ChangeModel + RepositoryModel                           │    │
+│  │  Output: BehaviorModel (frozen dataclass)                        │    │
+│  │  ┌──────────────────────────────────────────────────────────┐    │    │
+│  │  │  Pass 1: BehaviorDiscoveryPass                           │    │    │
+│  │  │  - Traces call graph from changed symbols outward         │    │    │
+│  │  │  - Identifies affected behaviors (endpoints, workers,    │    │    │
+│  │  │    scheduled tasks, event handlers)                      │    │    │
+│  │  │  - Assigns confidence scores based on distance            │    │    │
+│  │  │                                                          │    │    │
+│  │  │  Pass 2: BehaviorGraphPass                               │    │    │
+│  │  │  - Builds execution_graphs (control flow paths) for       │    │    │
+│  │  │    each affected behavior                                 │    │    │
+│  │  │  - Traces the complete call path from entry point         │    │    │
+│  │  │    through affected symbols                               │    │    │
+│  │  └──────────────────────────────────────────────────────────┘    │    │
+│  └──────────────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    Operational Compilation                                 │
+│                                                                          │
+│  ┌──────────────────────────────────────────────────────────────────┐    │
+│  │  OperationalCompiler (8 passes)                                  │    │
+│  │  Input:  RepositoryModel + ChangeModel + BehaviorModel           │    │
+│  │  Output: OperationalChangeModel                                  │    │
+│  │                                                                  │    │
+│  │  Composition group                                               │    │
+│  │  ┌──────────────────────────────────────────────────────────┐    │    │
+│  │  │  Pass 1: ModelCompositionPass                             │    │    │
+│  │  │  - Composes all 3 input models into a single unified model │    │    │
+│  │  │  - Cross-references symbols across models                  │    │    │
+│  │  │                                                            │    │    │
+│  │  │  Pass 2: ConsistencyValidationPass                         │    │    │
+│  │  │  - Validates internal consistency of composed model        │    │    │
+│  │  │  - Detects orphaned references, missing imports            │    │    │
+│  │  │  - May raise ValueError if validation fails                │    │    │
+│  │  └──────────────────────────────────────────────────────────┘    │    │
+│  │                                                                  │    │
+│  │  Enrichment group (all optional, graceful degrade)               │    │
+│  │  ┌──────────────────────────────────────────────────────────┐    │    │
+│  │  │  Pass 3: DependencyCompilationPass                        │    │    │
+│  │  │  - Maps changed symbols to downstream dependencies        │    │    │
+│  │  │                                                            │    │    │
+│  │  │  Pass 4: DataCompilationPass                              │    │    │
+│  │  │  - Identifies data model changes (schema migrations,      │    │    │
+│  │  │    column changes, relationship changes)                  │    │    │
+│  │  │                                                            │    │    │
+│  │  │  Pass 5: EventCompilationPass                             │    │    │
+│  │  │  - Detects changes to event publish/subscribe patterns    │    │    │
+│  │  │                                                            │    │    │
+│  │  │  Pass 6: APICompilationPass                               │    │    │
+│  │  │  - Analyzes API contract changes (routes, methods,        │    │    │
+│  │  │    request/response shapes)                               │    │    │
+│  │  │                                                            │    │    │
+│  │  │  Pass 7: ValidationCompilationPass                        │    │    │
+│  │  │  - Identifies changes to validation logic                 │    │    │
+│  │  │                                                            │    │    │
+│  │  │  Pass 8: MetricsCompilationPass                           │    │    │
+│  │  │  - Computes discovery metrics (blast radius,              │    │    │
+│  │  │    confidence scores, risk indicators)                    │    │    │
+│  │  └──────────────────────────────────────────────────────────┘    │    │
+│  └──────────────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    Rendering & Publishing                                │
+│                                                                          │
+│  ┌──────────────┐   ┌──────────────────┐   ┌───────────────────────┐    │
+│  │JSONRenderer  │   │ GitHubRenderer   │   │ OutputProvider        │    │
+│  │(pure func)   │   │ (pure function)  │   │ (publish via comment, │    │
+│  │→ dict output │   │ → Markdown str   │   │  update, delete)      │    │
+│  └──────────────┘   └──────────────────┘   └───────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                    Observability (Sentry)                                 │
 │  ┌──────────────────────────────────────────────────────────────────┐    │
 │  │  instrumentation/sentry/                                         │    │
 │  │  - Sentry integration for error tracking                         │    │
-│  │  - Per-request context (repo, PR, run ID)                        │    │
+│  │  - Per-request context (repo, PR, run ID) via contexts.py        │    │
 │  └──────────────────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
@@ -239,423 +404,259 @@ Factor is a **blast-radius and refactor-risk analysis engine** for code changes.
 
 ## Compilation Pipeline Overview
 
-The system uses a **4-phase compilation pipeline** where each phase produces a deterministic model consumed by the next:
+The system uses a **compilation pipeline** where each stage produces a deterministic, immutable model consumed by the next:
 
-| Phase | Name | Input | Output | Compiler |
+| Stage | Name | Input | Output | Compiler |
 |-------|------|-------|--------|----------|
-| 1 | Repository | Semantic graph | `RepositoryModel` | `ModelCompiler` |
-| 2 | Change | Diff + old/new RepositoryModels | `ChangeModel` | `ChangeCompiler` |
-| 3 | Behavior | ChangeModel + RepositoryModel | `BehaviorModel` | `BehaviorCompiler` |
-| 4/5 | Operational | RepositoryModel + ChangeModel + BehaviorModel | `OperationalChangeModel` | `OperationalCompiler` |
+| 1 | Repository | Source code files | `RepositoryModel` | Language Adapter (`_ModelCompiler` with 11 passes) |
+| 2 | Change | Diff + old/new RepositoryModels | `ChangeModel` | `ChangeCompiler` (2 passes) |
+| 3 | Behavior | ChangeModel + RepositoryModel | `BehaviorModel` | `BehaviorCompiler` (2 passes) |
+| 4 | Operational | RepositoryModel + ChangeModel + BehaviorModel | `OperationalChangeModel` | `OperationalCompiler` (8 passes) |
 
-Each phase is implemented as a **compiler** that orchestrates a sequence of **passes**. Passes are executed in order, with each pass transforming a shared **context** object that accumulates state.
+### Data Flow Through the Pipeline
 
----
-
-## Phase 1: Repository Compilation
-
-**Location:** `language_adapters/base/compiler.py`
-**Compiler:** `ModelCompiler`
-
-Transforms a language-agnostic **semantic graph** (produced by language-specific extractors) into a complete `RepositoryModel`.
-
-### Input
-A `dict[file_path, file_data]` where each `file_data` contains extracted semantic elements:
-- `functions`, `classes`, `imports`
-- `function_calls`, `rest_endpoints`
-- `type_relationships`, `async_entry_points`
-- `persistence_models`, `repository_methods`
-- `event_constructs`, `test_definitions`
-- `configuration_references`
-
-### Output: `RepositoryModel`
-A frozen dataclass containing:
-- `symbols: frozenset[Symbol]` — All symbols (functions, classes, methods, imports)
-- `call_graph: CallGraph` — Caller → callee edges
-- `reference_graph: ReferenceGraph` — Import resolution edges
-- `type_relationship_graph: TypeRelationshipGraph` — Inheritance, composition edges
-- `entry_points: tuple[EntryPoint]` — REST endpoints
-- `async_entry_points: tuple[AsyncEntryPoint]` — Workers, queue consumers
-- `persistence_models: tuple[PersistenceModel]` — ORM models, tables
-- `repository_methods: tuple[RepositoryMethod]` — Data access methods
-- `event_constructs: tuple[EventConstruct]` — Publish/subscribe constructs
-- `test_definitions: tuple[TestDefinition]` — Test functions and classes
-- `configuration_references: tuple[ConfigurationReference]` — Config key references
-
-### 11 Compiler Passes
-1. **Symbol Collection** — Collects all symbols (functions, classes, methods, imports) from file data
-2. **Reference Resolution** — Resolves import statements to their target symbols
-3. **Call Graph** — Builds caller → callee edges from function call data
-4. **Endpoint Discovery** — Creates EntryPoint objects from REST endpoint data
-5. **Type Relationships** — Builds inheritance and composition edges
-6. **Async Entry Points** — Processes worker/queue entry points
-7. **Persistence Models** — Processes ORM model definitions
-8. **Repository Methods** — Processes data access methods
-9. **Event Constructs** — Processes publish/subscribe constructs
-10. **Test Definitions** — Processes test functions and classes
-11. **Configuration References** — Processes config key references
-
----
-
-## Phase 2: Change Compilation
-
-**Location:** `change/compiler/compiler.py`
-**Compiler:** `ChangeCompiler`
-
-Compares old and new `RepositoryModel` snapshots against a git diff to produce a `ChangeModel` describing exactly what changed.
-
-### Input
-- `diff_data: dict[str, Any]` — Git diff data (file changes, hunks)
-- `old_repository_model: RepositoryModel` — Before the change
-- `new_repository_model: RepositoryModel` — After the change
-
-### Output: `ChangeModel`
-A frozen dataclass containing:
-- `added_symbols: tuple[Symbol]` — Newly added symbols
-- `removed_symbols: tuple[Symbol]` — Deleted symbols
-- `modified_symbols: tuple[ModifiedSymbol]` — Changed symbols with classified changes
-- `changed_imports: tuple[ImportChange]` — Import statement changes
-- `changed_endpoints: tuple[EndpointChange]` — Endpoint route/method changes
-
-### Change Types (classified per symbol)
-- `FunctionBodyChange` — Function implementation changed
-- `SignatureChange` — Function signature changed
-- `VisibilityChange` — Public/private changed
-- `DecoratorChange` — Decorators added/removed
-- `SuperclassChange` — Class inheritance changed
-- `InterfaceChange` — Interface implementation changed
-- `EndpointAnnotationChange` — Route/method annotation changed
-
-### Passes
-1. **ChangedSymbolsPass** — Identifies added, removed, and modified symbols by comparing old/new models
-2. **ChangeClassificationPass** — Classifies the type of change for each modified symbol
+```
+                  ┌──────────────────┐
+                  │  Git Repository  │
+                  └────────┬─────────┘
+                           │
+                 ┌─────────▼──────────┐
+                 │ Integration Layer  │
+                 │ (GitHubProvider)   │
+                 │ - fetch_repository │
+                 │ - fetch_diff       │
+                 └─────────┬──────────┘
+                           │
+              ┌────────────▼─────────────┐
+              │  Runtime Models           │
+              │  AnalysisRequest {        │
+              │    repository,            │
+              │    pull_request?,         │
+              │    diff?                  │
+              │  }                        │
+              └────────────┬──────────────┘
+                           │
+              ┌────────────▼──────────────┐
+              │  Pipeline (orchestrator)  │
+              │  PipelineContext (state)  │
+              └────────────┬──────────────┘
+                           │
+              ┌────────────▼──────────────┐
+              │  Repository Compilation   │
+              │  detect_language → create_│
+              │  adapter → compile()       │
+              │  → RepositoryModel         │
+              └────────────┬──────────────┘
+                           │
+              ┌────────────▼──────────────┐
+              │  Change Compilation       │
+              │  ChangedSymbolsPass →     │
+              │  ChangeClassificationPass │
+              │  → ChangeModel            │
+              └────────────┬──────────────┘
+                           │
+              ┌────────────▼──────────────┐
+              │  Behavior Compilation     │
+              │  BehaviorDiscoveryPass →  │
+              │  BehaviorGraphPass        │
+              │  → BehaviorModel          │
+              └────────────┬──────────────┘
+                           │
+              ┌────────────▼──────────────┐
+              │  Operational Compilation  │
+              │  ModelComposition →       │
+              │  ConsistencyValidation →  │
+              │  Dependency → Data →      │
+              │  Event → API → Validation │
+              │  → Metrics                │
+              │  → OperationalChangeModel │
+              └────────────┬──────────────┘
+                           │
+              ┌────────────▼──────────────┐
+              │  Renderer + OutputProvider│
+              │  → JSON or GitHub Markdown│
+              │  → Publish to PR comment  │
+              └───────────────────────────┘
+```
 
 ---
 
-## Phase 3: Behavior Compilation
+## Data Model Summary
 
-**Location:** `behavior/compiler/compiler.py`
-**Compiler:** `BehaviorCompiler`
+### Runtime Models (`runtime/models/`)
 
-Transforms the `ChangeModel` and `RepositoryModel` into a `BehaviorModel` that describes what behaviors are affected by the change.
+| Model | Fields | Purpose |
+|-------|--------|---------|
+| `RepositoryReference` | provider, owner, repository, default_branch | Identifies a repository |
+| `PullRequestReference` | number, base_sha, head_sha, title | Identifies a PR |
+| `DiffSnapshot` | files (list of DiffFile) | Raw diff between two commits |
+| `DiffFile` | file_path, added_lines, removed_lines, hunks | Single file diff |
+| `DiffHunk` | source_start, source_length, target_start, target_length, lines | Hunk-level diff |
+| `RepositorySnapshot` | files (dict), commit_sha, default_branch | Full repository state |
+| `AnalysisRequest` | repository, pull_request?, diff?, trigger, metadata | Pipeline input |
 
-### Input
-- `change_model: ChangeModel` — From Phase 2
-- `repository_model: RepositoryModel` — From Phase 1
+### Language-Agnostic Models (`language_adapters/model/`)
 
-### Output: `BehaviorModel`
-A frozen dataclass containing:
-- `behaviors: tuple[Behavior]` — Affected behaviors with confidence scores
-- `execution_graphs: tuple[ExecutionGraph]` — Control flow paths through affected code
+| Model | Fields | Purpose |
+|-------|--------|---------|
+| `RepositoryModel` | symbols, call_graph, reference_graph, type_relationship_graph, entry_points, async_entry_points, persistence_models, repository_methods, event_constructs, test_definitions, configuration_references | Complete repository representation |
+| `Symbol` | id, name, kind, language, file, range, visibility, evidence, properties | A symbol (function, class, method, import) |
+| `CallGraph` | edges (list of CallEdge) | Caller → callee relationships |
+| `ReferenceGraph` | edges (list of ReferenceEdge) | Import resolution edges |
+| `TypeRelationshipGraph` | edges (list of TypeRelationshipEdge) | Inheritance, composition |
+| `EntryPoint` | kind, route, handler_id, evidence, metadata | REST endpoint |
+| `AsyncEntryPoint` | kind, handler_id, trigger, framework, evidence, metadata | Worker, queue, scheduled task |
+| `PersistenceModel` | symbol_id, name, kind, table_name, framework, fields, relationships | ORM model / table |
+| `RepositoryMethod` | symbol_id, name, kind, model_symbol_id, framework, query | Data access method |
+| `EventConstruct` | symbol_id, operation_kind, event_name, framework | Publish / subscribe |
+| `TestDefinition` | symbol_id, name, kind, framework, fixtures, assertions | Test function/class |
+| `ConfigurationReference` | symbol_id, config_key, kind, default_value | Environment variable / config |
 
-### Passes
-1. **BehaviorDiscoveryPass** — Discovers affected behaviors from changed symbols
-2. **BehaviorGraphPass** — Builds execution graphs showing how changes propagate
+### Change Models (`change/model/`)
 
----
+| Model | Fields | Purpose |
+|-------|--------|---------|
+| `ChangeModel` | added_symbols, removed_symbols, modified_symbols, changed_imports, changed_endpoints | Complete change representation |
+| `ModifiedSymbol` | symbol, changes (tuple of change types) | A symbol with classified changes |
+| Change Types | FunctionBodyChange, SignatureChange, VisibilityChange, DecoratorChange, SuperclassChange, InterfaceChange, EndpointAnnotationChange | Specific change classifications |
+| `ImportChange` | file, old_import, new_import, change_type | Import statement changes |
+| `EndpointChange` | symbol_id, old_endpoint, new_endpoint, old_method, new_method, change_type | API endpoint changes |
 
-## Phase 4/5: Operational Compilation
+### Behavior Models (`behavior/model/`)
 
-**Location:** `operational/compiler/compiler.py`
-**Compiler:** `OperationalCompiler`
+| Model | Fields | Purpose |
+|-------|--------|---------|
+| `BehaviorModel` | behaviors, execution_graphs | Affected behaviors and traces |
+| `Behavior` | id, type, affected_symbols, confidence_score, impact_path | An affected behavior |
+| `ExecutionGraph` | nodes, edges, entry_point, affected_symbols | Control flow path for a behavior |
 
-Composes all deterministic models into a single `OperationalChangeModel` and enriches it with operational analysis.
+### Operational Models (`operational/model/`)
 
-### Input
-- `repository_model: RepositoryModel` — From Phase 1
-- `change_model: ChangeModel` — From Phase 2
-- `behavior_model: BehaviorModel` — From Phase 3
-
-### Output: `OperationalChangeModel`
-A frozen dataclass containing:
-- `repository: RepositoryModel` — Phase 1 output
-- `change: ChangeModel` — Phase 2 output
-- `behavior: BehaviorModel` — Phase 3 output
-- `dependency: object | None` — Structural dependency analysis (Phase 5)
-- `data: object | None` — Persistent state impact (Phase 5)
-- `event: object | None` — Async interaction impact (Phase 5)
-- `api: object | None` — Externally visible interface changes (Phase 5)
-- `validation: object | None` — Test coverage evidence (Phase 5)
-- `metrics: object | None` — Discovery metrics (Phase 5)
-
-### Passes
-
-**Phase 4 — Composition:**
-1. **ModelCompositionPass** — Assembles the `OperationalChangeModel` from Phase 1-3 outputs
-2. **ConsistencyValidationPass** — Validates cross-model consistency (e.g., all referenced symbols exist)
-
-**Phase 5 — Operational Analysis:**
-3. **DependencyAnalysisPass** — Analyzes structural dependencies
-4. **DataAnalysisPass** — Analyzes persistent state impact
-5. **EventAnalysisPass** — Analyzes async interaction impact
-6. **APIAnalysisPass** — Analyzes externally visible interface changes
-7. **ValidationAnalysisPass** — Analyzes test coverage and evidence
-8. **MetricsPass** — Collects discovery metrics
+| Model | Fields | Purpose |
+|-------|--------|---------|
+| `OperationalChangeModel` | change, behavior, dependency, data, event, api, validation, metrics | Final enriched model with all analysis dimensions |
 
 ---
 
-## Runtime Layer
+## Key Architectural Patterns
 
-**Location:** `runtime/`
+### 1. Provider Pattern
+All external service interactions are abstracted behind 4 provider interfaces:
+- **`RepositoryProvider`** — Fetches repository data (snapshot, diff, files, tree, commits)
+- **`EventProvider`** — Verifies webhook signatures and parses platform events into `AnalysisRequest`
+- **`InstallationProvider`** — Authenticates platform installations (e.g., GitHub App JWT tokens)
+- **`OutputProvider`** — Publishes, updates, and deletes analysis results
 
-The runtime layer orchestrates the compilation pipeline and manages integration with external platforms. It provides a platform-agnostic interface between the compiler and external services.
+Each interface is defined as an `ABC` in `integrations/base/`. Platform implementations (GitHub, future GitLab, etc.) implement these interfaces. The pipeline never depends on platform-specific code.
 
-### Runtime Models
-
-**Location:** `runtime/models/`
-
-Platform-agnostic data models that abstract platform-specific details:
-
-- **`RepositoryReference`** — Identifies a repository (provider, owner, name, default_branch)
-- **`PullRequestReference`** — Identifies a PR (number, base_sha, head_sha, title)
-- **`DiffSnapshot`** — Platform-agnostic diff representation (files, hunks, additions, deletions)
-- **`AnalysisRequest`** — Encapsulates a complete analysis request (repository, PR, diff, trigger, metadata)
-- **`AnalysisTrigger`** — Enum: webhook, manual, scheduled
-
-These models ensure the compiler never sees platform-specific payloads (GitHub webhooks, GitLab notes, etc.).
-
-### Provider Interfaces
-
-**Location:** `integrations/base/`
-
-Abstract base classes that define contracts for platform integrations:
-
-- **`RepositoryProvider`** — Fetch repository data (snapshot, diff, files, tree, commits)
-- **`EventProvider`** — Verify and parse webhook events into AnalysisRequest objects
-- **`InstallationProvider`** — Manage platform app installations and authentication
-- **`OutputProvider`** — Publish, update, and delete analysis results
-
-All provider methods are async for scalability. The compiler depends only on these interfaces, not on any specific platform implementation.
-
-### Integration Registry
-
-**Location:** `integrations/base/registry.py`
-
-Central registry for managing multiple platform providers:
-
+### 2. Integration Registry
+The `IntegrationRegistry` (singleton in `integrations/base/registry.py`) manages all providers by platform name:
 ```python
-class IntegrationRegistry:
-    def register(self, integration: BaseIntegration) -> None
-    def get_repository_provider(self, provider_type: str) -> RepositoryProvider
-    def get_event_provider(self, provider_type: str) -> EventProvider
-    def get_installation_provider(self, provider_type: str) -> InstallationProvider
-    def get_output_provider(self, provider_type: str) -> OutputProvider
+registry.register("github", repository_provider=..., event_provider=..., ...)
+provider = registry.get_repository_provider("github")
+```
+This enables the pipeline and API layer to work with any platform without knowing which one is active.
+
+### 3. GitHub Integration Façade
+`GitHubIntegration` (`integrations/github/provider.py`) composes 5 internal components:
+- `GitHubAppAuth` — JWT token generation for GitHub App authentication
+- `GitHubClient` — HTTP client wrapper (GET/POST/DELETE to GitHub API)
+- `GitHubRepositoryProvider` — Implements `RepositoryProvider` for GitHub
+- `GitHubWebhookProvider` — Implements `EventProvider` for GitHub webhooks
+- `GitHubCommentProvider` — Implements `OutputProvider` for PR comments
+
+The façade provides a single `register(registry)` entry point.
+
+### 4. Compiler Isolation
+Compiler modules (`behavior/`, `change/`, `operational/`, `language_adapters/`) have zero imports from integration or API layers. They depend only on language-agnostic models and produce deterministic, immutable outputs.
+
+### 5. Pass-Based Architecture
+Each compiler executes a sequence of passes. Each pass:
+- Has a single responsibility
+- Transforms a shared pass context
+- Is independently testable
+- Produces a deterministic output
+
+Passes communicate through a pass context object (e.g., `ChangePassContext`, `BehaviorPassContext`, `OperationalPassContext`) that accumulates data as it flows through the pipeline.
+
+### 6. Language-Agnostic Core
+- Language adapters (`language_adapters/python/`, `language_adapters/java/`) produce a common semantic graph format
+- The `_ModelCompiler` (internal to adapters) transforms this into a language-agnostic `RepositoryModel`
+- All subsequent stages operate on `RepositoryModel` — they never see parser-specific ASTs
+- New languages can be added by implementing `BaseLanguageAdapter` + language-specific extractors
+
+### 7. Deterministic Models
+All models (`RepositoryModel`, `ChangeModel`, `BehaviorModel`, `OperationalChangeModel`) are implemented as frozen dataclasses (or use frozensets/tuples for immutability). This ensures:
+- No side effects between stages
+- Safe caching
+- Reproducible analysis
+
+### 8. Graceful Degradation
+Optional enrichment models (dependency, data, event, api, validation, metrics) are optional. If any analysis pass fails, the system degrades gracefully and proceeds with available data.
+
+### 9. Pure Renderers
+Renderers (`json_renderer.py`, `github_renderer.py`) are pure functions:
+- Input: `OperationalChangeModel`
+- Output: Dict or Markdown string
+- No side effects, no API calls
+- The `OutputProvider` handles all external communication
+
+### 10. Pipeline Context
+The `PipelineContext` dataclass (`runtime/pipeline/context.py`) tracks all intermediate state through the pipeline execution:
+- Input: repository, base_sha, head_sha, diff_data
+- Models: repository_model, change_model, behavior_model, ocm
+- Metadata: language, adapter, request_id, installation_id
+- Timing: auto-recorded timestamps for each stage
+- Errors: captured without crashing the pipeline
+
+---
+
+## Entry Points
+
+### Webhook (GitHub PR Events)
+```
+POST /github
+├── Verify webhook signature via EventProvider.verify()
+├── Parse payload into AnalysisRequest via EventProvider.parse()
+├── Filter for allowed PR actions (opened, reopened, synchronize, ready_for_review)
+├── Schedule background task → _process_pr_analysis()
+│   ├── Run pipeline (all stages)
+│   ├── Render result
+│   └── Publish comment via OutputProvider.publish()
+└── Return 202 Accepted
 ```
 
-The registry enables multiple platform integrations to coexist and be selected at runtime based on the request context.
-
-### Runtime Pipeline
-
-**Location:** `runtime/pipeline/pipeline.py`
-
-Orchestrates the analysis workflow:
-
-1. Receives `AnalysisRequest` from `EventProvider`
-2. Uses `RepositoryProvider` to fetch repository snapshot and diff
-3. Runs compilation pipeline (Phases 1-5)
-4. Uses `Renderer` to format `OperationalChangeModel`
-5. Uses `OutputProvider` to publish result
-
-The pipeline depends only on provider interfaces, making it platform-agnostic.
-
----
-
-## Integrations
-
-**Location:** `integrations/`
-
-Platform-specific implementations of provider interfaces.
-
-### GitHub Integration
-
-**Location:** `integrations/github/`
-
-| Component | Purpose |
-|-----------|---------|
-| `GitHubRepositoryProvider` | Implements `RepositoryProvider` — fetches repos, diffs, files, trees, commits |
-| `GitHubWebhookProvider` | Implements `EventProvider` — verifies webhooks, parses PR/push/installation events |
-| `GitHubCommentProvider` | Implements `OutputProvider` — publishes/updates/deletes PR comments |
-| `GitHubAppAuth` | JWT generation, installation token caching, authentication |
-| `GitHubClient` | Thin HTTP wrapper with retry logic |
-| `GitHubIntegration` | Façade composing all providers, provides `register()` method |
-
-### GitLab Integration (Future)
-
-**Location:** `integrations/gitlab/` (stub for future implementation)
-
-Follows the same provider pattern as GitHub integration.
-
----
-
-## Renderers
-
-**Location:** `runtime/renderers/`
-
-Pure functions that transform `OperationalChangeModel` into platform-agnostic output formats:
-
-- **`json_renderer.py`** — Renders to JSON format
-- **`github_renderer.py`** — Renders to GitHub Markdown comment format
-
-Renderers are pure transformations with no side effects. They do not make API calls or depend on platform-specific logic.
-
----
-
-## Language Adapters
-
-**Location:** `language_adapters/`
-
-Per-language static analysis that produces a language-agnostic semantic graph consumed by the `ModelCompiler`.
-
-### Architecture
-
+### Manual Analysis API
 ```
-BaseLanguageAdapter (abstract)
-├── PythonAdapter
-│   ├── Extractors:
-│   │   ├── calls/        — Function call extraction
-│   │   ├── configuration/ — Config reference extraction
-│   │   ├── entrypoints/  — REST endpoint extraction
-│   │   ├── events/       — Event construct extraction
-│   │   ├── imports/      — Import statement extraction
-│   │   ├── persistence/  — ORM model extraction
-│   │   ├── symbols/      — Symbol extraction
-│   │   ├── tests/        — Test definition extraction
-│   │   └── types/        — Type relationship extraction
-│   └── parser/           — Python AST parser
-│
-└── JavaAdapter
-    ├── Extractors:
-    │   ├── calls/        — Method call extraction
-    │   ├── configuration/ — Config reference extraction
-    │   ├── entrypoints/  — REST endpoint extraction
-    │   ├── events/       — Event construct extraction
-    │   ├── imports/      — Import statement extraction
-    │   ├── persistence/  — ORM model extraction
-    │   ├── symbols/      — Symbol extraction
-    │   ├── tests/        — Test definition extraction
-    │   └── types/        — Type relationship extraction
-    └── parser/           — Java parser
-```
-
-### Key Design
-- **Language-specific** extractors parse source code into structured data
-- **Language-agnostic** `ModelCompiler` transforms that data into a `RepositoryModel`
-- Each extractor is independent and produces a specific slice of the semantic graph
-- Framework detection (FastAPI, Flask, Django, SQLAlchemy for Python; Spring Boot, JPA for Java) is handled within extractors
-
-### Model Types
-- `Symbol` — Functions, classes, methods, imports with id, name, kind, language, file, range, visibility, properties
-- `CallEdge` — Caller → callee relationship
-- `ReferenceEdge` — Import resolution relationship
-- `TypeRelationshipEdge` — Inheritance, composition, implementation
-- `EntryPoint` — REST endpoints (method + route + handler)
-- `AsyncEntryPoint` — Workers, queue consumers
-- `PersistenceModel` — ORM models with fields and relationships
-- `RepositoryMethod` — Data access methods
-- `EventConstruct` — Publish/subscribe operations
-- `TestDefinition` — Test functions/classes with fixtures and assertions
-- `ConfigurationReference` — Environment variable and config key references
-
----
-
-## Instrumentation
-
-**Location:** `instrumentation/sentry/`
-
-Sentry integration for error tracking and performance monitoring:
-- `sentry.py` — Sentry SDK initialization and configuration
-- `contexts.py` — Per-request context (repository, PR number, analysis run ID)
-
----
-
-## Error Models
-
-**Location:** `errors/`
-
-Hierarchical error types for different failure modes:
-
-- **`AuthenticationError`** — Base authentication failures
-- **`RepositoryError`** — Base repository errors
-  - `RepositoryNotFound` — Repository does not exist
-  - `RepositoryAccessDenied` — Insufficient permissions
-- **`WebhookError`** — Base webhook errors
-  - `WebhookVerificationError` — Invalid webhook signature
-- **`RendererError`** — Base rendering errors
-  - `RenderingError` — Failed to render output
-- **`PipelineError`** — Base pipeline errors
-  - `PipelineExecutionError` — Pipeline execution failed
-
-All errors are immutable dataclasses with structured error codes and messages.
-
----
-
-## Data Flow
-
-```
-Platform Event (GitHub webhook, GitLab webhook, manual trigger)
-    │
-    ▼
-EventProvider.verify() + EventProvider.parse()
-    │ - Verify webhook signature
-    │ - Parse platform-specific payload
-    │ - Convert to AnalysisRequest
-    ▼
-AnalysisRequest (platform-agnostic)
-    │
-    ▼
-RepositoryProvider.fetch_repository() + fetch_diff()
-    │ - Fetch repository snapshot
-    │ - Fetch diff between commits
-    │ - Convert to platform-agnostic models
-    ▼
-RepositorySnapshot + DiffSnapshot
-    │
-    ▼
-Compilation Pipeline (Phases 1-5)
-    │ - Language Adapter: Parse source code
-    │ - ModelCompiler: Build RepositoryModel
-    │ - ChangeCompiler: Build ChangeModel
-    │ - BehaviorCompiler: Build BehaviorModel
-    │ - OperationalCompiler: Build OperationalChangeModel
-    ▼
-OperationalChangeModel
-    │
-    ├──► Renderer (pure function)
-    │    │ - Transform to output format (JSON, Markdown)
-    │    ▼
-    │   Rendered Output (string/dict)
-    │
-    └──► OutputProvider.publish()
-         │ - Post to platform (GitHub PR comment, GitLab note, etc.)
-         ▼
-        Published Result
+POST /v1/analyze
+├── Accept PR URL or structured data (repository + optional diff)
+├── If PR URL: fetch PR details via GitHub API
+├── Build AnalysisRequest
+├── Run pipeline (all stages)
+├── Render JSON result
+└── Return full analysis response
 ```
 
 ---
 
-## Key Design Decisions
+## Error Handling
 
-1. **Provider Pattern** — All external service interactions are abstracted behind provider interfaces (`RepositoryProvider`, `EventProvider`, `OutputProvider`, `InstallationProvider`). This enables multiple platform implementations (GitHub, GitLab, etc.) without changing the compiler or runtime pipeline.
+Errors are organized by domain in `errors/`:
 
-2. **Platform-Agnostic Models** — Runtime models (`RepositoryReference`, `PullRequestReference`, `DiffSnapshot`, `AnalysisRequest`) abstract platform-specific details. The compiler never sees platform-specific payloads.
+| Module | Errors |
+|--------|--------|
+| `authentication.py` | `AuthenticationError` |
+| `pipeline.py` | `PipelineError`, `PipelineExecutionError` |
+| `renderer.py` | `RendererError`, `RenderingError` |
+| `repository.py` | `RepositoryError`, `RepositoryNotFound`, `RepositoryAccessDenied` |
+| `webhook.py` | `WebhookError`, `WebhookVerificationError` |
 
-3. **Dependency Inversion** — The runtime pipeline depends on abstractions (provider interfaces) not concretions (GitHub, GitLab). This enables testing with mock providers and adding new platforms without modifying the pipeline.
-
-4. **Compiler Isolation** — Compiler modules (`behavior/`, `change/`, `operational/`, `language_adapters/`) have zero imports from integration or API layers. They depend only on language-agnostic models.
-
-5. **4-Phase Compilation Pipeline** — Analysis is organized as sequential compilation phases, each producing a deterministic, immutable model. This enables independent testing, caching, and debugging of each phase.
-
-6. **Pass-Based Architecture** — Each compiler executes a sequence of passes, where each pass has a single responsibility and transforms a shared context. Passes are composable and independently testable.
-
-7. **Language-Agnostic Core** — Language adapters produce a common semantic graph format. The `ModelCompiler` and all subsequent phases operate on language-agnostic models, enabling multi-language support.
-
-8. **Deterministic Models** — All models (`RepositoryModel`, `ChangeModel`, `BehaviorModel`, `OperationalChangeModel`) are frozen dataclasses, ensuring immutability and deterministic behavior.
-
-9. **Graceful Degradation** — Phase 5 extension models (`dependency`, `data`, `event`, `api`, `validation`, `metrics`) are optional. The system degrades gracefully if any analysis pass fails.
-
-10. **Independent Extractors** — Each language adapter has independent extractors for different semantic concerns (symbols, calls, endpoints, persistence, etc.). Extractors can be added or modified without affecting others.
-
-11. **Pure Renderers** — Renderers are pure functions from `OperationalChangeModel` to output formats. They have no side effects and make no API calls. The `OutputProvider` handles publishing.
+Runtime-specific errors in `runtime/errors.py`:
+- `RepositoryNotInstalled`, `RepositoryNotSupported`, `RepositoryCompilationFailed`
+- `DiffFetchFailed`, `InvalidDiff`
+- `LanguageDetectionFailed`, `LanguageNotSupported`
+- `CompilationTimeout`
+- `InvalidWebhook`, `MissingWebhookPayload`
 
 ---
 
@@ -664,12 +665,14 @@ OperationalChangeModel
 | Component | Technology |
 |-----------|-----------|
 | Language | Python 3.12+ |
+| Framework | FastAPI |
 | Data Models | Frozen dataclasses |
 | Testing | pytest |
-| Static Analysis | Python AST, Java parser |
+| Static Analysis | Python AST (built-in), Java parser (Tree-sitter based) |
 | VCS Integration | GitHub API (pluggable for GitLab, etc.) |
 | Observability | Sentry |
 | Package Management | uv + pyproject.toml |
+| Code Quality | mypy (strict), pytest |
 
 ---
 
@@ -678,23 +681,23 @@ OperationalChangeModel
 ```
 cystatic-core/
 │
-├── runtime/                      Runtime layer (platform-agnostic)
+├── runtime/                      Runtime layer (platform-agnostic orchestration)
 │   ├── models/                   Runtime data models
 │   │   ├── repository.py         RepositoryReference, RepositorySnapshot
 │   │   ├── pull_request.py       PullRequestReference
 │   │   ├── diff.py               DiffSnapshot, DiffFile, DiffHunk
 │   │   └── analysis.py           AnalysisRequest, AnalysisTrigger
 │   ├── pipeline/                 Runtime orchestration
-│   │   ├── pipeline.py           Pipeline (orchestrates compilation)
-│   │   └── context.py            Pipeline context
+│   │   ├── pipeline.py           Pipeline (orchestrates compilation stages)
+│   │   └── context.py            PipelineContext (runtime state tracking)
 │   ├── renderers/                Output formatters (pure functions)
 │   │   ├── json_renderer.py      JSON format renderer
 │   │   └── github_renderer.py    GitHub Markdown renderer
 │   ├── storage/                  Data persistence
-│   │   └── repository_store.py   Repository snapshot storage
+│   │   └── repository_store.py   Repository snapshot caching
 │   ├── language/                 Language detection
-│   │   └── detection.py          Language detection utilities
-│   └── errors.py                 Error imports
+│   │   └── detection.py          LanguageAdapterFactory, get_language_factory
+│   └── errors.py                 Runtime-specific error imports
 │
 ├── integrations/                 Platform integrations
 │   ├── base/                     Provider interfaces and registry
@@ -702,20 +705,20 @@ cystatic-core/
 │   │   ├── event_provider.py         EventProvider ABC
 │   │   ├── installation_provider.py  InstallationProvider ABC
 │   │   ├── output_provider.py        OutputProvider ABC
-│   │   └── registry.py               IntegrationRegistry
-│   ├── github/                   GitHub integration
-│   │   ├── provider.py           GitHubIntegration (façade)
-│   │   ├── repositories.py       GitHubRepositoryProvider
-│   │   ├── webhooks.py           GitHubWebhookProvider
-│   │   ├── comments.py           GitHubCommentProvider
-│   │   ├── auth.py               GitHubAppAuth
-│   │   └── client.py             GitHubClient (HTTP wrapper)
-│   └── gitlab/                   GitLab integration (future)
+│   │   └── registry.py               IntegrationRegistry + singleton
+│   └── github/                   GitHub integration
+│       ├── provider.py           GitHubIntegration (façade)
+│       ├── repositories.py       GitHubRepositoryProvider
+│       ├── webhooks.py           GitHubWebhookProvider
+│       ├── comments.py           GitHubCommentProvider
+│       ├── auth.py               GitHubAppAuth (JWT generation)
+│       ├── client.py             GitHubClient (HTTP wrapper)
+│       └── routes.py             FastAPI routes for webhook + /v1/analyze
 │
 ├── language_adapters/            Per-language static analysis
 │   ├── base/                     Base classes and shared compiler
 │   │   ├── adapter.py            BaseLanguageAdapter (abstract)
-│   │   ├── compiler.py           ModelCompiler (11 passes)
+│   │   ├── compiler.py           _ModelCompiler (11 passes, internal)
 │   │   ├── extractor.py          Base extractor interface
 │   │   ├── normalization.py      Data normalization utilities
 │   │   └── parser.py             Base parser interface
@@ -723,51 +726,52 @@ cystatic-core/
 │   │   ├── repository_model.py   RepositoryModel
 │   │   ├── symbol.py             Symbol, SymbolKind, SymbolVisibility
 │   │   ├── graphs.py             CallGraph, ReferenceGraph, TypeRelationshipGraph
-│   │   ├── configuration.py      ConfigurationReference
-│   │   ├── events.py             EventConstruct
-│   │   ├── persistence.py        PersistenceModel, RepositoryMethod
-│   │   └── tests.py              TestDefinition, TestFramework, TestFixture
+│   │   ├── configuration.py      ConfigurationReference, ConfigReferenceKind
+│   │   ├── events.py             EventConstruct, EventOperationKind
+│   │   ├── persistence.py        PersistenceModel, PersistenceModelKind, RepositoryMethod
+│   │   ├── tests.py              TestDefinition, TestFramework, TestFixture
+│   │   └── evidence.py           Evidence, FileLocation, ImportReference, CallReference
 │   ├── python/                   Python adapter
-│   │   ├── adapter.py            PythonAdapter
+│   │   ├── adapter.py            PythonLanguageAdapter
 │   │   ├── parser/               Python AST parser
-│   │   └── extractors/           Python-specific extractors (9)
-│   │       ├── calls/
-│   │       ├── configuration/
-│   │       ├── entrypoints/
-│   │       ├── events/
-│   │       ├── imports/
-│   │       ├── persistence/
-│   │       ├── symbols/
-│   │       ├── tests/
-│   │       └── types/
+│   │   └── extractors/           Python-specific extractors (9 categories)
+│   │       ├── calls/            Function call extraction
+│   │       ├── configuration/    Config/env var extraction
+│   │       ├── entrypoints/      REST endpoint extraction (FastAPI, Flask, Django)
+│   │       ├── events/           Event publish/subscribe extraction
+│   │       ├── imports/          Import statement extraction
+│   │       ├── persistence/      ORM model extraction (SQLAlchemy, Django)
+│   │       ├── symbols/          Symbol (function/class/method) extraction
+│   │       ├── tests/            Test definition extraction (pytest, unittest)
+│   │       └── types/            Type relationship extraction
 │   └── java/                     Java adapter
-│       ├── adapter.py            JavaAdapter
-│       ├── parser/               Java parser
-│       └── extractors/           Java-specific extractors (9)
+│       ├── adapter.py            JavaLanguageAdapter
+│       ├── parser/               Java parser (Tree-sitter based)
+│       └── extractors/           Java-specific extractors (9 categories)
 │           ├── calls/
 │           ├── configuration/
-│           ├── entrypoints/
+│           ├── entrypoints/      Spring Boot REST endpoints
 │           ├── events/
 │           ├── imports/
-│           ├── persistence/
+│           ├── persistence/      JPA entities
 │           ├── symbols/
-│           ├── tests/
+│           ├── tests/            JUnit tests
 │           └── types/
 │
-├── change/                       Phase 2: Change Compilation
+├── change/                       Change Compilation
 │   ├── compiler/
-│   │   ├── compiler.py           ChangeCompiler
+│   │   ├── compiler.py           ChangeCompiler (orchestrates 2 passes)
 │   │   └── passes/
 │   │       ├── base.py           ChangePassContext, ChangeCompilerPass
-│   │       ├── changed_symbols/    ChangedSymbolsPass
+│   │       ├── changed_symbols/    ChangedSymbolsPass (O(1) set diff)
 │   │       └── change_classification/ ChangeClassificationPass
 │   └── model/
-│       ├── change_model.py       ChangeModel
-│       └── changes.py            Change types (FunctionBodyChange, etc.)
+│       ├── change_model.py       ChangeModel (frozen dataclass)
+│       └── changes.py            Change types (FunctionBodyChange, SignatureChange, etc.)
 │
-├── behavior/                     Phase 3: Behavior Compilation
+├── behavior/                     Behavior Compilation
 │   ├── compiler/
-│   │   ├── compiler.py           BehaviorCompiler
+│   │   ├── compiler.py           BehaviorCompiler (orchestrates 2 passes)
 │   │   └── passes/
 │   │       ├── base.py           BehaviorPassContext, BehaviorCompilerPass
 │   │       ├── behavior_discovery/ BehaviorDiscoveryPass
@@ -777,86 +781,80 @@ cystatic-core/
 │       ├── behavior.py           Behavior
 │       └── execution_graph.py    ExecutionGraph
 │
-├── operational/                  Phase 4/5: Operational Compilation
+├── operational/                  Operational Compilation
 │   ├── compiler/
-│   │   ├── compiler.py           OperationalCompiler
+│   │   ├── compiler.py           OperationalCompiler (orchestrates 8 passes)
 │   │   └── passes/
 │   │       ├── base.py           OperationalPassContext, OperationalCompilerPass
 │   │       ├── model_composition/     ModelCompositionPass
 │   │       ├── consistency_validation/ ConsistencyValidationPass
-│   │       ├── dependency/            DependencyAnalysisPass
-│   │       ├── data/                  DataAnalysisPass
-│   │       ├── events/                EventAnalysisPass
-│   │       ├── api/                   APIAnalysisPass
-│   │       ├── validation/            ValidationAnalysisPass
-│   │       └── metrics/               MetricsPass
+│   │       ├── dependency/            DependencyCompilationPass
+│   │       ├── data/                  DataCompilationPass
+│   │       ├── events/                EventCompilationPass
+│   │       ├── api/                   APICompilationPass
+│   │       ├── validation/            ValidationCompilationPass
+│   │       └── metrics/               MetricsCompilationPass
 │   └── model/
 │       └── model.py              OperationalChangeModel
+│
+├── api/                          API layer (FastAPI)
+│   ├── app.py                    FastAPI application + routes
+│   ├── settings.py               API configuration (pydantic-settings)
+│   ├── routes/
+│   │   └── health.py             Health check endpoint
+│   └── schemas/
+│       └── github.py             GitHub request/response schemas
 │
 ├── errors/                       Error models
 │   ├── __init__.py               Error exports
 │   ├── authentication.py         AuthenticationError
-│   ├── repository.py             RepositoryError, RepositoryNotFound, RepositoryAccessDenied
-│   ├── webhook.py                WebhookError, WebhookVerificationError
+│   ├── pipeline.py               PipelineError, PipelineExecutionError
 │   ├── renderer.py               RendererError, RenderingError
-│   └── pipeline.py               PipelineError, PipelineExecutionError
+│   ├── repository.py             RepositoryError, RepositoryNotFound, RepositoryAccessDenied
+│   └── webhook.py                WebhookError, WebhookVerificationError
 │
 ├── instrumentation/              Observability
+│   ├── __init__.py
 │   └── sentry/
+│       ├── __init__.py
 │       ├── sentry.py             Sentry initialization
-│       └── contexts.py           Per-request context
-│
-├── api/                          API layer (orchestration only)
-│   ├── app.py                    FastAPI application
-│   ├── settings.py               API configuration
-│   └── routes/
-│       └── github.py             GitHub webhook endpoints
-│
-├── tests/                        Test suite
-│   ├── test_repository_compiler.py   Phase 1 tests
-│   ├── test_change_compiler.py       Phase 2 tests
-│   ├── test_behavior_compiler.py     Phase 3 tests
-│   └── test_operational_compiler.py  Phase 4/5 tests
+│       └── contexts.py           Per-request context (repo, PR, run ID)
 │
 ├── templates/                    PR comment templates
-│   └── github_comment.md         GitHub comment template
+│   └── github_comment.md         GitHub comment template (Jinja2/Markdown)
+│
+├── tests/                        Test suite
+│   ├── test_repository_compiler.py   Repository compilation tests
+│   ├── test_change_compiler.py       Change compilation tests
+│   ├── test_behavior_compiler.py     Behavior compilation tests
+│   └── test_operational_compiler.py  Operational compilation tests
 │
 ├── pyproject.toml                Project configuration
-├── pylock.toml                   Dependency lock
-├── requirements.txt              Requirements
 ├── uv.lock                       uv lock file
 ├── pytest.ini                    pytest configuration
-├── .clinerules                   Agent rules
-├── README.md                     Project overview
-└── MIGRATION_GUIDE.md            Migration guide for new architecture
+├── mypy.ini                      mypy configuration
+├── .clinerules                   Agent rules (engineering standards)
+├── .gitignore
+└── README.md                     Project overview
 ```
 
 ---
 
 ## Summary
 
-Factor uses a **4-phase compilation pipeline** where each phase produces a deterministic, immutable model:
+Factor uses a **compilation pipeline** where each stage produces a deterministic, immutable model:
 
-1. **Phase 1 (Repository)** — Language adapters parse source code and the `ModelCompiler` builds a `RepositoryModel` with symbols, call graphs, endpoints, persistence models, and more.
-2. **Phase 2 (Change)** — The `ChangeCompiler` compares old and new repository snapshots to produce a `ChangeModel` describing exactly what changed.
-3. **Phase 3 (Behavior)** — The `BehaviorCompiler` discovers affected behaviors and builds execution graphs.
-4. **Phase 4/5 (Operational)** — The `OperationalCompiler` composes all models and enriches them with dependency, data, event, API, validation, and metrics analysis.
+1. **Repository** — Language adapters parse source code through extractors, and the `_ModelCompiler` (11 passes) builds a language-agnostic `RepositoryModel` with symbols, call graphs, endpoints, persistence models, and more.
+2. **Change** — The `ChangeCompiler` (2 passes: changed symbols + classification) compares old and new repository snapshots to produce a `ChangeModel` describing exactly what changed.
+3. **Behavior** — The `BehaviorCompiler` (2 passes: discovery + graph) traces the impact of changes through the call graph to identify affected behaviors and execution paths.
+4. **Operational** — The `OperationalCompiler` (8 passes: composition, validation, dependency, data, event, API, validation, metrics) composes all models and enriches them with operational impact analysis.
 
-The architecture is designed for **modularity, determinism, and extensibility** — each phase and pass can be developed, tested, and debugged independently.
+The runtime pipeline (`Pipeline` class) orchestrates the entire flow:
+1. Receives `AnalysisRequest` from API or webhook
+2. Loads or compiles the `RepositoryModel` (with caching via `RepositoryStore`)
+3. Fetches the diff
+4. Runs all compilation stages
+5. Renders the result via a pure renderer
+6. Publishes via the configured `OutputProvider`
 
-### Runtime Platform Architecture
-
-The runtime layer provides a **platform-agnostic orchestration layer** that separates the deterministic compiler from external platform dependencies:
-
-- **Provider Pattern** — Four interfaces (`RepositoryProvider`, `EventProvider`, `InstallationProvider`, `OutputProvider`) abstract all external service interactions
-- **Runtime Models** — Platform-agnostic dataclasses (`RepositoryReference`, `PullRequestReference`, `DiffSnapshot`, `AnalysisRequest`) ensure the compiler never sees platform-specific payloads
-- **Integration Registry** — Central registry manages multiple platform providers, enabling GitHub, GitLab, or any other platform to be added without modifying the compiler
-- **Dependency Inversion** — The pipeline depends on abstractions (interfaces) not concretions (GitHub), enabling testing with mocks and easy addition of new platforms
-- **Pure Renderers** — Renderers remain pure functions from `OperationalChangeModel` to output formats with no side effects
-
-This architecture ensures:
-- ✅ Compiler has no dependency on GitHub/HTTP/FastAPI
-- ✅ All platform logic isolated under `integrations/`
-- ✅ Runtime communicates through interfaces and shared models
-- ✅ API layer performs only orchestration
-- ✅ Adding new integrations requires only implementing providers
+The architecture is designed for **modularity, determinism, and extensibility** — each stage, pass, and provider can be developed, tested, and debugged independently. The provider pattern ensures new platforms can be added without modifying the compilation pipeline.

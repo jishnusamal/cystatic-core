@@ -1,4 +1,4 @@
-"""Language adapters package - Phase 0: Source code to RepositoryModel."""
+"""Language adapters package - compiles source code to RepositoryModel."""
 
 from .base import BaseLanguageAdapter
 from .python import PythonLanguageAdapter

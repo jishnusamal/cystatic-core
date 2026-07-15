@@ -1,8 +1,8 @@
-"""Operational Change Model - the output of Phase 4/5 compilation.
+"""Operational Change Model - the final enriched model for change analysis.
 
 This is the canonical artifact that renderers and AI consume.
-It is a composition of all deterministic models produced by earlier phases.
-Phase 5 enriches the object with dependency, data, event, API, validation,
+It is a composition of all deterministic models produced by the compilation pipeline.
+The last stage enriches the object with dependency, data, event, API, validation,
 and metrics models.
 """
 
@@ -20,31 +20,31 @@ class OperationalChangeModel:
     """
     The complete operational change model produced by compilation.
 
-    This is a deterministic, immutable composition of all phase outputs.
+    This is a deterministic, immutable composition of all compiler outputs.
     It answers: "What is the full context of this change?"
 
-    Phase 4 fills the first three fields (repository, change, behavior).
-    Phase 5 enriches with dependency, data, event, api, validation,
+    The composition stage fills the first three fields (repository, change, behavior).
+    The enrichment stage adds dependency, data, event, api, validation,
     and metrics models.
 
     Attributes:
-        repository: Repository model from Phase 1 (what the repo contains).
-        change: Change model from Phase 2 (what exactly changed).
-        behavior: Behavior model from Phase 3 (what behavior is affected).
+        repository: Repository model (what the repo contains).
+        change: Change model (what exactly changed).
+        behavior: Behavior model (what behavior is affected).
 
-        dependency: Dependency model from Phase 5 (structural dependencies).
-        data: Data model from Phase 5 (persistent state affected).
-        event: Event model from Phase 5 (async interactions).
-        api: API model from Phase 5 (externally visible interfaces).
-        validation: Validation model from Phase 5 (test evidence).
-        metrics: Discovery metrics from Phase 5 (observable metrics).
+        dependency: Dependency model (structural dependencies).
+        data: Data model (persistent state affected).
+        event: Event model (async interactions).
+        api: API model (externally visible interfaces).
+        validation: Validation model (test evidence).
+        metrics: Discovery metrics (observable metrics).
     """
 
     repository: RepositoryModel
     change: ChangeModel
     behavior: BehaviorModel
 
-    # Phase 5 extension points
+    # Optional enrichment models
     dependency: object | None = field(default=None, compare=False)
     data: object | None = field(default=None, compare=False)
     event: object | None = field(default=None, compare=False)
@@ -53,7 +53,7 @@ class OperationalChangeModel:
     metrics: object | None = field(default=None, compare=False)
 
     def has_all_required_models(self) -> bool:
-        """Check that all Phase 1-3 models are present."""
+        """Check that all required models (repository, change, behavior) are present."""
         return (
             self.repository is not None
             and self.change is not None

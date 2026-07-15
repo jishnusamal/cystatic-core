@@ -7,17 +7,12 @@ No compiler logic - pure orchestration.
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from change.compiler import ChangeCompiler
+from change.model.repository_comparison import RepositoryComparison
 from behavior.compiler import BehaviorCompiler
 from operational.compiler import OperationalCompiler
-from integrations.base import (
-    EventProvider,
-    InstallationProvider,
-    OutputProvider,
-    RepositoryProvider,
-)
 from runtime.errors import (
     CompilationTimeout,
     DiffFetchFailed,
@@ -36,16 +31,24 @@ from runtime.renderers.github_renderer import GitHubRenderer
 from runtime.renderers.json_renderer import JSONRenderer
 from runtime.storage.repository_store import RepositoryStore
 
+if TYPE_CHECKING:
+    from integrations.base import (
+        EventProvider,
+        InstallationProvider,
+        OutputProvider,
+        RepositoryProvider,
+    )
+
 
 class Pipeline:
     """
     Main pipeline orchestrator for runtime execution.
     
     Coordinates the complete flow:
-    1. Repository compilation (Phase 1)
-    2. Change compilation (Phase 2)
-    3. Behavior compilation (Phase 3)
-    4. Operational compilation (Phase 4/5)
+    1. Repository compilation
+    2. Change compilation
+    3. Behavior compilation
+    4. Operational compilation
     5. Rendering
     
     This is the runtime - no compiler logic lives here.
@@ -98,30 +101,43 @@ class Pipeline:
         """
         context = PipelineContext(
             repository=request.repository.full_name,
+            base_sha=request.pull_request.base_sha if request.pull_request else None,
+            head_sha=request.pull_request.head_sha if request.pull_request else None,
             request_id=request.metadata.get("delivery_id") if request.metadata else None,
         )
         
         try:
             context.mark_compilation_start()
             
-            # Step 1: Get or compile repository model
-            await self._ensure_repository_model(context, request)
+            # Step 1: Compile both base and head repository models
+            print(f"[pipeline] Step 1: Repository model compilation for {request.repository.full_name}")
+            await self._compile_both_repository_models(context, request)
+            print(f"[pipeline] Step 1 done: language={context.language}, base_model={'set' if context.base_repository_model else 'None'}, head_model={'set' if context.head_repository_model else 'None'}")
             
             # Step 2: Fetch diff if not provided
             if context.diff_data is None and request.has_diff:
                 context.diff_data = self._diff_snapshot_to_dict(request.diff) if hasattr(request.diff, 'files') else request.diff
+                print(f"[pipeline] Step 2: Diff provided in request, {len(context.diff_data.get('files', []))} files")
             
             if context.diff_data is None and self.repository_provider:
+                print(f"[pipeline] Step 2: Fetching diff from provider")
                 await self._fetch_diff(context, request)
+                print(f"[pipeline] Step 2 done: {len(context.diff_data.get('files', []))} files in diff" if context.diff_data else "[pipeline] Step 2 done: no diff")
             
             # Step 3: Compile change model
+            print(f"[pipeline] Step 3: Change model compilation")
             await self._compile_change(context)
+            print(f"[pipeline] Step 3 done")
             
             # Step 4: Compile behavior model
+            print(f"[pipeline] Step 4: Behavior model compilation")
             await self._compile_behavior(context)
+            print(f"[pipeline] Step 4 done")
             
             # Step 5: Compile operational model
+            print(f"[pipeline] Step 5: Operational model compilation")
             await self._compile_operational(context)
+            print(f"[pipeline] Step 5 done")
             
             context.mark_complete()
             
@@ -132,31 +148,18 @@ class Pipeline:
         
         return context
     
-    async def _ensure_repository_model(self, context: PipelineContext, request: AnalysisRequest) -> None:
+    async def _compile_both_repository_models(self, context: PipelineContext, request: AnalysisRequest) -> None:
         """
-        Ensure repository model is available (load from cache or compile).
+        Compile both base and head repository models.
         
         Args:
             context: Pipeline context
             request: Analysis request
             
         Raises:
-            RepositoryNotSupported: If language is not supported
+            RepositoryNotInstalled: If repository provider is not configured
             RepositoryCompilationFailed: If compilation fails
         """
-        # Try to load from cache first
-        if self.repository_store is not None:
-            ref = request.pull_request.head_sha if request.pull_request else request.repository.default_branch
-            cached_model = await self.repository_store.load(request.repository.full_name, ref)
-            if cached_model is not None:
-                context.repository_model = cached_model
-                context.language = cached_model.metadata.get('language')
-                context.adapter = cached_model.metadata.get('language')
-                context.mark_repository_compiled()
-                return
-        
-        # Need to compile repository model
-        # This requires fetching the repository source
         if self.repository_provider is None:
             raise RepositoryNotInstalled(
                 "Repository model compilation requires a repository provider. "
@@ -164,15 +167,103 @@ class Pipeline:
                 details={"repository": request.repository.full_name},
             )
         
-        # Fetch repository snapshot
-        snapshot = await self.repository_provider.fetch_repository(request.repository)
+        # Determine which SHAs to compile
+        if request.pull_request:
+            base_sha = request.pull_request.base_sha
+            head_sha = request.pull_request.head_sha
+        else:
+            # For non-PR analysis, use default branch for both
+            base_sha = request.repository.default_branch
+            head_sha = request.repository.default_branch
         
-        # Detect language and compile
-        # This is a simplified version - actual implementation would use language adapters
-        raise RepositoryNotInstalled(
-            "Repository model compilation from snapshot not yet fully implemented.",
-            details={"repository": request.repository.full_name},
+        context.base_sha = base_sha
+        context.head_sha = head_sha
+        
+        # Compile base repository model
+        print(f"[pipeline] Compiling base repository model at {base_sha}")
+        context.base_repository_model = await self._compile_repository_model(
+            context, request, base_sha, "base"
         )
+        
+        # Compile head repository model
+        print(f"[pipeline] Compiling head repository model at {head_sha}")
+        context.head_repository_model = await self._compile_repository_model(
+            context, request, head_sha, "head"
+        )
+        
+        context.mark_repository_compiled()
+    
+    async def _compile_repository_model(
+        self, context: PipelineContext, request: AnalysisRequest, sha: str, label: str
+    ) -> RepositoryModel:
+        """
+        Compile a single repository model for a specific SHA.
+        
+        Args:
+            context: Pipeline context
+            request: Analysis request
+            sha: Commit SHA to compile
+            label: Label for logging ("base" or "head")
+            
+        Returns:
+            Compiled RepositoryModel
+            
+        Raises:
+            RepositoryCompilationFailed: If compilation fails
+        """
+        # Try to load from cache first
+        if self.repository_store is not None:
+            cached_model = await self.repository_store.load(request.repository.full_name, sha)
+            if cached_model is not None:
+                print(f"[pipeline] Loaded {label} model from cache")
+                # Set language on first load (base or head)
+                if context.language is None:
+                    context.language = cached_model.metadata.get('language')
+                    context.adapter = cached_model.metadata.get('language')
+                return cached_model
+        
+        # Fetch repository snapshot at this SHA
+        print(f"[pipeline] Fetching {label} repository snapshot at {sha}")
+        snapshot = await self.repository_provider.fetch_repository_at_sha(request.repository, sha)
+        print(f"[pipeline] {label.capitalize()} snapshot: {len(snapshot.files)} files")
+        
+        # Detect language from repository files (only once)
+        if context.language is None:
+            print(f"[pipeline] Detecting language from {len(snapshot.files)} files...")
+            language = self.language_factory.detect_language(snapshot.files)
+            context.language = language
+            context.adapter = language
+            print(f"[pipeline] Detected language: {language}")
+        else:
+            language = context.language
+        
+        # Create language adapter and compile repository model
+        adapter = self.language_factory.create_adapter(language)
+        print(f"[pipeline] Created {label} adapter: {type(adapter).__name__}")
+        
+        repository_input = {
+            "root_directory": request.repository.full_name,
+            "language": language,
+            "files": snapshot.files,
+            "commit_sha": sha,
+        }
+        print(f"[pipeline] Compiling {label} repository model with {len(snapshot.files)} files...")
+        
+        try:
+            repository_model = adapter.compile(repository_input)
+            print(f"[pipeline] {label.capitalize()} model compiled: {len(repository_model.symbols)} symbols, {len(repository_model.entry_points)} entry points")
+        except Exception as exc:
+            print(f"[pipeline] {label.capitalize()} repository compilation failed: {exc}")
+            raise RepositoryCompilationFailed(
+                f"{label.capitalize()} repository compilation failed: {exc}",
+                details={"repository": request.repository.full_name, "language": language, "sha": sha},
+            ) from exc
+        
+        # Cache the compiled model if store is available
+        if self.repository_store is not None:
+            await self.repository_store.save(request.repository.full_name, sha, repository_model)
+        
+        return repository_model
     
     async def _fetch_diff(self, context: PipelineContext, request: AnalysisRequest) -> None:
         """
@@ -251,17 +342,42 @@ class Pipeline:
             InvalidDiff: If diff data is invalid
             PipelineExecutionError: If compilation fails
         """
-        if context.repository_model is None:
-            raise PipelineExecutionError("Repository model not available")
+        # Validate invariants before compilation
+        if context.base_repository_model is None:
+            raise PipelineExecutionError(
+                "Base repository model not available",
+                details={"repository": context.repository, "base_sha": context.base_sha},
+            )
+        
+        if context.head_repository_model is None:
+            raise PipelineExecutionError(
+                "Head repository model not available",
+                details={"repository": context.repository, "head_sha": context.head_sha},
+            )
         
         if context.diff_data is None:
-            raise InvalidDiff("Diff data not provided")
+            raise InvalidDiff(
+                "Diff data not provided",
+                details={"repository": context.repository},
+            )
+        
+        # Validate that base and head are different (unless same SHA)
+        if context.base_sha == context.head_sha:
+            print(f"[pipeline] Warning: Base and head SHAs are identical ({context.base_sha})")
         
         try:
+            # Create a RepositoryComparison - the dedicated input model for ChangeCompiler
+            comparison = RepositoryComparison(
+                base_model=context.base_repository_model,
+                head_model=context.head_repository_model,
+                diff=context.diff_data,
+                base_sha=context.base_sha or "",
+                head_sha=context.head_sha or "",
+            )
+            
+            # Compile with the dedicated input model
             context.change_model = self._change_compiler.compile(
-                diff_data=context.diff_data,
-                old_repository_model=context.repository_model,
-                new_repository_model=context.repository_model,
+                comparison=comparison
             )
             context.mark_change_compiled()
         except Exception as exc:
@@ -280,16 +396,24 @@ class Pipeline:
         Raises:
             PipelineExecutionError: If compilation fails
         """
-        if context.repository_model is None:
-            raise PipelineExecutionError("Repository model not available")
+        # Validate invariants before compilation
+        if context.head_repository_model is None:
+            raise PipelineExecutionError(
+                "Head repository model not available",
+                details={"repository": context.repository, "head_sha": context.head_sha},
+            )
         
         if context.change_model is None:
-            raise PipelineExecutionError("Change model not available")
+            raise PipelineExecutionError(
+                "Change model not available",
+                details={"repository": context.repository},
+            )
         
         try:
+            # BehaviorCompiler receives head repository model per contract
             context.behavior_model = self._behavior_compiler.compile(
                 change_model=context.change_model,
-                repository_model=context.repository_model,
+                repository_model=context.head_repository_model,
             )
             context.mark_behavior_compiled()
         except Exception as exc:
@@ -308,18 +432,29 @@ class Pipeline:
         Raises:
             PipelineExecutionError: If compilation fails
         """
-        if context.repository_model is None:
-            raise PipelineExecutionError("Repository model not available")
+        # Validate invariants before compilation
+        if context.head_repository_model is None:
+            raise PipelineExecutionError(
+                "Head repository model not available",
+                details={"repository": context.repository, "head_sha": context.head_sha},
+            )
         
         if context.change_model is None:
-            raise PipelineExecutionError("Change model not available")
+            raise PipelineExecutionError(
+                "Change model not available",
+                details={"repository": context.repository},
+            )
         
         if context.behavior_model is None:
-            raise PipelineExecutionError("Behavior model not available")
+            raise PipelineExecutionError(
+                "Behavior model not available",
+                details={"repository": context.repository},
+            )
         
         try:
+            # OperationalCompiler receives head repository model per contract
             context.ocm = self._operational_compiler.compile(
-                repository_model=context.repository_model,
+                repository_model=context.head_repository_model,
                 change_model=context.change_model,
                 behavior_model=context.behavior_model,
             )

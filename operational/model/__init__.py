@@ -1,4 +1,4 @@
-"""Operational Change Model - the output of Phase 4 compilation."""
+"""Operational Change Model - the final enriched model with all analysis dimensions."""
 
 from .model import OperationalChangeModel
 

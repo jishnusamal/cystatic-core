@@ -1,4 +1,4 @@
-"""Tests for the change compiler."""
+"""Tests for the Change Compiler."""
 
 import pytest
 from dataclasses import dataclass
@@ -24,6 +24,7 @@ from change.model import (
     InterfaceChange,
     EndpointAnnotationChange,
 )
+from change.model.repository_comparison import RepositoryComparison
 from change.compiler import ChangeCompiler
 
 
@@ -81,7 +82,15 @@ class TestChangeCompiler:
         old_model = TestHelper.create_repository_model([symbol])
         new_model = TestHelper.create_repository_model([symbol])
         
-        result = compiler.compile({}, old_model, new_model)
+        comparison = RepositoryComparison(
+            base_model=old_model,
+            head_model=new_model,
+            diff={},
+            base_sha="abc123",
+            head_sha="def456",
+        )
+        
+        result = compiler.compile(comparison)
         
         assert len(result.added_symbols) == 0
         assert len(result.removed_symbols) == 0
@@ -112,7 +121,15 @@ class TestChangeCompiler:
         old_model = TestHelper.create_repository_model([old_symbol])
         new_model = TestHelper.create_repository_model([new_symbol1, new_symbol2])
         
-        result = compiler.compile({}, old_model, new_model)
+        comparison = RepositoryComparison(
+            base_model=old_model,
+            head_model=new_model,
+            diff={},
+            base_sha="abc123",
+            head_sha="def456",
+        )
+        
+        result = compiler.compile(comparison)
         
         assert len(result.added_symbols) == 1
         added_ids = {s.id for s in result.added_symbols}
@@ -143,7 +160,15 @@ class TestChangeCompiler:
         old_model = TestHelper.create_repository_model([old_symbol1, old_symbol2])
         new_model = TestHelper.create_repository_model([new_symbol])
         
-        result = compiler.compile({}, old_model, new_model)
+        comparison = RepositoryComparison(
+            base_model=old_model,
+            head_model=new_model,
+            diff={},
+            base_sha="abc123",
+            head_sha="def456",
+        )
+        
+        result = compiler.compile(comparison)
         
         assert len(result.added_symbols) == 0
         assert len(result.removed_symbols) == 1
@@ -173,7 +198,15 @@ class TestChangeCompiler:
         old_model = TestHelper.create_repository_model([old_symbol])
         new_model = TestHelper.create_repository_model([new_symbol])
         
-        result = compiler.compile({}, old_model, new_model)
+        comparison = RepositoryComparison(
+            base_model=old_model,
+            head_model=new_model,
+            diff={},
+            base_sha="abc123",
+            head_sha="def456",
+        )
+        
+        result = compiler.compile(comparison)
         
         assert len(result.added_symbols) == 0
         assert len(result.removed_symbols) == 0
@@ -200,7 +233,15 @@ class TestChangeCompiler:
         old_model = TestHelper.create_repository_model([old_symbol])
         new_model = TestHelper.create_repository_model([new_symbol])
         
-        result = compiler.compile({}, old_model, new_model)
+        comparison = RepositoryComparison(
+            base_model=old_model,
+            head_model=new_model,
+            diff={},
+            base_sha="abc123",
+            head_sha="def456",
+        )
+        
+        result = compiler.compile(comparison)
         
         assert len(result.modified_symbols) == 1
         modified = result.modified_symbols[0]
@@ -231,7 +272,15 @@ class TestChangeCompiler:
         old_model = TestHelper.create_repository_model([old_symbol])
         new_model = TestHelper.create_repository_model([new_symbol])
         
-        result = compiler.compile({}, old_model, new_model)
+        comparison = RepositoryComparison(
+            base_model=old_model,
+            head_model=new_model,
+            diff={},
+            base_sha="abc123",
+            head_sha="def456",
+        )
+        
+        result = compiler.compile(comparison)
         
         assert len(result.modified_symbols) == 1
         modified = result.modified_symbols[0]
@@ -262,7 +311,15 @@ class TestChangeCompiler:
         old_model = TestHelper.create_repository_model([old_symbol])
         new_model = TestHelper.create_repository_model([new_symbol])
         
-        result = compiler.compile({}, old_model, new_model)
+        comparison = RepositoryComparison(
+            base_model=old_model,
+            head_model=new_model,
+            diff={},
+            base_sha="abc123",
+            head_sha="def456",
+        )
+        
+        result = compiler.compile(comparison)
         
         assert len(result.modified_symbols) == 1
         modified = result.modified_symbols[0]
@@ -293,7 +350,15 @@ class TestChangeCompiler:
         old_model = TestHelper.create_repository_model([old_import])
         new_model = TestHelper.create_repository_model([new_import])
         
-        result = compiler.compile({}, old_model, new_model)
+        comparison = RepositoryComparison(
+            base_model=old_model,
+            head_model=new_model,
+            diff={},
+            base_sha="abc123",
+            head_sha="def456",
+        )
+        
+        result = compiler.compile(comparison)
         
         # Different import names create different symbol IDs, so they appear as added/removed
         assert len(result.added_symbols) == 1
@@ -325,7 +390,15 @@ class TestChangeCompiler:
         old_model = TestHelper.create_repository_model([old_endpoint])
         new_model = TestHelper.create_repository_model([new_endpoint])
         
-        result = compiler.compile({}, old_model, new_model)
+        comparison = RepositoryComparison(
+            base_model=old_model,
+            head_model=new_model,
+            diff={},
+            base_sha="abc123",
+            head_sha="def456",
+        )
+        
+        result = compiler.compile(comparison)
         
         assert len(result.changed_endpoints) == 1
         assert result.changed_endpoints[0].symbol_id == "python://test.py::get_user"
@@ -380,7 +453,15 @@ class TestChangeCompiler:
         old_model = TestHelper.create_repository_model([old_func, old_import])
         new_model = TestHelper.create_repository_model([new_func, new_import])
         
-        result = compiler.compile({}, old_model, new_model)
+        comparison = RepositoryComparison(
+            base_model=old_model,
+            head_model=new_model,
+            diff={},
+            base_sha="abc123",
+            head_sha="def456",
+        )
+        
+        result = compiler.compile(comparison)
         
         # Check modified symbol
         assert len(result.modified_symbols) == 1
@@ -422,7 +503,15 @@ class TestChangeCompiler:
         old_model = TestHelper.create_repository_model([old_func])
         new_model = TestHelper.create_repository_model([new_func, new_class])
         
-        result = compiler.compile({}, old_model, new_model)
+        comparison = RepositoryComparison(
+            base_model=old_model,
+            head_model=new_model,
+            diff={},
+            base_sha="abc123",
+            head_sha="def456",
+        )
+        
+        result = compiler.compile(comparison)
         
         added_classes = result.get_added_symbols_by_kind('class')
         assert len(added_classes) == 1
@@ -451,7 +540,15 @@ class TestChangeCompiler:
         old_model = TestHelper.create_repository_model([old_symbol])
         new_model = TestHelper.create_repository_model([new_symbol])
         
-        result = compiler.compile({}, old_model, new_model)
+        comparison = RepositoryComparison(
+            base_model=old_model,
+            head_model=new_model,
+            diff={},
+            base_sha="abc123",
+            head_sha="def456",
+        )
+        
+        result = compiler.compile(comparison)
         
         modified = result.get_changes_for_symbol("python://test.py::func1")
         assert modified is not None

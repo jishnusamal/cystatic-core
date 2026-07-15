@@ -30,8 +30,15 @@ class PipelineContext:
     head_sha: str | None = None
     diff_data: dict[str, Any] | None = None
     
+    # Repository snapshots (immutable once set)
+    base_repository_snapshot: Any | None = None
+    head_repository_snapshot: Any | None = None
+    
+    # Compiled repository models (immutable once set)
+    base_repository_model: RepositoryModel | None = None
+    head_repository_model: RepositoryModel | None = None
+    
     # Intermediate artifacts
-    repository_model: RepositoryModel | None = None
     change_model: ChangeModel | None = None
     behavior_model: BehaviorModel | None = None
     ocm: OperationalChangeModel | None = None
@@ -105,6 +112,8 @@ class PipelineContext:
             "adapter": self.adapter,
             "request_id": self.request_id,
             "installation_id": self.installation_id,
+            "has_base_model": self.base_repository_model is not None,
+            "has_head_model": self.head_repository_model is not None,
             "repository_compile_time": self.repository_compile_time,
             "change_compile_time": self.change_compile_time,
             "behavior_compile_time": self.behavior_compile_time,

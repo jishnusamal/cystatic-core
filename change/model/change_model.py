@@ -1,4 +1,4 @@
-"""Change model - the output of Phase 2 compilation."""
+"""Change model - identifies what changed from a code diff."""
 
 from dataclasses import dataclass, field
 from typing import FrozenSet
@@ -63,7 +63,7 @@ class ModifiedSymbol:
 @dataclass(frozen=True)
 class ChangeModel:
     """
-    The complete change model produced by Phase 2 compilation.
+    The complete change model produced by change compilation.
     
     This is a deterministic, language-agnostic representation of a pull request
     that answers: "What exactly changed?"

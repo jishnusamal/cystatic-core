@@ -1,4 +1,4 @@
-"""Operational Compiler - orchestrates Phase 4/5 compilation passes.
+"""Operational Compiler - orchestrates compilation passes.
 
 Transforms deterministic models (Repository, Change, Behavior) into a single
 immutable OperationalChangeModel enriched with dependency, data, event, API,
@@ -32,11 +32,12 @@ class OperationalCompiler:
     Compiles RepositoryModel + ChangeModel + BehaviorModel into
     an enriched OperationalChangeModel.
 
-    This is the main entry point for Phase 4/5 compilation.
+    This is the main entry point for operational compilation.
     It orchestrates the execution of all compiler passes in order.
 
-    Phase 4: Model composition + consistency validation
-    Phase 5: Dependency, data, event, API, validation, and metrics compilation
+    Pass groups:
+    1. Composition: Model composition + consistency validation
+    2. Enrichment: Dependency, data, event, API, validation, and metrics compilation
 
     Input: RepositoryModel + ChangeModel + BehaviorModel
     Output: OperationalChangeModel with all optional models populated
@@ -45,10 +46,10 @@ class OperationalCompiler:
     def __init__(self):
         """Initialize the compiler with all passes."""
         self.passes = [
-            # Phase 4: Composition
+            # Composition group
             ModelCompositionPass(),
             ConsistencyValidationPass(),
-            # Phase 5: Operational Compilation
+            # Enrichment group
             DependencyCompilationPass(),
             DataCompilationPass(),
             EventCompilationPass(),
@@ -67,12 +68,12 @@ class OperationalCompiler:
         Compile deterministic models into an enriched OperationalChangeModel.
 
         Args:
-            repository_model: RepositoryModel from Phase 1 compilation
-            change_model: ChangeModel from Phase 2 compilation
-            behavior_model: BehaviorModel from Phase 3 compilation
+            repository_model: RepositoryModel
+            change_model: ChangeModel
+            behavior_model: BehaviorModel
 
         Returns:
-            OperationalChangeModel with all Phase 5 models populated
+            OperationalChangeModel with all optional models populated
 
         Raises:
             ValueError: If consistency validation fails
@@ -117,9 +118,9 @@ class OperationalCompiler:
         without exception handling.
 
         Args:
-            repository_model: RepositoryModel from Phase 1 compilation
-            change_model: ChangeModel from Phase 2 compilation
-            behavior_model: BehaviorModel from Phase 3 compilation
+            repository_model: RepositoryModel
+            change_model: ChangeModel
+            behavior_model: BehaviorModel
 
         Returns:
             Tuple of (OperationalChangeModel or None, list of error strings)

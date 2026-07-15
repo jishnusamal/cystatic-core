@@ -10,6 +10,7 @@ from .changes import (
     InterfaceChange,
     EndpointAnnotationChange,
 )
+from .repository_comparison import RepositoryComparison
 
 __all__ = [
     "ChangeModel",
@@ -23,4 +24,5 @@ __all__ = [
     "SuperclassChange",
     "InterfaceChange",
     "EndpointAnnotationChange",
+    "RepositoryComparison",
 ]

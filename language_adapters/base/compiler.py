@@ -352,6 +352,10 @@ class _ModelCompiler:
             caller_symbol = symbol_index.get(caller_id)
             caller_file = caller_symbol.file if caller_symbol else call_file
             
+            resolved_file = call_file or caller_file
+            if not resolved_file:
+                return
+            
             edge = CallEdge(
                 caller_id=caller_id,
                 callee_id=callee_id,
@@ -360,7 +364,7 @@ class _ModelCompiler:
                 line=call_line,
                 evidence=Evidence(
                     file_location=FileLocation(
-                        file=call_file or caller_file,
+                        file=resolved_file,
                         start_line=max(call_line, 1),
                         end_line=max(call_line, 1),
                     ),
@@ -369,7 +373,7 @@ class _ModelCompiler:
                             caller_symbol_id=caller_id,
                             callee_name=callee_name,
                             location=FileLocation(
-                                file=call_file or caller_file,
+                                file=resolved_file,
                                 start_line=max(call_line, 1),
                                 end_line=max(call_line, 1),
                             ),
@@ -458,6 +462,10 @@ class _ModelCompiler:
         if not source or not target:
             return
 
+        file_path = metadata.get('file', '')
+        if not file_path:
+            return
+
         edge = TypeRelationshipEdge(
             source_id=source,
             target_id=target,
@@ -465,7 +473,7 @@ class _ModelCompiler:
             metadata=metadata,
             evidence=Evidence(
                 file_location=FileLocation(
-                    file=metadata.get('file', ''),
+                    file=file_path,
                     start_line=max(metadata.get('line', 1), 1),
                     end_line=max(metadata.get('line', 1), 1),
                 ),
@@ -528,6 +536,9 @@ class _ModelCompiler:
         if not symbol_id or not name:
             return
 
+        if not file_path:
+            return
+
         model = PersistenceModel(
             symbol_id=symbol_id,
             name=name,
@@ -565,6 +576,9 @@ class _ModelCompiler:
         if not symbol_id or not name:
             return
 
+        if not file_path:
+            return
+
         method = RepositoryMethod(
             symbol_id=symbol_id,
             name=name,
@@ -597,6 +611,9 @@ class _ModelCompiler:
         line = ev.get('line', 0)
 
         if not symbol_id:
+            return
+
+        if not file_path:
             return
 
         ec = EventConstruct(
@@ -638,6 +655,9 @@ class _ModelCompiler:
         if not symbol_id or not name:
             return
 
+        if not file_path:
+            return
+
         test_def = TestDefinition(
             symbol_id=symbol_id,
             name=name,
@@ -676,7 +696,13 @@ class _ModelCompiler:
         line = cr.get('line', 0)
         default_value = cr.get('default_value', '')
 
+        if not symbol_id:
+            return
+
         if not config_key:
+            return
+
+        if not file_path:
             return
 
         config_ref = ConfigurationReference(

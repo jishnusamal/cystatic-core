@@ -23,7 +23,7 @@ class ModelCompositionPass(OperationalCompilerPass):
     """
     Pass 1 of Operational compilation.
 
-    Composes the three deterministic models from Phases 1-3 into a single
+    Composes the three deterministic models (repository, change, behavior) into a single
     immutable OperationalChangeModel.
     """
 

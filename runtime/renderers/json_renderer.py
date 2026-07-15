@@ -53,12 +53,12 @@ class JSONRenderer:
         """
         result: dict[str, Any] = {}
         
-        # Phase 1-3: Core models (always present)
+        # Core models (always present)
         result["repository"] = self._render_repository(ocm.repository)
         result["change"] = self._render_change(ocm.change)
         result["behavior"] = self._render_behavior(ocm.behavior)
         
-        # Phase 5: Optional models
+        # Optional enrichment models
         if ocm.has_dependency_model():
             result["dependency"] = self._render_dependency(ocm.dependency)
         

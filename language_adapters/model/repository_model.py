@@ -1,4 +1,4 @@
-"""Repository model - the output of Phase 1 compilation."""
+"""Repository model - the complete representation of a code repository."""
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -128,7 +128,7 @@ class AsyncEntryPoint:
 @dataclass(frozen=True)
 class RepositoryModel:
     """
-    The complete repository model produced by Phase 1 compilation.
+    The complete repository model produced by repository compilation.
 
     This is a deterministic, language-independent representation of a repository
     that answers: "What does this repository contain?"

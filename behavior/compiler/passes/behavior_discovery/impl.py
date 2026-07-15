@@ -82,7 +82,7 @@ class BehaviorCompilationPass(BehaviorCompilerPass):
         Collect all symbol ids that were added, removed, or modified.
 
         Args:
-            change_model: The ChangeModel from Phase 2
+            change_model: The ChangeModel
 
         Returns:
             Set of changed symbol ids

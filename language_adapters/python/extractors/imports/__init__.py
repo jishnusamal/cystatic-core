@@ -28,7 +28,7 @@ class PythonImportExtractor(BaseExtractor):
         
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
-                module = node.module or ''
+                module = node.module or '.'
                 names = [alias.name for alias in node.names]
                 imports.append({
                     'type': 'from_import',

@@ -1,1 +1,1 @@
-"""Operational Compiler - Phase 4 of the cystatic compilation pipeline."""
+"""Operational Compiler - enriches change analysis with operational impact models."""

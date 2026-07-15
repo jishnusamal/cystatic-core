@@ -23,11 +23,11 @@ class OperationalPassContext:
     change_model: ChangeModel | None = None
     behavior_model: BehaviorModel | None = None
 
-    # Phase 4 outputs
+    # Composition outputs
     composed_model: OperationalChangeModel | None = None
     consistency_errors: list[str] = field(default_factory=list)
 
-    # Phase 5 analysis outputs (cached for pass chaining)
+    # Enrichment analysis outputs (cached for pass chaining)
     dependency_model: object | None = None
     data_model: object | None = None
     event_model: object | None = None

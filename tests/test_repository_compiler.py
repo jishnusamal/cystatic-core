@@ -1,4 +1,4 @@
-"""Tests for the repository compiler."""
+"""Tests for the Repository Compiler."""
 
 import pytest
 from language_adapters.python.adapter import PythonLanguageAdapter

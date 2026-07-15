@@ -20,6 +20,7 @@ from change.model import (
     InterfaceChange,
     EndpointAnnotationChange,
 )
+from change.model.repository_comparison import RepositoryComparison
 from language_adapters.model import RepositoryModel
 
 
@@ -27,7 +28,7 @@ class ChangeCompiler:
     """
     Compiles a git diff into a Change Model.
     
-    This is the main entry point for Phase 2 compilation.
+    This is the main entry point for change compilation.
     It orchestrates the execution of all compilation passes in order.
     
     Input: Git diff data with old and new repository models
@@ -43,28 +44,34 @@ class ChangeCompiler:
     
     def compile(
         self,
-        diff_data: dict[str, Any],
-        old_repository_model: Any,
-        new_repository_model: Any
+        comparison: RepositoryComparison
     ) -> ChangeModel:
         """
         Compile a git diff into a Change Model.
         
         Args:
-            diff_data: Git diff data (file changes, hunks, etc.)
-            old_repository_model: RepositoryModel before the change
-            new_repository_model: RepositoryModel after the change
+            comparison: RepositoryComparison containing base model, head model, and diff
             
         Returns:
             ChangeModel containing the complete change representation
+            
+        Raises:
+            ValueError: If comparison is invalid
         """
-        # Initialize pass context with diff data and models
+        # Validate the comparison (frozen dataclass ensures immutability)
+        if comparison.is_same_commit():
+            # This is allowed but worth noting
+            pass
+        
+        # Initialize pass context with comparison data
         context = ChangePassContext(
-            diff_data=diff_data,
+            diff_data=comparison.diff,
             metadata={
-                'diff_data': diff_data,
-                'old_repository_model': old_repository_model,
-                'new_repository_model': new_repository_model,
+                'diff_data': comparison.diff,
+                'old_repository_model': comparison.base_model,
+                'new_repository_model': comparison.head_model,
+                'base_sha': comparison.base_sha,
+                'head_sha': comparison.head_sha,
             }
         )
         

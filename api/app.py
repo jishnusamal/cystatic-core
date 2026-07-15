@@ -37,9 +37,29 @@ app.include_router(github_router)
 
 @app.get("/")
 async def root() -> dict[str, str]:
-    """Root endpoint."""
+    """
+    Root endpoint for the Cystatic API.
+    
+    Returns basic API information including name, version, and status.
+    
+    Returns:
+        dict[str, str]: API information containing:
+            - name (str): API name ("Factor API")
+            - version (str): Current API version
+            - status (str): Current API status (always "running" if accessible)
+    
+    Example Response:
+        {
+            "name": "Factor API",
+            "version": "1.0.0",
+            "status": "running"
+        }
+    
+    Status Codes:
+        200: API is running and accessible
+    """
     return {
-        "name": "Cystatic API",
+        "name": "Factor API",
         "version": settings.APP_VERSION,
         "status": "running",
     }
@@ -47,7 +67,32 @@ async def root() -> dict[str, str]:
 
 @app.get("/v1")
 async def v1_root() -> dict[str, Any]:
-    """V1 API root."""
+    """
+    V1 API root endpoint.
+    
+    Returns information about the V1 API version and available endpoints.
+    
+    Returns:
+        dict[str, Any]: V1 API information containing:
+            - version (str): API version ("1.0")
+            - endpoints (dict): Available endpoints and their paths:
+                - health (str): Health check endpoint path
+                - github_webhook (str): GitHub webhook endpoint path
+                - analyze (str): Repository analysis endpoint path
+    
+    Example Response:
+        {
+            "version": "1.0",
+            "endpoints": {
+                "health": "/health",
+                "github_webhook": "/webhooks/github",
+                "analyze": "/v1/analyze"
+            }
+        }
+    
+    Status Codes:
+        200: V1 API information retrieved successfully
+    """
     return {
         "version": "1.0",
         "endpoints": {

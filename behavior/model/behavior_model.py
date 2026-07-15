@@ -1,4 +1,4 @@
-"""Behavior model - the output of Phase 3 compilation."""
+"""Behavior model - identifies affected behaviors from code changes."""
 
 from dataclasses import dataclass, field
 
@@ -9,7 +9,7 @@ from .execution_graph import ExecutionGraph
 @dataclass(frozen=True)
 class BehaviorModel:
     """
-    The complete behavior model produced by Phase 3 compilation.
+    The complete behavior model produced by behavior compilation.
 
     This is a deterministic, language-agnostic representation of a pull request
     that answers: "What behavior has changed?"

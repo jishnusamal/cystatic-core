@@ -1,1 +1,1 @@
-"""Change compiler package - Phase 2 compilation."""
+"""Change compiler package - identifies what changed from a code diff."""

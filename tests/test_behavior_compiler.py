@@ -1,4 +1,4 @@
-"""Tests for the Behavior Compiler (Phase 3)."""
+"""Tests for the Behavior Compiler."""
 
 from dataclasses import dataclass, field
 from typing import Any

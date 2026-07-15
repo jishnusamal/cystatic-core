@@ -28,6 +28,21 @@ class RepositoryProvider(ABC):
         pass
     
     @abstractmethod
+    async def fetch_repository_at_sha(
+        self, repo_ref: RepositoryReference, sha: str
+    ) -> RepositorySnapshot:
+        """Fetch the repository state at a specific commit.
+        
+        Args:
+            repo_ref: Repository reference
+            sha: Commit SHA to fetch
+            
+        Returns:
+            Repository snapshot at the specified commit
+        """
+        pass
+    
+    @abstractmethod
     async def fetch_diff(
         self,
         repo_ref: RepositoryReference,

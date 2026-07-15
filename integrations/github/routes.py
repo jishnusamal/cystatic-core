@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
@@ -10,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from integrations.base import InstallationProvider, OutputProvider, RepositoryProvider
 from integrations.base.registry import get_registry
+from integrations.github.client import GitHubClient
 from runtime.errors import InvalidWebhook, MissingWebhookPayload, PipelineExecutionError
 from runtime.models import AnalysisRequest, AnalysisTrigger
 from runtime.pipeline.context import PipelineContext
@@ -70,9 +72,49 @@ async def github_webhook(
     GitHub webhook endpoint for pull request events.
     
     Receives pull_request events (opened, synchronize, reopened, ready_for_review)
-    and triggers analysis in the background.
+    and triggers analysis in the background. The webhook signature is verified
+    using the configured webhook secret, and analysis is scheduled asynchronously.
     
-    Returns 200 OK immediately and processes the analysis asynchronously.
+    Input:
+        - Headers:
+            - X-Hub-Signature-256 (str, optional): HMAC-SHA256 signature for webhook verification
+            - Content-Type: application/json
+        - Body (JSON): GitHub webhook payload containing pull request event data
+    
+    Returns:
+        JSONResponse: Webhook processing status:
+            - status (str): "accepted" if analysis scheduled, "ignored" if event not processed
+            - message (str): Human-readable status message
+    
+    Example Responses:
+        Accepted:
+        {
+            "status": "accepted",
+            "message": "Analysis scheduled"
+        }
+        
+        Ignored (not a PR):
+        {
+            "status": "ignored",
+            "message": "Not a pull request event"
+        }
+        
+        Ignored (unsupported action):
+        {
+            "status": "ignored",
+            "message": "Action ready_for_review not processed"
+        }
+    
+    Status Codes:
+        200: Webhook received and processed (or ignored if not a supported event)
+        400: Invalid JSON payload or missing required fields
+        401: Invalid webhook signature (when webhook secret is configured)
+    
+    Notes:
+        - Returns 200 OK immediately and processes analysis asynchronously
+        - Only processes actions: opened, reopened, synchronize, ready_for_review
+        - Requires GitHub App webhook secret to be configured for signature verification
+        - Analysis results are posted as a comment on the pull request
     """
     from api.settings import get_settings
     
@@ -146,10 +188,92 @@ async def analyze_repository(
     """
     Public API endpoint to analyze a repository.
     
-    Accepts repository references or raw diffs and returns analysis results.
+    Accepts repository references, PR URLs, or raw diffs and returns comprehensive analysis
+    results including change summary, behavior summary, and operational summary.
+    
+    Input:
+        Request body (JSON) with the following fields (Option 1 - PR URL):
+            - pr_url (str, required): GitHub PR URL (e.g., "https://github.com/owner/repo/pull/123")
+        
+        OR (Option 2 - Structured data):
+            - repository (str, required): Repository in format "owner/repo"
+            - pr_number (int, optional): Pull request number to analyze
+            - base_sha (str, optional): Base commit SHA (default: "main")
+            - head_sha (str, optional): Head commit SHA (default: "main")
+            - diff_data (dict, optional): Raw diff data with structure:
+                - files (list): List of diff files, each containing:
+                    - file_path (str): Path to the file
+                    - added_lines (list): Lines added in the diff
+                    - removed_lines (list): Lines removed in the diff
+                    - hunks (list, optional): Diff hunks with detailed changes
+    
+    Returns:
+        JSONResponse: Comprehensive analysis results:
+            - repository (str): Analyzed repository name
+            - language (str): Detected programming language
+            - change_summary (dict): Summary of code changes
+            - behavior_summary (dict): Summary of behavior changes
+            - operational_summary (dict): Summary of operational impacts:
+                - dependency (dict): Dependency changes
+                - data (dict): Data model changes
+                - event (dict): Event changes
+                - api (dict): API changes
+                - validation (dict): Validation changes
+                - metrics (dict): Metrics changes
+            - timing (dict): Compilation and execution timing:
+                - repository (float): Repository compilation time in seconds
+                - change (float): Change compilation time in seconds
+                - behavior (float): Behavior compilation time in seconds
+                - operational (float): Operational compilation time in seconds
+                - total (float): Total execution time in seconds
+    
+    Example Request (PR URL):
+        {
+            "pr_url": "https://github.com/huggingface/OpenEnv/pull/611"
+        }
+    
+    Example Request (Structured):
+        {
+            "repository": "owner/repo-name",
+            "pr_number": 123,
+            "base_sha": "abc123",
+            "head_sha": "def456"
+        }
+    
+    Example Response:
+        {
+            "repository": "owner/repo-name",
+            "language": "python",
+            "change_summary": {...},
+            "behavior_summary": {...},
+            "operational_summary": {
+                "dependency": {...},
+                "data": {...}
+            },
+            "timing": {
+                "repository": 0.15,
+                "change": 0.08,
+                "behavior": 0.12,
+                "operational": 0.05,
+                "total": 0.40
+            }
+        }
+    
+    Status Codes:
+        200: Analysis completed successfully
+        400: Invalid request format or missing required fields
+        500: Analysis failed due to internal error
+    
+    Notes:
+        - Either pr_url, (pr_number + repository), or diff_data can be provided
+        - If pr_url is provided, the system will automatically fetch PR details from GitHub
+        - If diff_data is provided, it will be analyzed directly without fetching from GitHub
+        - Analysis includes change detection, behavior analysis, and operational impact assessment
     """
     pipeline = get_pipeline_instance()
     registry = get_registry_instance()
+    
+    print("[routes] /v1/analyze called")
     
     try:
         # Convert API request to runtime model
@@ -161,19 +285,43 @@ async def analyze_repository(
         )
         from runtime.models.diff import DiffFile, DiffHunk
         
+        # Check if PR URL is provided
+        pr_url = analysis_request.get("pr_url")
+        if pr_url:
+            print(f"[routes] Fetching PR details from URL: {pr_url}")
+            # Parse PR URL and fetch PR details from GitHub
+            pr_data = await _fetch_pr_details_from_url(pr_url)
+            print(f"[routes] PR details: repo={pr_data['repository']}, PR=#{pr_data['pr_number']}, base={pr_data['base_sha']}, head={pr_data['head_sha']}")
+            repository = pr_data["repository"]
+            pr_number = pr_data["pr_number"]
+            base_sha = pr_data["base_sha"]
+            head_sha = pr_data["head_sha"]
+        else:
+            # Use structured data
+            repository = analysis_request.get("repository")
+            pr_number = analysis_request.get("pr_number")
+            base_sha = analysis_request.get("base_sha")
+            head_sha = analysis_request.get("head_sha")
+            
+            if not repository:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Either 'pr_url' or 'repository' must be provided"
+                )
+        
         repo_ref = RepositoryReference(
             provider="github",
-            owner=analysis_request["repository"].split("/")[0],
-            repository=analysis_request["repository"].split("/")[1],
-            default_branch=analysis_request.get("base_sha") or "main",
+            owner=repository.split("/")[0],
+            repository=repository.split("/")[1],
+            default_branch=base_sha or "main",
         )
         
         pr_ref = None
-        if analysis_request.get("pr_number"):
+        if pr_number:
             pr_ref = PullRequestReference(
-                number=analysis_request["pr_number"],
-                base_sha=analysis_request.get("base_sha") or "main",
-                head_sha=analysis_request.get("head_sha") or "main",
+                number=pr_number,
+                base_sha=base_sha or "main",
+                head_sha=head_sha or "main",
                 title="",
             )
         
@@ -213,9 +361,12 @@ async def analyze_repository(
         )
         
         # Run pipeline
+        print(f"[routes] Starting pipeline run for {repo_ref.full_name}")
         context = await pipeline.run(analysis_request_obj)
+        print(f"[routes] Pipeline completed: language={context.language}, total_time={context.total_time:.2f}s")
         
         if context.error:
+            print(f"[routes] Pipeline error: {context.error}")
             raise HTTPException(status_code=500, detail=str(context.error))
         
         # Render results
@@ -223,7 +374,7 @@ async def analyze_repository(
         
         return JSONResponse(
             content={
-                "repository": analysis_request["repository"],
+                "repository": repository,
                 "language": context.language or "unknown",
                 "change_summary": result.get("change", {}),
                 "behavior_summary": result.get("behavior", {}),
@@ -243,9 +394,81 @@ async def analyze_repository(
         )
     
     except PipelineExecutionError as exc:
+        print(f"[routes] PipelineExecutionError: {exc}")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
+        print(f"[routes] Unexpected error: {exc}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc
+
+
+def _get_github_token() -> str | None:
+    """Get a GitHub token for API authentication.
+    
+    Prefers PAT from settings, falls back to generating a JWT from the app.
+    Note: JWT tokens only work for app-level endpoints, not repository content.
+    
+    Returns:
+        Token string or None
+    """
+    from api.settings import get_settings
+    settings = get_settings()
+    return settings.GITHUB_ACCESS_TOKEN
+
+
+async def _fetch_pr_details_from_url(pr_url: str) -> dict[str, Any]:
+    """
+    Fetch PR details from GitHub API using a PR URL.
+    
+    Args:
+        pr_url: GitHub PR URL (e.g., "https://github.com/owner/repo/pull/123")
+    
+    Returns:
+        Dictionary with repository, pr_number, base_sha, and head_sha
+    
+    Raises:
+        HTTPException: If URL is invalid or PR details cannot be fetched
+    """
+    # Parse GitHub PR URL
+    pattern = r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)"
+    match = re.match(pattern, pr_url)
+    
+    if not match:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid GitHub PR URL format: {pr_url}. Expected format: https://github.com/owner/repo/pull/123"
+        )
+    
+    owner = match.group(1)
+    repo = match.group(2)
+    pr_number = int(match.group(3))
+    repository = f"{owner}/{repo}"
+    
+    # Fetch PR details from GitHub API with token if available
+    token = _get_github_token()
+    client = GitHubClient(token=token)
+    try:
+        response = client.get(
+            f"/repos/{repository}/pulls/{pr_number}",
+            headers={"Accept": "application/vnd.github+json"},
+            timeout=30,
+        )
+        response.raise_for_status()
+        
+        pr_data = response.json()
+        
+        return {
+            "repository": repository,
+            "pr_number": pr_number,
+            "base_sha": pr_data.get("base", {}).get("sha"),
+            "head_sha": pr_data.get("head", {}).get("sha"),
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to fetch PR details from GitHub: {exc}"
+        ) from exc
+    finally:
+        client.close()
 
 
 async def _process_pr_analysis(
@@ -256,10 +479,30 @@ async def _process_pr_analysis(
     """
     Background task to process PR analysis.
     
+    Executes the analysis pipeline for a pull request and publishes the results
+    as a comment on the PR using the GitHub integration output provider.
+    
     Args:
-        request: Analysis request
-        installation_id: GitHub App installation ID
-        delivery_id: Webhook delivery ID
+        request (AnalysisRequest): The analysis request containing repository,
+            pull request, and diff information
+        installation_id (int | None): GitHub App installation ID used for
+            authentication when posting results. Required for private repositories.
+        delivery_id (str | None): GitHub webhook delivery ID for tracking
+            and debugging purposes
+    
+    Returns:
+        None
+    
+    Side Effects:
+        - Executes the full analysis pipeline (repository, change, behavior, operational)
+        - Posts analysis results as a comment on the pull request
+        - Prints status messages to stdout for logging
+    
+    Notes:
+        - This function runs asynchronously in the background
+        - Errors are caught and logged but do not fail the webhook
+        - Requires valid GitHub App installation token for posting results
+        - Analysis results include change summary, behavior summary, and operational summary
     """
     pipeline = get_pipeline_instance()
     registry = get_registry_instance()
