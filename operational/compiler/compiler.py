@@ -4,7 +4,7 @@ Transforms deterministic models (Repository, Change, Behavior) into a single
 immutable OperationalChangeModel enriched with dependency, data, event, API,
 validation, and metrics models.
 
-This is the linker and compilation stage in the cystatic compilation pipeline.
+This is the linker and compilation stage in the factor-api compilation pipeline.
 """
 
 from typing import Any, cast

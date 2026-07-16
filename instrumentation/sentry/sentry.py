@@ -128,7 +128,7 @@ class SentryInstrumentation:
 #
 # set_sentry_context(
 #     org_id="org_123",
-#     repo="cystatichq/demo",
+#     repo="factor-api/demo",
 #     pr_number=42,
 #     provider="github",
 # )

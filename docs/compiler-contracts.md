@@ -1,6 +1,6 @@
 # Compiler Contracts
 
-This document defines the formal contracts for each compiler phase in the cystatic pipeline.
+This document defines the formal contracts for each compiler phase in the factor-api pipeline.
 
 ## RepositoryCompiler
 

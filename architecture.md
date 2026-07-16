@@ -687,7 +687,7 @@ Runtime-specific errors in `runtime/errors.py`:
 ## Directory Structure
 
 ```
-cystatic-core/
+factor-api/
 │
 ├── runtime/                      Runtime layer (platform-agnostic orchestration)
 │   ├── models/                   Runtime data models

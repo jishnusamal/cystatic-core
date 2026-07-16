@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The Engineering Discovery Artifact is the **final immutable output** of the cystatic compilation pipeline. It replaces hours of manual code investigation with a structured, deterministic model that answers: **"What does this change actually touch?"**
+The Engineering Discovery Artifact is the **final immutable output** of the factor-api compilation pipeline. It replaces hours of manual code investigation with a structured, deterministic model that answers: **"What does this change actually touch?"**
 
 ## Design Philosophy
 
