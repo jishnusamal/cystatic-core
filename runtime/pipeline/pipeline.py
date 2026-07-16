@@ -512,7 +512,7 @@ class Pipeline:
         Render the pipeline result as JSON.
         
         Args:
-            context: Pipeline context with OCM
+            context: Pipeline context with EDM or OCM
             
         Returns:
             Dictionary representation
@@ -520,8 +520,17 @@ class Pipeline:
         Raises:
             PipelineExecutionError: If rendering fails
         """
+        if context.edm is not None:
+            try:
+                return self._json_renderer.render(context.edm)
+            except Exception as exc:
+                raise PipelineExecutionError(
+                    f"JSON rendering failed: {exc}",
+                    details={"repository": context.repository},
+                ) from exc
+        
         if context.ocm is None:
-            raise PipelineExecutionError("No OCM available to render")
+            raise PipelineExecutionError("No model available to render")
         
         try:
             return self._json_renderer.render(context.ocm)

@@ -41,4 +41,5 @@ class AnalysisResponse(BaseModel):
     change_summary: dict[str, Any]
     behavior_summary: dict[str, Any]
     operational_summary: dict[str, Any]
+    discovery_summary: dict[str, Any] | None = None
     timing: dict[str, float]

@@ -369,8 +369,31 @@ async def analyze_repository(
             print(f"[routes] Pipeline error: {context.error}")
             raise HTTPException(status_code=500, detail=str(context.error))
         
-        # Render results
+        # Render results (prefers EDM over OCM)
         result = pipeline.render_json(context)
+        
+        # Extract the discovery data from the rendered JSON
+        # EDM renders include an "execution" key; OCM renders do not
+        discovery_summary = result.get("execution")
+        if discovery_summary is not None:
+            # EDM path: include enrichment models projected into discovery
+            discovery_summary = dict(discovery_summary)
+            for model_name in ["dependency", "data", "event", "api", "validation", "metrics"]:
+                if model_name in result:
+                    discovery_summary[model_name] = result[model_name]
+        elif context.ocm is not None:
+            # Fallback: project execution data from OCM behavior model
+            discovery_summary = {
+                "behaviors_count": len(context.ocm.behavior.behaviors),
+                "execution_chains_count": len(context.ocm.behavior.execution_chains),
+                "entry_points_count": len(context.ocm.behavior.entry_points),
+                "terminal_points_count": len(context.ocm.behavior.terminal_points),
+                "execution_depth": context.ocm.behavior.execution_depth,
+            }
+            # Include available enrichment models
+            for model_name in ["dependency", "data", "event", "api", "validation", "metrics"]:
+                if result.get(model_name) is not None:
+                    discovery_summary[model_name] = result[model_name]
         
         return JSONResponse(
             content={
@@ -382,6 +405,7 @@ async def analyze_repository(
                     k: v for k, v in result.items()
                     if k in ["dependency", "data", "event", "api", "validation", "metrics"]
                 },
+                "discovery_summary": discovery_summary,
                 "timing": {
                     "repository": context.repository_compile_time or 0.0,
                     "change": context.change_compile_time or 0.0,
