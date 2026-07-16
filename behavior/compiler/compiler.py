@@ -47,7 +47,7 @@ class BehaviorCompiler:
     def compile(
         self,
         change_model: Any,
-        repository_delta: RepositoryDelta | None = None,
+        repository_delta: RepositoryDelta | RepositoryModel | None = None,
         repository_model: Any = None,
     ) -> BehaviorModel:
         """
@@ -55,19 +55,19 @@ class BehaviorCompiler:
 
         Args:
             change_model: ChangeModel
-            repository_delta: RepositoryDelta containing both base and head models
+            repository_delta: RepositoryDelta containing both base and head models, or RepositoryModel (deprecated)
             repository_model: RepositoryModel (deprecated, use repository_delta)
 
         Returns:
             BehaviorModel containing affected behaviors and execution graphs
         """
         # Support both old and new interface for backward compatibility
-        # Check if repository_delta is actually a RepositoryModel (old interface)
-        if repository_delta is not None and hasattr(repository_delta, 'head_model'):
+        # Check if repository_delta is actually a RepositoryDelta (new interface)
+        if repository_delta is not None and hasattr(repository_delta, 'head_model') and hasattr(repository_delta, 'base_model'):
             head_model = repository_delta.head_model
             base_model = repository_delta.base_model
         elif repository_delta is not None:
-            # It's a RepositoryModel passed as the second argument
+            # It's a RepositoryModel passed as repository_delta (deprecated usage)
             head_model = repository_delta
             base_model = None
         else:

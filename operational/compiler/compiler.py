@@ -86,6 +86,10 @@ class OperationalCompiler:
         else:
             head_model = repository_model
 
+        # Type checker: ensure head_model is not None
+        if head_model is None:
+            raise ValueError("Either repository_delta or repository_model must be provided")
+
         # Initialize pass context with models
         context = OperationalPassContext(
             repository_model=head_model,
@@ -142,6 +146,10 @@ class OperationalCompiler:
             head_model = repository_delta.head_model
         else:
             head_model = repository_model
+
+        # Type checker: ensure head_model is not None
+        if head_model is None:
+            raise ValueError("Either repository_delta or repository_model must be provided")
 
         context = OperationalPassContext(
             repository_model=head_model,

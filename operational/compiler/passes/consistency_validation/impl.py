@@ -68,7 +68,7 @@ class ConsistencyValidationPass(OperationalCompilerPass):
 
         # Get symbol IDs from both base and head repositories for cross-model validation
         head_symbol_ids = {s.id for s in model.repository.symbols}
-        base_symbol_ids = set()
+        base_symbol_ids: frozenset[str] = frozenset()
         if context.repository_delta is not None:
             base_symbol_ids = context.repository_delta.get_base_symbol_ids()
 
@@ -100,7 +100,7 @@ class ConsistencyValidationPass(OperationalCompilerPass):
     def _validate_changed_symbols_cross_model(
         self,
         model: "OperationalChangeModel",
-        base_symbol_ids: set[str],
+        base_symbol_ids: frozenset[str],
         head_symbol_ids: set[str],
     ) -> list[str]:
         """

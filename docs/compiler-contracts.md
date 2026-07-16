@@ -94,6 +94,26 @@ This document defines the formal contracts for each compiler phase in the cystat
 
 ---
 
+## EngineeringDiscoveryCompiler
+
+**Input:**
+- OperationalChangeModel - the composed and enriched operational model
+
+**Output:**
+- EngineeringDiscoveryModel
+
+**Invariants:**
+- All data is projected from the OperationalChangeModel (no new analysis)
+- Execution-oriented abstractions are extracted from the behavior model
+- Enrichment models (dependency, data, event, api, validation, metrics) are preserved
+- The model uses semantic section names, not presentation terminology
+- Output is immutable and deterministic
+
+**Failure Conditions:**
+- OperationalChangeModel is missing required repository, change, or behavior models
+
+---
+
 ## Pipeline Flow
 
 ```
@@ -122,6 +142,14 @@ RepositoryModel(head) + ChangeModel + BehaviorModel
 OperationalCompiler
         ↓
 OperationalChangeModel
+
+OperationalChangeModel
+        ↓
+EngineeringDiscoveryCompiler
+        ↓
+EngineeringDiscoveryModel (Canonical IR)
+        ↓
+Renderer (GitHub, Slack, Dashboard, API, LLM)
 ```
 
 ## Key Principles
@@ -131,3 +159,4 @@ OperationalChangeModel
 3. **Determinism**: Same inputs always produce same outputs
 4. **Traceability**: Every artifact can be traced back to its source
 5. **Validation**: Each compiler validates its inputs before execution
+6. **Separation of Concerns**: Compilers produce models; renderers produce presentation

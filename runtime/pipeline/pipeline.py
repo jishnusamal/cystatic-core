@@ -13,7 +13,7 @@ from change.compiler import ChangeCompiler
 from change.model.repository_comparison import RepositoryComparison
 from change.model.repository_delta import RepositoryDelta
 from behavior.compiler import BehaviorCompiler
-from operational.compiler import OperationalCompiler
+from operational.compiler import OperationalCompiler, EngineeringDiscoveryCompiler
 from runtime.errors import (
     CompilationTimeout,
     DiffFetchFailed,
@@ -85,6 +85,7 @@ class Pipeline:
         self._change_compiler = ChangeCompiler()
         self._behavior_compiler = BehaviorCompiler()
         self._operational_compiler = OperationalCompiler()
+        self._discovery_compiler = EngineeringDiscoveryCompiler()
         
         # Renderers
         self._json_renderer = JSONRenderer()
@@ -139,6 +140,11 @@ class Pipeline:
             print(f"[pipeline] Step 5: Operational model compilation")
             await self._compile_operational(context)
             print(f"[pipeline] Step 5 done")
+            
+            # Step 6: Compile engineering discovery model
+            print(f"[pipeline] Step 6: Engineering discovery model compilation")
+            await self._compile_discovery(context)
+            print(f"[pipeline] Step 6 done")
             
             context.mark_complete()
             
@@ -475,6 +481,32 @@ class Pipeline:
                 details={"repository": context.repository},
             ) from exc
     
+    async def _compile_discovery(self, context: PipelineContext) -> None:
+        """
+        Compile engineering discovery model from the operational model.
+        
+        Args:
+            context: Pipeline context
+            
+        Raises:
+            PipelineExecutionError: If compilation fails
+        """
+        if context.ocm is None:
+            raise PipelineExecutionError(
+                "Operational model not available for discovery compilation",
+                details={"repository": context.repository},
+            )
+        
+        try:
+            context.edm = self._discovery_compiler.from_operational_model(
+                context.ocm
+            )
+        except Exception as exc:
+            raise PipelineExecutionError(
+                f"Engineering discovery compilation failed: {exc}",
+                details={"repository": context.repository},
+            ) from exc
+
     def render_json(self, context: PipelineContext) -> dict[str, Any]:
         """
         Render the pipeline result as JSON.
@@ -508,7 +540,7 @@ class Pipeline:
         Render the pipeline result as a GitHub comment.
         
         Args:
-            context: Pipeline context with OCM
+            context: Pipeline context with EDM or OCM
             pr_number: Pull request number
             
         Returns:
@@ -517,8 +549,8 @@ class Pipeline:
         Raises:
             PipelineExecutionError: If rendering fails
         """
-        if context.ocm is None:
-            raise PipelineExecutionError("No OCM available to render")
+        if context.edm is None and context.ocm is None:
+            raise PipelineExecutionError("No model available to render")
         
         try:
             if self._github_renderer is None:
@@ -533,6 +565,9 @@ class Pipeline:
                 "total_time": f"{context.total_time:.2f}" if context.total_time else "N/A",
             }
             
+            # Prefer EDM over OCM
+            if context.edm is not None:
+                return self._github_renderer.render_artifact(context.edm, render_context)
             return self._github_renderer.render(context.ocm, render_context)
         except Exception as exc:
             raise PipelineExecutionError(
@@ -549,7 +584,7 @@ class Pipeline:
         Publish the analysis result using the output provider.
         
         Args:
-            context: Pipeline context with OCM
+            context: Pipeline context with EDM or OCM
             destination: Destination information
             
         Returns:
@@ -558,14 +593,16 @@ class Pipeline:
         Raises:
             PipelineExecutionError: If publishing fails
         """
-        if context.ocm is None:
-            raise PipelineExecutionError("No OCM available to publish")
+        if context.edm is None and context.ocm is None:
+            raise PipelineExecutionError("No model available to publish")
         
         if self.output_provider is None:
             raise PipelineExecutionError("No output provider configured")
         
         try:
-            return await self.output_provider.publish(context.ocm, destination)
+            # Prefer EDM over OCM
+            model = context.edm if context.edm is not None else context.ocm
+            return await self.output_provider.publish(model, destination)
         except Exception as exc:
             raise PipelineExecutionError(
                 f"Output publishing failed: {exc}",

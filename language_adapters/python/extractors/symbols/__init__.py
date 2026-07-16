@@ -27,14 +27,14 @@ class PythonSymbolExtractor(BaseExtractor):
         symbols = []
         
         for node in ast.iter_child_nodes(tree):
-            if isinstance(node, ast.FunctionDef):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 symbols.append(self._extract_function(node))
             elif isinstance(node, ast.ClassDef):
                 symbols.append(self._extract_class(node))
         
         return symbols
     
-    def _extract_function(self, node: ast.FunctionDef) -> dict[str, Any]:
+    def _extract_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, Any]:
         """Extract a function definition."""
         return {
             'type': 'function',
@@ -49,7 +49,7 @@ class PythonSymbolExtractor(BaseExtractor):
         """Extract a class definition with its methods."""
         methods = []
         for child in node.body:
-            if isinstance(child, ast.FunctionDef):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 methods.append({
                     'name': child.name,
                     'start_line': child.lineno,
@@ -77,7 +77,7 @@ class PythonSymbolExtractor(BaseExtractor):
             return 'public'
         return 'public'
     
-    def _extract_function_properties(self, node: ast.FunctionDef) -> dict[str, Any]:
+    def _extract_function_properties(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, Any]:
         """Extract additional properties from a function."""
         properties = {}
         
@@ -108,7 +108,7 @@ class PythonSymbolExtractor(BaseExtractor):
         
         return properties
     
-    def _get_decorator_names(self, node: ast.FunctionDef) -> list[str]:
+    def _get_decorator_names(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
         """Get decorator names from a function."""
         decorators = []
         for dec in node.decorator_list:

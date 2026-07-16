@@ -1,4 +1,4 @@
-"""JSON renderer for OperationalChangeModel.
+"""JSON renderer for OperationalChangeModel and EngineeringDiscoveryModel.
 
 Produces a pure machine-readable dictionary representation.
 No formatting, no markdown - just serialization.
@@ -8,24 +8,25 @@ from __future__ import annotations
 
 from typing import Any
 
-from operational.model import OperationalChangeModel
+from operational.model import OperationalChangeModel, EngineeringDiscoveryModel
 from runtime.errors import JSONSerializationFailed, RendererFailed
 
 
 class JSONRenderer:
     """
-    Renders OperationalChangeModel to a plain dictionary.
+    Renders models to a plain dictionary.
     
     This is the simplest renderer - pure serialization with no formatting.
     Used for API responses and programmatic consumption.
+    Accepts both OperationalChangeModel and EngineeringDiscoveryModel.
     """
     
-    def render(self, ocm: OperationalChangeModel) -> dict[str, Any]:
+    def render(self, model: OperationalChangeModel | EngineeringDiscoveryModel) -> dict[str, Any]:
         """
-        Render an OperationalChangeModel to a dictionary.
+        Render a model to a dictionary.
         
         Args:
-            ocm: OperationalChangeModel to render
+            model: OperationalChangeModel or EngineeringDiscoveryModel to render
             
         Returns:
             Dictionary representation of the model
@@ -34,16 +35,18 @@ class JSONRenderer:
             RendererFailed: If rendering fails
         """
         try:
-            return self._render_model(ocm)
+            if isinstance(model, EngineeringDiscoveryModel):
+                return self._render_discovery_model(model)
+            return self._render_operational_model(model)
         except Exception as exc:
             raise RendererFailed(
-                f"Failed to render OperationalChangeModel: {exc}",
+                f"Failed to render model: {exc}",
                 details={"error": str(exc)},
             ) from exc
     
-    def _render_model(self, ocm: OperationalChangeModel) -> dict[str, Any]:
+    def _render_operational_model(self, ocm: OperationalChangeModel) -> dict[str, Any]:
         """
-        Recursively render the model and all its components.
+        Recursively render the operational model and all its components.
         
         Args:
             ocm: OperationalChangeModel to render
@@ -79,7 +82,63 @@ class JSONRenderer:
         
         # Metadata
         result["_meta"] = {
+            "model_type": "OperationalChangeModel",
             "populated_models": ocm.populated_optional_models,
+        }
+        
+        return result
+    
+    def _render_discovery_model(self, edm: EngineeringDiscoveryModel) -> dict[str, Any]:
+        """
+        Recursively render the engineering discovery model and all its components.
+        
+        Args:
+            edm: EngineeringDiscoveryModel to render
+            
+        Returns:
+            Dictionary representation
+        """
+        result: dict[str, Any] = {}
+        
+        # Core models (always present)
+        result["repository"] = self._render_repository(edm.repository)
+        result["change"] = self._render_change(edm.change)
+        result["behavior"] = self._render_behavior(edm.behavior)
+        
+        # Execution-oriented abstractions
+        result["execution"] = {
+            "execution_units_count": len(edm.execution_units),
+            "execution_chains_count": len(edm.execution_chains),
+            "entry_points_count": len(edm.entry_points),
+            "terminal_points_count": len(edm.terminal_points),
+            "shared_executions_count": len(edm.shared_executions),
+            "reachable_units_count": len(edm.reachable_units),
+            "execution_depth": edm.execution_depth,
+        }
+        
+        # Optional enrichment models
+        if edm.has_dependency_model():
+            result["dependency"] = self._render_dependency(edm.dependency)
+        
+        if edm.has_data_model():
+            result["data"] = self._render_data(edm.data)
+        
+        if edm.has_event_model():
+            result["event"] = self._render_event(edm.event)
+        
+        if edm.has_api_model():
+            result["api"] = self._render_api(edm.api)
+        
+        if edm.has_validation_model():
+            result["validation"] = self._render_validation(edm.validation)
+        
+        if edm.has_metrics_model():
+            result["metrics"] = self._render_metrics(edm.metrics)
+        
+        # Metadata
+        result["_meta"] = {
+            "model_type": "EngineeringDiscoveryModel",
+            "populated_models": edm.populated_optional_models,
         }
         
         return result
@@ -144,7 +203,6 @@ class JSONRenderer:
     
     def _render_dependency(self, dependency: Any) -> dict[str, Any]:
         """Render DependencyModel to dictionary."""
-        # Use dataclass asdict if available
         try:
             from dataclasses import asdict
             return asdict(dependency)
@@ -214,15 +272,21 @@ class JSONRenderer:
         return {
             "id": behavior.id,
             "name": behavior.name,
-            "type": behavior.type,
-            "symbols": list(behavior.symbols) if behavior.symbols else [],
+            "kind": behavior.kind.value if hasattr(behavior.kind, 'value') else str(behavior.kind),
+            "entry_point": behavior.entry_point,
+            "root_symbol_id": behavior.root_symbol_id,
+            "changed_symbol_ids": list(behavior.changed_symbol_ids),
         }
     
     def _render_execution_graph(self, graph: Any) -> dict[str, Any]:
         """Render an execution graph to dictionary."""
         return {
-            "id": graph.id,
-            "name": graph.name,
+            "behavior_id": graph.behavior_id,
             "nodes_count": len(graph.nodes) if hasattr(graph, 'nodes') else 0,
             "edges_count": len(graph.edges) if hasattr(graph, 'edges') else 0,
+            "node_ids": [n.symbol_id for n in graph.nodes] if hasattr(graph, 'nodes') else [],
+            "edges": [
+                {"caller_id": e.caller_id, "callee_id": e.callee_id, "call_type": e.call_type}
+                for e in graph.edges
+            ] if hasattr(graph, 'edges') else [],
         }

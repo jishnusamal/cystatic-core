@@ -104,7 +104,8 @@ flowchart TB
     RepositoryCompilation --> ChangeCompilation
     ChangeCompilation --> BehaviorCompilation
     BehaviorCompilation --> OperationalCompilation
-    OperationalCompilation --> Output
+    OperationalCompilation --> DiscoveryCompilation
+    DiscoveryCompilation --> Output
     Output --> Observability
 ```
 
@@ -470,6 +471,13 @@ The system uses a **compilation pipeline** where each stage produces a determini
               │  Event → API → Validation │
               │  → Metrics                │
               │  → OperationalChangeModel │
+              └────────────┬──────────────┘
+                           │
+              ┌────────────▼──────────────┐
+              │  Engineering Discovery     │
+              │  Compilation               │
+              │  → EngineeringDiscovery    │
+              │    Model (Canonical IR)    │
               └────────────┬──────────────┘
                            │
               ┌────────────▼──────────────┐
@@ -848,6 +856,8 @@ Factor uses a **compilation pipeline** where each stage produces a deterministic
 2. **Change** — The `ChangeCompiler` (2 passes: changed symbols + classification) compares old and new repository snapshots to produce a `ChangeModel` describing exactly what changed.
 3. **Behavior** — The `BehaviorCompiler` (2 passes: discovery + graph) traces the impact of changes through the call graph to identify affected behaviors and execution paths.
 4. **Operational** — The `OperationalCompiler` (8 passes: composition, validation, dependency, data, event, API, validation, metrics) composes all models and enriches them with operational impact analysis.
+5. **Engineering Discovery** — The `EngineeringDiscoveryCompiler` (6 enrichment passes + projection) projects the OperationalChangeModel into an `EngineeringDiscoveryModel` — the deterministic, immutable canonical IR that all renderers consume.
+
 
 The runtime pipeline (`Pipeline` class) orchestrates the entire flow:
 1. Receives `AnalysisRequest` from API or webhook

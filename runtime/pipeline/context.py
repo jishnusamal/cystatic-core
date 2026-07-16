@@ -12,7 +12,7 @@ from typing import Any
 from language_adapters.model import RepositoryModel
 from change.model import ChangeModel, RepositoryDelta
 from behavior.model import BehaviorModel
-from operational.model import OperationalChangeModel
+from operational.model import OperationalChangeModel, EngineeringDiscoveryModel
 
 
 @dataclass
@@ -45,6 +45,7 @@ class PipelineContext:
     change_model: ChangeModel | None = None
     behavior_model: BehaviorModel | None = None
     ocm: OperationalChangeModel | None = None
+    edm: EngineeringDiscoveryModel | None = None
     
     # Metadata
     language: str | None = None
@@ -121,6 +122,7 @@ class PipelineContext:
             "change_compile_time": self.change_compile_time,
             "behavior_compile_time": self.behavior_compile_time,
             "operational_compile_time": self.operational_compile_time,
+            "has_discovery_model": self.edm is not None,
             "render_time": self.render_time,
             "total_time": self.total_time,
             "has_error": self.error is not None,

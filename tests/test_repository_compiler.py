@@ -55,6 +55,38 @@ def save_order():
     }
 
 
+@pytest.fixture
+def fastapi_source_files():
+    """
+    Create a sample set of FastAPI source files for testing.
+
+    This tests that entry points are detected with arbitrary variable names.
+    """
+    main_py = '''
+from fastapi import FastAPI
+from fastapi import APIRouter
+
+app = FastAPI()
+router = APIRouter()
+checkout_router = APIRouter()
+
+@app.get("/users")
+async def get_users():
+    pass
+
+@router.post("/items")
+async def create_item():
+    pass
+
+@checkout_router.get("/checkout")
+async def process_checkout():
+    pass
+'''
+    return {
+        "main.py": main_py,
+    }
+
+
 class TestPythonLanguageAdapter:
     """Test the repository compiler."""
     
@@ -211,3 +243,23 @@ class TestPythonLanguageAdapter:
         assert model1.call_graph.edges == model2.call_graph.edges
         assert model1.entry_points == model2.entry_points
         assert model1.reference_graph.edges == model2.reference_graph.edges
+
+    def test_fastapi_entry_points_detected(self, fastapi_source_files):
+        """Test that FastAPI entry points are detected with arbitrary variable names."""
+        adapter = PythonLanguageAdapter()
+        model = adapter.compile({"files": fastapi_source_files})
+
+        # Should have entry points from all three decorators
+        assert len(model.entry_points) == 3
+
+        # Check the entry points
+        entry_point_routes = [ep.route for ep in model.entry_points]
+        assert "GET /users" in entry_point_routes
+        assert "POST /items" in entry_point_routes
+        assert "GET /checkout" in entry_point_routes
+
+        # Check that handlers are correctly linked
+        handler_ids = [ep.handler_id for ep in model.entry_points]
+        assert "python://main.py::get_users" in handler_ids
+        assert "python://main.py::create_item" in handler_ids
+        assert "python://main.py::process_checkout" in handler_ids

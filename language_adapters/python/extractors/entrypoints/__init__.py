@@ -6,6 +6,10 @@ from typing import Any
 from language_adapters.base import BaseExtractor
 
 
+# HTTP methods that indicate a REST endpoint decorator
+HTTP_METHODS = frozenset({'get', 'post', 'put', 'delete', 'patch'})
+
+
 class PythonEntrypointExtractor(BaseExtractor):
     """
     Detects REST API endpoints from decorators (FastAPI/Flask style).
@@ -28,46 +32,21 @@ class PythonEntrypointExtractor(BaseExtractor):
         
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                decorators = self._get_decorator_names(node)
-                
-                for dec in decorators:
-                    if dec in (
-                        'app.post', 'app.get', 'app.put', 'app.delete',
-                        'app.patch', 'router.post', 'router.get',
-                    ):
-                        parts = dec.split('.')
-                        if len(parts) >= 2:
-                            method = parts[-1].upper()
-                            route = self._get_decorator_arg(node, dec)
-                            if route:
-                                endpoints.append({
-                                    'method': method,
-                                    'route': route,
-                                    'handler': node.name,
-                                })
+                for dec in node.decorator_list:
+                    # Check if this is a decorator call like @router.post("/route")
+                    if isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute):
+                        if isinstance(dec.func.value, ast.Name):
+                            method = dec.func.attr.lower()
+                            if method in HTTP_METHODS and dec.args:
+                                route = self._get_arg_value(dec.args[0])
+                                if route:
+                                    endpoints.append({
+                                        'method': method.upper(),
+                                        'route': route,
+                                        'handler': node.name,
+                                    })
         
         return endpoints
-    
-    def _get_decorator_names(self, node: ast.FunctionDef) -> list[str]:
-        """Get decorator names from a function."""
-        decorators = []
-        for dec in node.decorator_list:
-            if isinstance(dec, ast.Attribute):
-                if isinstance(dec.value, ast.Name):
-                    decorators.append(f"{dec.value.id}.{dec.attr}")
-            elif isinstance(dec, ast.Name):
-                decorators.append(dec.id)
-        return decorators
-    
-    def _get_decorator_arg(self, node: ast.FunctionDef, decorator_name: str) -> str | None:
-        """Get the argument of a decorator."""
-        for dec in node.decorator_list:
-            if isinstance(dec, ast.Attribute):
-                if isinstance(dec.value, ast.Name):
-                    full_name = f"{dec.value.id}.{dec.attr}"
-                    if full_name == decorator_name and dec.args:
-                        return self._get_arg_value(dec.args[0])
-        return None
     
     def _get_arg_value(self, node: ast.AST) -> str | None:
         """Get string value from an AST node."""

@@ -42,9 +42,29 @@ class BehaviorCompilationPass(BehaviorCompilerPass):
         # Collect all changed symbol ids
         changed_symbol_ids = self._collect_changed_symbol_ids(change_model)
 
+        # DEBUG: Verify RepositoryModel invariants
+        # print(f"[DEBUG] RepositoryModel.invariants check:")
+        # print(f"[DEBUG]   - symbols count: {len(repository_model.symbols)}")
+        # print(f"[DEBUG]   - entry_points count: {len(repository_model.entry_points)}")
+        # print(f"[DEBUG]   - call_edges count: {len(repository_model.call_graph.edges)}")
+        # print(f"[DEBUG]   - changed_symbol_ids: {changed_symbol_ids}")
+
         if not changed_symbol_ids:
+            print("[DEBUG]   - No changed symbols, returning empty behaviors")
             context.behaviors = []
             return context
+
+        # Verify each changed symbol exists in repository_model.symbols
+        # for symbol_id in changed_symbol_ids:
+        #     symbol = repository_model.get_symbol_by_id(symbol_id)
+            # print(f"[DEBUG]   - get_symbol_by_id('{symbol_id}'): {symbol is not None}")
+            # if symbol:
+            #     print(f"[DEBUG]     - symbol found: {symbol.name} ({symbol.kind})")
+            # # Check reverse call graph
+            # called_by = repository_model.get_called_by(symbol_id)
+            # print(f"[DEBUG]   - get_called_by('{symbol_id}'): {len(called_by)} edges")
+            # for edge in called_by:
+            #     print(f"[DEBUG]     - caller: {edge.caller_id}")
 
         # Build a map from symbol_id to the behaviors that contain it
         symbol_to_behaviors: dict[str, list[Behavior]] = {}
@@ -125,9 +145,13 @@ class BehaviorCompilationPass(BehaviorCompilerPass):
         """
         behaviors: list[Behavior] = []
 
+        # DEBUG: Print entry point handler IDs for comparison
+        # print(f"[DEBUG]   - Entry point handler_ids: {[ep.handler_id for ep in repository_model.entry_points]}")
+
         # Check if this symbol is itself an entry point
         for entry_point in getattr(repository_model, 'entry_points', ()):
             if entry_point.handler_id == symbol_id:
+                # print(f"[DEBUG]   - Symbol '{symbol_id}' IS an entry point handler")
                 behavior = self._create_behavior_from_entry_point(
                     entry_point, symbol_id, changed_symbol_ids
                 )
@@ -138,6 +162,8 @@ class BehaviorCompilationPass(BehaviorCompilerPass):
         visited: set[str] = set()
         queue: deque[str] = deque([symbol_id])
         found_entry_points: set[str] = set()
+
+        # print(f"[DEBUG]   - Starting BFS from '{symbol_id}' to find entry points")
 
         while queue and len(found_entry_points) < 10:  # Limit search breadth
             current_id = queue.popleft()
@@ -150,6 +176,7 @@ class BehaviorCompilationPass(BehaviorCompilerPass):
                 if entry_point.handler_id == current_id:
                     if current_id not in found_entry_points:
                         found_entry_points.add(current_id)
+                        # print(f"[DEBUG]   - Found entry point: '{current_id}'")
                         behavior = self._create_behavior_from_entry_point(
                             entry_point, symbol_id, changed_symbol_ids
                         )
@@ -158,10 +185,12 @@ class BehaviorCompilationPass(BehaviorCompilerPass):
 
             # Walk up: find who calls this symbol
             called_by = repository_model.get_called_by(current_id)
+            # print(f"[DEBUG]   - BFS node '{current_id}': {len(called_by)} callers")
             for edge in called_by:
                 if edge.caller_id not in visited:
                     queue.append(edge.caller_id)
 
+        # print(f"[DEBUG]   - BFS complete: found {len(behaviors)} behaviors")
         return behaviors
 
     def _create_behavior_from_entry_point(
