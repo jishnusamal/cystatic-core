@@ -71,6 +71,7 @@ class EngineeringDiscoveryCompiler:
             ValueError: If required models are missing.
         """
         # Support both old and new interface for backward compatibility
+        head_model: RepositoryModel | None
         if repository_delta is not None:
             head_model = repository_delta.head_model
         else:
@@ -78,6 +79,8 @@ class EngineeringDiscoveryCompiler:
 
         if head_model is None:
             raise ValueError("Either repository_delta or repository_model must be provided")
+        
+        # After None check, head_model is guaranteed to be RepositoryModel
         if change_model is None:
             raise ValueError("change_model is required")
         if behavior_model is None:
@@ -85,7 +88,10 @@ class EngineeringDiscoveryCompiler:
 
         # Build the operational model first
         operational_model = self._build_operational_model(
-            head_model, change_model, behavior_model, repository_delta
+            head_model,  # type: ignore[arg-type]
+            change_model,
+            behavior_model,
+            repository_delta,
         )
 
         # Create the engineering discovery model

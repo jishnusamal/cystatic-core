@@ -60,6 +60,8 @@ Must Never:
 """
 from __future__ import annotations
 
+from typing import cast
+
 from presentation.model import (
     PresentationDiscovery,
     PresentationVisual,
@@ -143,7 +145,10 @@ class VisualCompositionPass(PresentationCompilationPass):
         """Extract a display value from a discovery."""
         # For compressed discoveries, use the count
         if discovery.compressed:
-            return discovery.metadata.get("compressed_count", len(discovery.children))
+            compressed_count = discovery.metadata.get("compressed_count")
+            if compressed_count is not None:
+                return cast(int, compressed_count)
+            return len(discovery.children)
 
         # For metric-type discoveries, use evidence count
         semantic = KIND_SEMANTIC_MAP.get(discovery.kind, VisualSemantic.METRIC)

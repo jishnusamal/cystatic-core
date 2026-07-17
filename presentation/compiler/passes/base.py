@@ -136,7 +136,7 @@ class PresentationPassContext:
         """Update fields on a discovery in-place (replaces the dataclass instance)."""
         for i, d in enumerate(self.discoveries):
             if d.id == discovery_id:
-                updates = {
+                updates: dict[str, Any] = {
                     'id': d.id,
                     'kind': d.kind,
                     'title': d.title,
@@ -153,7 +153,7 @@ class PresentationPassContext:
                     'metadata': d.metadata,
                 }
                 updates.update(kwargs)
-                self.discoveries[i] = PresentationDiscovery(**updates)
+                self.discoveries[i] = PresentationDiscovery(**updates)  # type: ignore[arg-type]
                 return
 
 

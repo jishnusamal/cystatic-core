@@ -40,6 +40,7 @@ if TYPE_CHECKING:
         OutputProvider,
         RepositoryProvider,
     )
+    from language_adapters.model import RepositoryModel
 
 
 class Pipeline:
@@ -119,8 +120,11 @@ class Pipeline:
             
             # Step 2: Fetch diff if not provided
             if context.diff_data is None and request.has_diff:
-                context.diff_data = self._diff_snapshot_to_dict(request.diff) if hasattr(request.diff, 'files') else request.diff
-                print(f"[pipeline] Step 2: Diff provided in request, {len(context.diff_data.get('files', []))} files")
+                # request.diff is DiffSnapshot | None, but has_diff ensures it's not None
+                assert request.diff is not None
+                context.diff_data = self._diff_snapshot_to_dict(request.diff)
+                if context.diff_data is not None:
+                    print(f"[pipeline] Step 2: Diff provided in request, {len(context.diff_data.get('files', []))} files")
             
             if context.diff_data is None and self.repository_provider:
                 print(f"[pipeline] Step 2: Fetching diff from provider")
@@ -208,7 +212,7 @@ class Pipeline:
     
     async def _compile_repository_model(
         self, context: PipelineContext, request: AnalysisRequest, sha: str, label: str
-    ) -> RepositoryModel:
+    ) -> RepositoryModel | None:
         """
         Compile a single repository model for a specific SHA.
         
@@ -237,7 +241,7 @@ class Pipeline:
         
         # Fetch repository snapshot at this SHA
         print(f"[pipeline] Fetching {label} repository snapshot at {sha}")
-        snapshot = await self.repository_provider.fetch_repository_at_sha(request.repository, sha)
+        snapshot = await self.repository_provider.fetch_repository_at_sha(request.repository, sha)  # type: ignore[union-attr]
         print(f"[pipeline] {label.capitalize()} snapshot: {len(snapshot.files)} files")
         
         # Detect language from repository files (only once)
@@ -738,7 +742,9 @@ class Pipeline:
             # Prefer EDM over OCM
             if context.edm is not None:
                 return self._github_renderer.render_artifact(context.edm, render_context)
-            return self._github_renderer.render(context.ocm, render_context)
+            if context.ocm is not None:
+                return self._github_renderer.render(context.ocm, render_context)
+            raise PipelineExecutionError("No model available to render")
         except Exception as exc:
             raise PipelineExecutionError(
                 f"GitHub rendering failed: {exc}",
@@ -772,7 +778,9 @@ class Pipeline:
         try:
             # Prefer EDM over OCM
             model = context.edm if context.edm is not None else context.ocm
-            return await self.output_provider.publish(model, destination)
+            if model is None:
+                raise PipelineExecutionError("No model available to publish")
+            return await self.output_provider.publish(model, destination)  # type: ignore[arg-type]
         except Exception as exc:
             raise PipelineExecutionError(
                 f"Output publishing failed: {exc}",

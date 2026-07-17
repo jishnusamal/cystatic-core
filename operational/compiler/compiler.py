@@ -81,6 +81,7 @@ class OperationalCompiler:
             ValueError: If consistency validation fails
         """
         # Support both old and new interface for backward compatibility
+        head_model: RepositoryModel | None
         if repository_delta is not None:
             head_model = repository_delta.head_model
         else:
@@ -89,10 +90,11 @@ class OperationalCompiler:
         # Type checker: ensure head_model is not None
         if head_model is None:
             raise ValueError("Either repository_delta or repository_model must be provided")
-
+        
+        # After None check, head_model is guaranteed to be RepositoryModel
         # Initialize pass context with models
         context = OperationalPassContext(
-            repository_model=head_model,
+            repository_model=head_model,  # type: ignore[arg-type]
             repository_delta=repository_delta,
             change_model=change_model,
             behavior_model=behavior_model,
@@ -142,6 +144,7 @@ class OperationalCompiler:
             Tuple of (OperationalChangeModel or None, list of error strings)
         """
         # Support both old and new interface for backward compatibility
+        head_model: RepositoryModel | None
         if repository_delta is not None:
             head_model = repository_delta.head_model
         else:
@@ -150,9 +153,10 @@ class OperationalCompiler:
         # Type checker: ensure head_model is not None
         if head_model is None:
             raise ValueError("Either repository_delta or repository_model must be provided")
-
+        
+        # After None check, head_model is guaranteed to be RepositoryModel
         context = OperationalPassContext(
-            repository_model=head_model,
+            repository_model=head_model,  # type: ignore[arg-type]
             repository_delta=repository_delta,
             change_model=change_model,
             behavior_model=behavior_model,
