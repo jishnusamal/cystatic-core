@@ -13,99 +13,110 @@ from language_adapters.model import RepositoryModel
 from change.model import ChangeModel, RepositoryDelta
 from behavior.model import BehaviorModel
 from operational.model import OperationalChangeModel, EngineeringDiscoveryModel
+from presentation.model import PresentationIR
 
 
 @dataclass
 class PipelineContext:
     """
     Runtime state for a single pipeline execution.
-    
+
     Tracks all intermediate artifacts and metadata through the pipeline.
     This is NOT a compiler context - it's pure orchestration state.
     """
-    
+
     # Input
     repository: str
     base_sha: str | None = None
     head_sha: str | None = None
     diff_data: dict[str, Any] | None = None
-    
+
     # Repository snapshots (immutable once set)
     base_repository_snapshot: Any | None = None
     head_repository_snapshot: Any | None = None
-    
+
     # Compiled repository models (immutable once set)
     base_repository_model: RepositoryModel | None = None
     head_repository_model: RepositoryModel | None = None
-    
+
     # Repository delta (canonical input for downstream phases)
     repository_delta: RepositoryDelta | None = None
-    
+
     # Intermediate artifacts
     change_model: ChangeModel | None = None
     behavior_model: BehaviorModel | None = None
     ocm: OperationalChangeModel | None = None
     edm: EngineeringDiscoveryModel | None = None
-    
+
+    # Presentation IR (output of Presentation Compiler)
+    presentation_ir: PresentationIR | None = None
+
     # Metadata
     language: str | None = None
     adapter: str | None = None
     request_id: str | None = None
     installation_id: str | None = None
-    
+
     # Timing
     compile_started_at: float | None = None
     repository_compile_time: float | None = None
     change_compile_time: float | None = None
     behavior_compile_time: float | None = None
     operational_compile_time: float | None = None
+    presentation_compile_time: float | None = None
     render_time: float | None = None
     total_time: float | None = None
-    
+
     # Errors
     error: Exception | None = None
-    
+
     def mark_compilation_start(self) -> None:
         """Record the start time of compilation."""
         import time
         self.compile_started_at = time.time()
-    
+
     def mark_repository_compiled(self) -> None:
         """Record repository compilation completion."""
         import time
         if self.compile_started_at:
             self.repository_compile_time = time.time() - self.compile_started_at
-    
+
     def mark_change_compiled(self) -> None:
         """Record change compilation completion."""
         import time
         if self.compile_started_at:
             self.change_compile_time = time.time() - self.compile_started_at
-    
+
     def mark_behavior_compiled(self) -> None:
         """Record behavior compilation completion."""
         import time
         if self.compile_started_at:
             self.behavior_compile_time = time.time() - self.compile_started_at
-    
+
     def mark_operational_compiled(self) -> None:
         """Record operational compilation completion."""
         import time
         if self.compile_started_at:
             self.operational_compile_time = time.time() - self.compile_started_at
-    
+
+    def mark_presentation_compiled(self) -> None:
+        """Record presentation compilation completion."""
+        import time
+        if self.compile_started_at:
+            self.presentation_compile_time = time.time() - self.compile_started_at
+
     def mark_render_complete(self) -> None:
         """Record rendering completion."""
         import time
         if self.compile_started_at:
             self.render_time = time.time() - self.compile_started_at
-    
+
     def mark_complete(self) -> None:
         """Record total execution time."""
         import time
         if self.compile_started_at:
             self.total_time = time.time() - self.compile_started_at
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Convert context to dictionary for logging/serialization."""
         return {
@@ -123,6 +134,7 @@ class PipelineContext:
             "behavior_compile_time": self.behavior_compile_time,
             "operational_compile_time": self.operational_compile_time,
             "has_discovery_model": self.edm is not None,
+            "has_presentation_ir": self.presentation_ir is not None,
             "render_time": self.render_time,
             "total_time": self.total_time,
             "has_error": self.error is not None,

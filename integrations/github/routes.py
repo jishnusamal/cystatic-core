@@ -395,25 +395,35 @@ async def analyze_repository(
                 if result.get(model_name) is not None:
                     discovery_summary[model_name] = result[model_name]
         
-        return JSONResponse(
-            content={
-                "repository": repository,
-                "language": context.language or "unknown",
-                "change_summary": result.get("change", {}),
-                "behavior_summary": result.get("behavior", {}),
-                "operational_summary": {
-                    k: v for k, v in result.items()
-                    if k in ["dependency", "data", "event", "api", "validation", "metrics"]
-                },
-                "discovery_summary": discovery_summary,
-                "timing": {
-                    "repository": context.repository_compile_time or 0.0,
-                    "change": context.change_compile_time or 0.0,
-                    "behavior": context.behavior_compile_time or 0.0,
-                    "operational": context.operational_compile_time or 0.0,
-                    "total": context.total_time or 0.0,
-                },
+        # Render presentation IR
+        presentation = pipeline.render_presentation(context)
+        
+        response_content = {
+            "repository": repository,
+            "language": context.language or "unknown",
+            "change_summary": result.get("change", {}),
+            "behavior_summary": result.get("behavior", {}),
+            "operational_summary": {
+                k: v for k, v in result.items()
+                if k in ["dependency", "data", "event", "api", "validation", "metrics"]
             },
+            "discovery_summary": discovery_summary,
+            "timing": {
+                "repository": context.repository_compile_time or 0.0,
+                "change": context.change_compile_time or 0.0,
+                "behavior": context.behavior_compile_time or 0.0,
+                "operational": context.operational_compile_time or 0.0,
+                "presentation": context.presentation_compile_time or 0.0,
+                "total": context.total_time or 0.0,
+            },
+        }
+        
+        # Include presentation IR if available
+        if presentation is not None:
+            response_content["presentation"] = presentation
+        
+        return JSONResponse(
+            content=response_content,
             status_code=200,
         )
     

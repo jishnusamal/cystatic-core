@@ -14,6 +14,7 @@ from change.model.repository_comparison import RepositoryComparison
 from change.model.repository_delta import RepositoryDelta
 from behavior.compiler import BehaviorCompiler
 from operational.compiler import OperationalCompiler, EngineeringDiscoveryCompiler
+from presentation.compiler import PresentationCompiler
 from runtime.errors import (
     CompilationTimeout,
     DiffFetchFailed,
@@ -145,6 +146,11 @@ class Pipeline:
             print(f"[pipeline] Step 6: Engineering discovery model compilation")
             await self._compile_discovery(context)
             print(f"[pipeline] Step 6 done")
+            
+            # Step 7: Compile presentation IR
+            print(f"[pipeline] Step 7: Presentation IR compilation")
+            await self._compile_presentation(context)
+            print(f"[pipeline] Step 7 done")
             
             context.mark_complete()
             
@@ -507,6 +513,37 @@ class Pipeline:
                 details={"repository": context.repository},
             ) from exc
 
+    async def _compile_presentation(self, context: PipelineContext) -> None:
+        """
+        Compile presentation IR from the engineering discovery model.
+        
+        Args:
+            context: Pipeline context
+            
+        Raises:
+            PipelineExecutionError: If compilation fails
+        """
+        if context.edm is None:
+            raise PipelineExecutionError(
+                "Engineering discovery model not available for presentation compilation",
+                details={"repository": context.repository},
+            )
+        
+        try:
+            import time
+            start = time.time()
+            
+            presentation_compiler = PresentationCompiler()
+            context.presentation_ir = presentation_compiler.compile(context.edm)
+            
+            context.presentation_compile_time = time.time() - start
+            context.mark_presentation_compiled()
+        except Exception as exc:
+            raise PipelineExecutionError(
+                f"Presentation compilation failed: {exc}",
+                details={"repository": context.repository},
+            ) from exc
+
     def render_json(self, context: PipelineContext) -> dict[str, Any]:
         """
         Render the pipeline result as JSON.
@@ -537,6 +574,130 @@ class Pipeline:
         except Exception as exc:
             raise PipelineExecutionError(
                 f"JSON rendering failed: {exc}",
+                details={"repository": context.repository},
+            ) from exc
+    
+    def render_presentation(self, context: PipelineContext) -> dict[str, Any] | None:
+        """
+        Render the presentation IR as a dictionary.
+        
+        Args:
+            context: Pipeline context with presentation IR
+            
+        Returns:
+            Dictionary representation of the presentation IR, or None if not available
+            
+        Raises:
+            PipelineExecutionError: If rendering fails
+        """
+        if context.presentation_ir is None:
+            return None
+        
+        try:
+            ir = context.presentation_ir
+            return {
+                "metadata": {
+                    "compiler_version": ir.metadata.compiler_version,
+                    "compiled_at": ir.metadata.compiled_at,
+                    "discovery_count": ir.metadata.discovery_count,
+                    "evidence_count": ir.metadata.evidence_count,
+                    "pass_count": ir.metadata.pass_count,
+                },
+                "summary": {
+                    "changed_files": ir.summary.changed_files,
+                    "changed_symbols": ir.summary.changed_symbols,
+                    "affected_behaviors": ir.summary.affected_behaviors,
+                    "execution_paths": ir.summary.execution_paths,
+                    "services_reached": ir.summary.services_reached,
+                    "validation_gaps": ir.summary.validation_gaps,
+                    "surprising_discoveries": ir.summary.surprising_discoveries,
+                },
+                "discoveries": [
+                    {
+                        "id": d.id,
+                        "kind": d.kind.value,
+                        "title": d.title,
+                        "summary": d.summary,
+                        "compressed": d.compressed,
+                        "children": list(d.children) if d.children else [],
+                        "source_artifact": d.source_artifact,
+                        "evidence": [
+                            {
+                                "source": e.source,
+                                "source_id": e.source_id,
+                                "description": e.description,
+                                "evidence_ref": e.evidence_ref,
+                            }
+                            for e in d.evidence
+                        ],
+                        "metrics": {
+                            "execution_reach": d.metrics.execution_reach if d.metrics else 0,
+                            "fan_out": d.metrics.fan_out if d.metrics else 0,
+                            "propagation_depth": d.metrics.propagation_depth if d.metrics else 0,
+                            "boundary_crossings": d.metrics.boundary_crossings if d.metrics else 0,
+                            "sharedness": d.metrics.sharedness if d.metrics else 0,
+                            "external_surface": d.metrics.external_surface if d.metrics else 0,
+                            "data_surface": d.metrics.data_surface if d.metrics else 0,
+                            "validation_gap": d.metrics.validation_gap if d.metrics else 0.0,
+                            "evidence_density": d.metrics.evidence_density if d.metrics else 0,
+                            "cross_domain_evidence": d.metrics.cross_domain_evidence if d.metrics else 0,
+                        } if d.metrics else None,
+                        "ranking_vector": {
+                            "has_external_surface": d.ranking_vector.has_external_surface if d.ranking_vector else 0,
+                            "execution_reach": d.ranking_vector.execution_reach if d.ranking_vector else 0,
+                            "boundary_crossings": d.ranking_vector.boundary_crossings if d.ranking_vector else 0,
+                            "propagation_depth": d.ranking_vector.propagation_depth if d.ranking_vector else 0,
+                            "sharedness": d.ranking_vector.sharedness if d.ranking_vector else 0,
+                            "has_validation_gap": d.ranking_vector.has_validation_gap if d.ranking_vector else 0,
+                            "evidence_density": d.ranking_vector.evidence_density if d.ranking_vector else 0,
+                        } if d.ranking_vector else None,
+                        "surprise": {
+                            "reach_ratio": d.surprise.reach_ratio if d.surprise else 0.0,
+                            "propagation_ratio": d.surprise.propagation_ratio if d.surprise else 0.0,
+                            "boundary_ratio": d.surprise.boundary_ratio if d.surprise else 0.0,
+                            "fan_out_ratio": d.surprise.fan_out_ratio if d.surprise else 0.0,
+                            "service_ratio": d.surprise.service_ratio if d.surprise else 0.0,
+                            "max_ratio": d.surprise.max_ratio if d.surprise else 0.0,
+                            "description": d.surprise.description if d.surprise else "",
+                        } if d.surprise else None,
+                        "visual_semantic": d.visual_semantic.value if d.visual_semantic else None,
+                        "narrative_position": d.narrative_position.value if d.narrative_position else None,
+                    }
+                    for d in ir.discoveries
+                ],
+                "narrative": [
+                    {
+                        "section": n.section,
+                        "order": n.order,
+                        "discovery_ids": list(n.discovery_ids),
+                        "description": n.description,
+                    }
+                    for n in ir.narrative
+                ],
+                "visuals": [
+                    {
+                        "discovery_id": v.discovery_id,
+                        "semantic": v.semantic.value,
+                        "value": v.value,
+                        "label": v.label,
+                        "details": v.details,
+                    }
+                    for v in ir.visuals
+                ],
+                "evidence": [
+                    {
+                        "source": e.source,
+                        "source_id": e.source_id,
+                        "description": e.description,
+                        "evidence_ref": e.evidence_ref,
+                    }
+                    for e in ir.evidence
+                ],
+                "navigation": ir.navigation,
+            }
+        except Exception as exc:
+            raise PipelineExecutionError(
+                f"Presentation rendering failed: {exc}",
                 details={"repository": context.repository},
             ) from exc
     
