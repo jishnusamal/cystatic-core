@@ -30,6 +30,12 @@ from .model import (
     NarrativePosition,
     VisualSemantic,
 )
+from .llm.context_builder import LLMContextBuilder
+from .llm.prompt_builder import PromptBuilder
+from .llm.client import LLMClient
+from .llm.validator import CommentValidator
+from .renderers.github_comment_renderer import GitHubCommentRenderer
+from .publisher.github import GitHubPublisher
 
 __all__ = [
     "PresentationCompiler",
@@ -58,4 +64,10 @@ __all__ = [
     "DiscoveryKind",
     "NarrativePosition",
     "VisualSemantic",
+    "LLMContextBuilder",
+    "PromptBuilder",
+    "LLMClient",
+    "CommentValidator",
+    "GitHubCommentRenderer",
+    "GitHubPublisher",
 ]

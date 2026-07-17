@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
 
     AI_API_KEY: str
+    AI_API_BASE_URL: str = "https://api.groq.com/openai/v1"
+    AI_MODEL: str = "openai/gpt-oss-120b"
 
     CYSTATIC_KEYS: dict[str, str] = Field(default_factory=dict)
 

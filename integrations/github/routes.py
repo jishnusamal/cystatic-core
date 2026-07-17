@@ -421,6 +421,40 @@ async def analyze_repository(
         # Include presentation IR if available
         if presentation is not None:
             response_content["presentation"] = presentation
+            
+            # Generate LLM comment if presentation IR is available
+            try:
+                print("[routes] Generating LLM comment")
+                llm_result = pipeline.generate_llm_comment(
+                    context,
+                    repository=repository,
+                    pr_number=str(pr_number) if pr_number else "",
+                    language=context.language or "unknown",
+                )
+                # Build LLM context for response
+                llm_context_dict = pipeline.build_llm_context(context)
+                response_content["llm"] = {
+                    "model": llm_result.get("model", "unknown"),
+                    "generated": llm_result.get("generated", False),
+                    "comment": llm_result.get("comment", ""),
+                    "is_valid": llm_result.get("is_valid", False),
+                    "validation_errors": llm_result.get("validation_errors", []),
+                    "truncated": llm_result.get("truncated", False),
+                    "context": llm_context_dict,
+                }
+                print(f"[routes] LLM comment generated: model={llm_result.get('model')}, valid={llm_result.get('is_valid')}")
+            except Exception as exc:
+                print(f"[routes] LLM comment generation failed: {exc}")
+                # Include error in response but don't fail the request
+                response_content["llm"] = {
+                    "model": "error",
+                    "generated": False,
+                    "comment": "## ⚠️ Analysis Complete\n\nFactor analysis completed. LLM comment generation failed.",
+                    "is_valid": False,
+                    "validation_errors": [str(exc)],
+                    "truncated": False,
+                    "context": None,
+                }
         
         return JSONResponse(
             content=response_content,
@@ -529,6 +563,7 @@ async def _process_pr_analysis(
     
     Side Effects:
         - Executes the full analysis pipeline (repository, change, behavior, operational)
+        - Generates LLM comment from presentation IR
         - Posts analysis results as a comment on the pull request
         - Prints status messages to stdout for logging
     
@@ -537,6 +572,7 @@ async def _process_pr_analysis(
         - Errors are caught and logged but do not fail the webhook
         - Requires valid GitHub App installation token for posting results
         - Analysis results include change summary, behavior summary, and operational summary
+        - LLM comment is generated from presentation IR when available
     """
     pipeline = get_pipeline_instance()
     registry = get_registry_instance()
@@ -549,9 +585,7 @@ async def _process_pr_analysis(
             print(f"Pipeline failed for {request.repository.full_name}: {context.error}")
             return
         
-        # Publish output using output provider
-        output_provider = registry.get_output_provider("github")
-        
+        # Get authentication token if needed
         destination = {
             "repo": request.repository.full_name,
             "pr_number": str(request.pull_request.number) if request.pull_request else None,
@@ -561,11 +595,35 @@ async def _process_pr_analysis(
             "total_time": f"{context.total_time:.2f}" if context.total_time else "N/A",
         }
         
-        # Get authentication token if needed
         if installation_id:
             installation_provider = registry.get_installation_provider("github")
             token = await installation_provider.authenticate(str(installation_id))
             destination["token"] = token
+        
+        # Try to generate LLM comment from presentation IR
+        llm_comment = None
+        if context.presentation_ir is not None:
+            try:
+                print(f"[_process_pr_analysis] Generating LLM comment for {request.repository.full_name}")
+                llm_result = pipeline.generate_llm_comment(
+                    context,
+                    repository=request.repository.full_name,
+                    pr_number=str(request.pull_request.number) if request.pull_request else "",
+                    language=context.language or "unknown",
+                )
+                llm_comment = llm_result.get("comment")
+                if llm_comment:
+                    print(f"[_process_pr_analysis] LLM comment generated: model={llm_result.get('model')}, valid={llm_result.get('is_valid')}")
+            except Exception as exc:
+                print(f"[_process_pr_analysis] LLM comment generation failed: {exc}")
+                # Continue with fallback
+        
+        # Publish output using output provider
+        output_provider = registry.get_output_provider("github")
+        
+        # Pass LLM comment in destination if available
+        if llm_comment:
+            destination["llm_comment"] = llm_comment
         
         await output_provider.publish(context.ocm, destination)
         

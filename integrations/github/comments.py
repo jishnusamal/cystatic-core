@@ -34,7 +34,7 @@ class GitHubCommentProvider(OutputProvider):
         
         Args:
             ocm: Operational change model
-            destination: Destination info (repo, pr_number)
+            destination: Destination info (repo, pr_number, llm_comment)
             
         Returns:
             Comment ID or None
@@ -47,17 +47,21 @@ class GitHubCommentProvider(OutputProvider):
         if not repo or not pr_number:
             raise ValueError("Missing 'repo' or 'pr_number' in destination")
         
-        # Render the comment
-        render_context = {
-            "repository": repo,
-            "pr_number": pr_number,
-            "base_sha": destination.get("base_sha", ""),
-            "head_sha": destination.get("head_sha", ""),
-            "language": destination.get("language", "unknown"),
-            "total_time": destination.get("total_time", "N/A"),
-        }
-        
-        comment = self._renderer.render(ocm, render_context)
+        # Use LLM comment if available, otherwise fall back to renderer
+        llm_comment = destination.get("llm_comment")
+        if llm_comment:
+            comment = llm_comment
+        else:
+            # Render the comment using the traditional renderer
+            render_context = {
+                "repository": repo,
+                "pr_number": pr_number,
+                "base_sha": destination.get("base_sha", ""),
+                "head_sha": destination.get("head_sha", ""),
+                "language": destination.get("language", "unknown"),
+                "total_time": destination.get("total_time", "N/A"),
+            }
+            comment = self._renderer.render(ocm, render_context)
         
         # Post to GitHub
         token = destination.get("token")
@@ -83,7 +87,7 @@ class GitHubCommentProvider(OutputProvider):
         
         Args:
             ocm: Operational change model
-            destination: Destination info
+            destination: Destination info (repo, pr_number, llm_comment)
             previous_id: Previous comment ID
             
         Returns:
@@ -100,17 +104,21 @@ class GitHubCommentProvider(OutputProvider):
         if not repo or not pr_number:
             raise ValueError("Missing 'repo' or 'pr_number' in destination")
         
-        # Render the comment
-        render_context = {
-            "repository": repo,
-            "pr_number": pr_number,
-            "base_sha": destination.get("base_sha", ""),
-            "head_sha": destination.get("head_sha", ""),
-            "language": destination.get("language", "unknown"),
-            "total_time": destination.get("total_time", "N/A"),
-        }
-        
-        comment = self._renderer.render(ocm, render_context)
+        # Use LLM comment if available, otherwise fall back to renderer
+        llm_comment = destination.get("llm_comment")
+        if llm_comment:
+            comment = llm_comment
+        else:
+            # Render the comment using the traditional renderer
+            render_context = {
+                "repository": repo,
+                "pr_number": pr_number,
+                "base_sha": destination.get("base_sha", ""),
+                "head_sha": destination.get("head_sha", ""),
+                "language": destination.get("language", "unknown"),
+                "total_time": destination.get("total_time", "N/A"),
+            }
+            comment = self._renderer.render(ocm, render_context)
         
         # Update on GitHub
         token = destination.get("token")

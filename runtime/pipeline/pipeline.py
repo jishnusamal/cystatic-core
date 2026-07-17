@@ -15,6 +15,11 @@ from change.model.repository_delta import RepositoryDelta
 from behavior.compiler import BehaviorCompiler
 from operational.compiler import OperationalCompiler, EngineeringDiscoveryCompiler
 from presentation.compiler import PresentationCompiler
+from presentation.llm.context_builder import LLMContextBuilder
+from presentation.llm.prompt_builder import PromptBuilder
+from presentation.llm.client import LLMClient
+from presentation.llm.validator import CommentValidator
+from presentation.renderers.github_comment_renderer import GitHubCommentRenderer
 from runtime.errors import (
     CompilationTimeout,
     DiffFetchFailed,
@@ -786,3 +791,180 @@ class Pipeline:
                 f"Output publishing failed: {exc}",
                 details={"repository": context.repository},
             ) from exc
+    
+    def build_llm_context(self, context: PipelineContext) -> dict[str, Any]:
+        """
+        Build LLM context from presentation IR.
+        
+        Args:
+            context: Pipeline context with presentation IR
+            
+        Returns:
+            LLMContext as a dictionary
+            
+        Raises:
+            PipelineExecutionError: If context building fails
+        """
+        if context.presentation_ir is None:
+            raise PipelineExecutionError("No presentation IR available for LLM context building")
+        
+        try:
+            builder = LLMContextBuilder()
+            llm_context = builder.build(context.presentation_ir)
+            
+            # Convert to dictionary for serialization
+            return {
+                "metadata": llm_context.metadata,
+                "summary": llm_context.summary,
+                "discoveries": [
+                    {
+                        "id": d.id,
+                        "kind": d.kind,
+                        "title": d.title,
+                        "summary": d.summary,
+                        "metrics": d.metrics,
+                        "surprise": d.surprise,
+                        "top_evidence": list(d.top_evidence),
+                        "narrative_position": d.narrative_position,
+                    }
+                    for d in llm_context.discoveries
+                ],
+                "narrative": [
+                    {
+                        "section": n.section,
+                        "order": n.order,
+                        "description": n.description,
+                        "discovery_ids": list(n.discovery_ids),
+                    }
+                    for n in llm_context.narrative
+                ],
+                "visuals": [
+                    {
+                        "discovery_id": v.discovery_id,
+                        "semantic": v.semantic,
+                        "value": v.value,
+                        "label": v.label,
+                    }
+                    for v in llm_context.visuals
+                ],
+                "constraints": list(llm_context.constraints),
+            }
+        except Exception as exc:
+            raise PipelineExecutionError(
+                f"LLM context building failed: {exc}",
+                details={"repository": context.repository},
+            ) from exc
+    
+    def generate_llm_comment(
+        self,
+        context: PipelineContext,
+        repository: str = "",
+        pr_number: str = "",
+        language: str = "",
+    ) -> dict[str, Any]:
+        """
+        Generate LLM comment from presentation IR.
+        
+        Args:
+            context: Pipeline context with presentation IR
+            repository: Repository name
+            pr_number: PR number
+            language: Programming language
+            
+        Returns:
+            Dictionary with generated comment and metadata
+            
+        Raises:
+            PipelineExecutionError: If generation fails
+        """
+        if context.presentation_ir is None:
+            raise PipelineExecutionError("No presentation IR available for LLM comment generation")
+        
+        try:
+            # Step 1: Build LLM context
+            print("[pipeline] Step 8: Building LLM context")
+            llm_context_dict = self.build_llm_context(context)
+            
+            # Convert dict back to LLMContext object for prompt builder
+            from presentation.llm.models import LLMContext, LLMDiscovery, LLMNarrative, LLMVisual
+            llm_context = LLMContext(
+                metadata=llm_context_dict["metadata"],
+                summary=llm_context_dict["summary"],
+                discoveries=tuple(LLMDiscovery(**d) for d in llm_context_dict["discoveries"]),
+                narrative=tuple(LLMNarrative(**n) for n in llm_context_dict["narrative"]),
+                visuals=tuple(LLMVisual(**v) for v in llm_context_dict["visuals"]),
+                constraints=llm_context_dict["constraints"],
+            )
+            
+            # Step 2: Build prompts
+            print("[pipeline] Step 9: Building prompts")
+            prompt_builder = PromptBuilder()
+            system_prompt, user_prompt = prompt_builder.build_prompts(
+                llm_context,
+                repository=repository or context.repository,
+                pr_number=pr_number or "unknown",
+                language=language or context.language or "unknown",
+            )
+            
+            # Step 3: Generate comment with LLM
+            print("[pipeline] Step 10: Generating comment with LLM")
+            from api.settings import get_settings
+            settings = get_settings()
+            llm_client = LLMClient(api_key=settings.AI_API_KEY, base_url=settings.AI_API_BASE_URL)
+            model_info = llm_client.get_model_info()
+            generated_markdown = llm_client.generate_comment(system_prompt, user_prompt)
+            
+            # Step 4: Validate comment
+            print("[pipeline] Step 11: Validating comment")
+            validator = CommentValidator(context=llm_context)
+            validated_comment = validator.validate(generated_markdown, model=model_info["model"])
+            
+            # Step 5: Render to GitHub format
+            print("[pipeline] Step 12: Rendering GitHub comment")
+            renderer = GitHubCommentRenderer()
+            final_markdown = renderer.render(validated_comment, llm_context)
+            
+            return {
+                "generated": True,
+                "model": model_info["model"],
+                "comment": final_markdown,
+                "is_valid": validated_comment.is_valid,
+                "validation_errors": list(validated_comment.validation_errors),
+                "truncated": validated_comment.truncated,
+            }
+            
+        except Exception as exc:
+            print(f"[pipeline] LLM comment generation failed: {exc}")
+            # Return fallback comment on failure
+            try:
+                llm_context_dict = self.build_llm_context(context)
+                from presentation.llm.models import LLMContext, LLMDiscovery, LLMNarrative, LLMVisual
+                llm_context = LLMContext(
+                    metadata=llm_context_dict["metadata"],
+                    summary=llm_context_dict["summary"],
+                    discoveries=tuple(LLMDiscovery(**d) for d in llm_context_dict["discoveries"]),
+                    narrative=tuple(LLMNarrative(**n) for n in llm_context_dict["narrative"]),
+                    visuals=tuple(LLMVisual(**v) for v in llm_context_dict["visuals"]),
+                    constraints=llm_context_dict["constraints"],
+                )
+                renderer = GitHubCommentRenderer()
+                fallback_comment = renderer.render_fallback(llm_context)
+                
+                return {
+                    "generated": False,
+                    "model": "fallback",
+                    "comment": fallback_comment,
+                    "is_valid": True,
+                    "validation_errors": [f"LLM generation failed: {exc}"],
+                    "truncated": False,
+                }
+            except Exception:
+                # Ultimate fallback if even context building fails
+                return {
+                    "generated": False,
+                    "model": "fallback",
+                    "comment": "## ⚠️ Analysis Complete\n\nFactor analysis completed. Please view the full results in the API response.",
+                    "is_valid": True,
+                    "validation_errors": [f"LLM generation and fallback failed: {exc}"],
+                    "truncated": False,
+                }
