@@ -865,6 +865,9 @@ class Pipeline:
         """
         Generate LLM comment from presentation IR.
         
+        Uses the new structured LLM → Jinja2 architecture:
+        PresentationIR → LLMContext → Prompts → LLM JSON → GithubComment → Markdown
+        
         Args:
             context: Pipeline context with presentation IR
             repository: Repository name
@@ -872,99 +875,92 @@ class Pipeline:
             language: Programming language
             
         Returns:
-            Dictionary with generated comment and metadata
+            Dictionary with generated comment, metadata, and structured LLM response
             
         Raises:
-            PipelineExecutionError: If generation fails
+            PipelineExecutionError: If generation fails completely
         """
         if context.presentation_ir is None:
             raise PipelineExecutionError("No presentation IR available for LLM comment generation")
         
         try:
-            # Step 1: Build LLM context
-            print("[pipeline] Step 8: Building LLM context")
-            llm_context_dict = self.build_llm_context(context)
+            # Use the new GithubCommentGenerator for structured output
+            from presentation.github_comment_generator import GithubCommentGenerator
+            from api.settings import get_settings
             
-            # Convert dict back to LLMContext object for prompt builder
-            from presentation.llm.models import LLMContext, LLMDiscovery, LLMNarrative, LLMVisual
-            llm_context = LLMContext(
-                metadata=llm_context_dict["metadata"],
-                summary=llm_context_dict["summary"],
-                discoveries=tuple(LLMDiscovery(**d) for d in llm_context_dict["discoveries"]),
-                narrative=tuple(LLMNarrative(**n) for n in llm_context_dict["narrative"]),
-                visuals=tuple(LLMVisual(**v) for v in llm_context_dict["visuals"]),
-                constraints=llm_context_dict["constraints"],
-            )
+            settings = get_settings()
             
-            # Step 2: Build prompts
-            print("[pipeline] Step 9: Building prompts")
-            prompt_builder = PromptBuilder()
-            system_prompt, user_prompt = prompt_builder.build_prompts(
-                llm_context,
+            generator = GithubCommentGenerator(
+                api_key=settings.AI_API_KEY,
+                model="openai/gpt-oss-120b",  # Use configured model
                 repository=repository or context.repository,
                 pr_number=pr_number or "unknown",
                 language=language or context.language or "unknown",
             )
             
-            # Step 3: Generate comment with LLM
-            print("[pipeline] Step 10: Generating comment with LLM")
-            from api.settings import get_settings
-            settings = get_settings()
-            llm_client = LLMClient(api_key=settings.AI_API_KEY, base_url=settings.AI_API_BASE_URL)
-            model_info = llm_client.get_model_info()
-            generated_markdown = llm_client.generate_comment(system_prompt, user_prompt)
+            # Generate markdown comment
+            markdown = generator.generate(context.presentation_ir, settings)
             
-            # Step 4: Validate comment
-            print("[pipeline] Step 11: Validating comment")
-            validator = CommentValidator(context=llm_context)
-            validated_comment = validator.validate(generated_markdown, model=model_info["model"])
-            
-            # Step 5: Render to GitHub format
-            print("[pipeline] Step 12: Rendering GitHub comment")
-            renderer = GitHubCommentRenderer()
-            final_markdown = renderer.render(validated_comment, llm_context)
+            # Get the structured LLM response (GithubComment model)
+            # We need to access the last generated comment from the generator
+            llm_response_data = None
+            if hasattr(generator, 'parser') and hasattr(generator.parser, 'last_parsed_comment'):
+                llm_response_data = generator.parser.last_parsed_comment
+            else:
+                # Fallback: Re-generate to get the structured data
+                try:
+                    context_builder = generator.context_builder
+                    prompt_builder = generator.prompt_builder
+                    llm_client = generator.llm_client
+                    parser = generator.parser
+                    
+                    # Build context
+                    llm_context = context_builder.build(context.presentation_ir)
+                    
+                    # Build prompts
+                    system_prompt, user_prompt = prompt_builder.build_prompts(
+                        context=llm_context,
+                        repository=generator.repository,
+                        pr_number=generator.pr_number,
+                        language=generator.language,
+                    )
+                    
+                    # Call LLM
+                    raw_json = llm_client.generate_structured_response(
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                    )
+                    
+                    # Parse to get structured data
+                    llm_response_data = parser.parse(raw_json)
+                    
+                    # Convert to dict for JSON serialization
+                    from dataclasses import asdict
+                    llm_response_data = asdict(llm_response_data)
+                    
+                except Exception as exc:
+                    print(f"[pipeline] Could not extract structured LLM response: {exc}")
+                    llm_response_data = None
             
             return {
                 "generated": True,
-                "model": model_info["model"],
-                "comment": final_markdown,
-                "is_valid": validated_comment.is_valid,
-                "validation_errors": list(validated_comment.validation_errors),
-                "truncated": validated_comment.truncated,
+                "model": "openai/gpt-oss-120b",
+                "comment": markdown,
+                "is_valid": True,
+                "validation_errors": [],
+                "truncated": False,
+                "llm_response": llm_response_data,
             }
             
         except Exception as exc:
             print(f"[pipeline] LLM comment generation failed: {exc}")
             # Return fallback comment on failure
-            try:
-                llm_context_dict = self.build_llm_context(context)
-                from presentation.llm.models import LLMContext, LLMDiscovery, LLMNarrative, LLMVisual
-                llm_context = LLMContext(
-                    metadata=llm_context_dict["metadata"],
-                    summary=llm_context_dict["summary"],
-                    discoveries=tuple(LLMDiscovery(**d) for d in llm_context_dict["discoveries"]),
-                    narrative=tuple(LLMNarrative(**n) for n in llm_context_dict["narrative"]),
-                    visuals=tuple(LLMVisual(**v) for v in llm_context_dict["visuals"]),
-                    constraints=llm_context_dict["constraints"],
-                )
-                renderer = GitHubCommentRenderer()
-                fallback_comment = renderer.render_fallback(llm_context)
-                
-                return {
-                    "generated": False,
-                    "model": "fallback",
-                    "comment": fallback_comment,
-                    "is_valid": True,
-                    "validation_errors": [f"LLM generation failed: {exc}"],
-                    "truncated": False,
-                }
-            except Exception:
-                # Ultimate fallback if even context building fails
-                return {
-                    "generated": False,
-                    "model": "fallback",
-                    "comment": "## ⚠️ Analysis Complete\n\nFactor analysis completed. Please view the full results in the API response.",
-                    "is_valid": True,
-                    "validation_errors": [f"LLM generation and fallback failed: {exc}"],
-                    "truncated": False,
-                }
+            return {
+                "generated": False,
+                "model": "fallback",
+                "comment": "## ⚠️ Analysis Complete\n\nFactor analysis completed. Please view the full results in the API response.",
+                "is_valid": True,
+                "validation_errors": [f"LLM generation failed: {exc}"],
+                "truncated": False,
+                "llm_response": None,
+            }

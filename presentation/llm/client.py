@@ -64,20 +64,20 @@ class LLMClient:
         # Initialize OpenAI client
         self.client = OpenAI(api_key=self.api_key, timeout=timeout, max_retries=max_retries, base_url=self.base_url)
     
-    def generate_comment(
+    def generate_structured_response(
         self,
         system_prompt: str,
         user_prompt: str,
     ) -> str:
         """
-        Generate a PR comment from prompts.
+        Generate a structured JSON response from prompts.
         
         Args:
             system_prompt: System prompt defining Factor's philosophy and constraints.
             user_prompt: User prompt containing serialized LLMContext.
             
         Returns:
-            Generated markdown comment.
+            Generated JSON string (not markdown).
             
         Raises:
             RuntimeError: If generation fails after retries.
@@ -103,6 +103,31 @@ class LLMClient:
             
         except Exception as exc:
             raise RuntimeError(f"LLM generation failed: {exc}") from exc
+    
+    def generate_comment(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+    ) -> str:
+        """
+        Generate a PR comment from prompts (legacy method).
+        
+        Args:
+            system_prompt: System prompt defining Factor's philosophy and constraints.
+            user_prompt: User prompt containing serialized LLMContext.
+            
+        Returns:
+            Generated markdown comment.
+            
+        Raises:
+            RuntimeError: If generation fails after retries.
+            
+        Note:
+            This method is deprecated. Use generate_structured_response() instead
+            for the new JSON-based pipeline.
+        """
+        # Delegate to structured response for backward compatibility
+        return self.generate_structured_response(system_prompt, user_prompt)
     
     def get_model_info(self) -> dict[str, Any]:
         """

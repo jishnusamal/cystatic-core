@@ -36,7 +36,7 @@ class GitHubRenderer:
             trim_blocks=True,
             lstrip_blocks=True,
         )
-        self._template = self._env.get_template("github_comment.md")
+        self._template = self._env.get_template("github_comment.md.j2")
     
     def render(self, ocm: OperationalChangeModel, context: dict[str, Any]) -> str:
         """

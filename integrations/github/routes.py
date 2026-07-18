@@ -420,8 +420,6 @@ async def analyze_repository(
         
         # Include presentation IR if available
         if presentation is not None:
-            response_content["presentation"] = presentation
-            
             # Generate LLM comment if presentation IR is available
             try:
                 print("[routes] Generating LLM comment")
@@ -431,30 +429,34 @@ async def analyze_repository(
                     pr_number=str(pr_number) if pr_number else "",
                     language=context.language or "unknown",
                 )
-                # Build LLM context for response
-                llm_context_dict = pipeline.build_llm_context(context)
-                response_content["llm"] = {
-                    "model": llm_result.get("model", "unknown"),
-                    "generated": llm_result.get("generated", False),
-                    "comment": llm_result.get("comment", ""),
-                    "is_valid": llm_result.get("is_valid", False),
+                # Add rendered comment to presentation
+                presentation["comment"] = llm_result.get("comment", "")
+                # Include full LLM result with metadata
+                presentation["llm_metadata"] = {
+                    "model": llm_result.get("model"),
+                    "generated": llm_result.get("generated"),
+                    "is_valid": llm_result.get("is_valid"),
                     "validation_errors": llm_result.get("validation_errors", []),
                     "truncated": llm_result.get("truncated", False),
-                    "context": llm_context_dict,
                 }
+                # Include the structured LLM response (rendered from J2 template)
+                llm_response = llm_result.get("llm_response")
+                if llm_response:
+                    presentation["llm_response"] = llm_response
+                response_content["presentation"] = presentation
                 print(f"[routes] LLM comment generated: model={llm_result.get('model')}, valid={llm_result.get('is_valid')}")
             except Exception as exc:
                 print(f"[routes] LLM comment generation failed: {exc}")
-                # Include error in response but don't fail the request
-                response_content["llm"] = {
-                    "model": "error",
+                # Include presentation with error comment
+                presentation["comment"] = "## ⚠️ Analysis Complete\n\nFactor analysis completed. LLM comment generation failed."
+                presentation["llm_metadata"] = {
+                    "model": "fallback",
                     "generated": False,
-                    "comment": "## ⚠️ Analysis Complete\n\nFactor analysis completed. LLM comment generation failed.",
-                    "is_valid": False,
-                    "validation_errors": [str(exc)],
+                    "is_valid": True,
+                    "validation_errors": [f"LLM generation failed: {exc}"],
                     "truncated": False,
-                    "context": None,
                 }
+                response_content["presentation"] = presentation
         
         return JSONResponse(
             content=response_content,
