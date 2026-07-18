@@ -1,18 +1,17 @@
 """Presentation Compiler — orchestrates compilation passes.
 
-Transforms EngineeringDiscoveryModel into a stable PresentationIR
+Transforms DiscoveryIR into a stable PresentationIR
 optimized for human understanding.
 
+The Discovery Compiler performs all deterministic analysis.
+The Presentation Compiler only formats for humans.
+
 Pass pipeline:
-    0. Normalization: Convert four compiler summaries into one canonical source
-    1. Discovery Extraction: Convert normalized discoveries to PresentationDiscovery objects
-    2. Significance Evaluation: Measure significance attributes (not scores)
-    3. Ranking: Order by RankingVector (lexicographic ORDER BY)
-    4. Surprise Detection: Compute ratio vectors (change size vs system impact)
-    5. Compression: Group related discoveries without losing meaning
-    6. Narrative Construction: Assign narrative positions (dependency ordering)
-    7. Visual Composition: Assign semantic visuals (renderer chooses concrete format)
-    8. IR Assembly: Assemble final stable intermediate representation
+    0. Normalization: Convert DiscoveryIR into presentation-ready format
+    1. Discovery Extraction: Convert Discovery objects to PresentationDiscovery objects
+    2. Narrative Construction: Assign narrative positions (dependency ordering)
+    3. Visual Composition: Assign semantic visuals (renderer chooses concrete format)
+    4. IR Assembly: Assemble final stable intermediate representation
 
 Every pass has:
     - Input contract
@@ -26,17 +25,13 @@ Every pass has:
 """
 from __future__ import annotations
 
-from operational.model import EngineeringDiscoveryModel
+from operational.discovery.model import DiscoveryIR
 from presentation.model import PresentationIR
 
 from .passes import (
     PresentationPassContext,
     NormalizationPass,
     DiscoveryExtractionPass,
-    SignificanceEvaluationPass,
-    RankingPass,
-    SurpriseDetectionPass,
-    CompressionPass,
     NarrativeConstructionPass,
     VisualCompositionPass,
     IRAssemblyPass,
@@ -45,56 +40,55 @@ from .passes import (
 
 class PresentationCompiler:
     """
-    Compiles an EngineeringDiscoveryModel into a PresentationIR.
+    Compiles a DiscoveryIR into a PresentationIR.
 
     This is the final compiler stage in the Factor pipeline. Its responsibility
-    is to transform deterministic engineering discovery into a representation
+    is to transform deterministic engineering discoveries into a representation
     optimized for human understanding.
 
     The compiler is deterministic and stateless. Same inputs always produce
     the same PresentationIR.
 
-    Input: EngineeringDiscoveryModel
+    IMPORTANT: The Presentation Compiler NEVER discovers relationships.
+    It only formats discoveries for humans.
+
+    Input: DiscoveryIR
     Output: PresentationIR
     """
 
     def __init__(self) -> None:
-        """Initialize the compiler with all 9 passes."""
+        """Initialize the compiler with presentation-only passes."""
         self.passes = [
             NormalizationPass(),              # Pass 0
             DiscoveryExtractionPass(),         # Pass 1
-            SignificanceEvaluationPass(),      # Pass 2
-            RankingPass(),                     # Pass 3
-            SurpriseDetectionPass(),           # Pass 4
-            CompressionPass(),                 # Pass 5
-            NarrativeConstructionPass(),       # Pass 6
-            VisualCompositionPass(),           # Pass 7
-            IRAssemblyPass(),                  # Pass 8
+            NarrativeConstructionPass(),       # Pass 2
+            VisualCompositionPass(),           # Pass 3
+            IRAssemblyPass(),                  # Pass 4
         ]
 
     def compile(
         self,
-        discovery_model: EngineeringDiscoveryModel,
+        discovery_ir: DiscoveryIR,
     ) -> PresentationIR:
         """
-        Compile an EngineeringDiscoveryModel into a PresentationIR.
+        Compile a DiscoveryIR into a PresentationIR.
 
         Args:
-            discovery_model: The EngineeringDiscoveryModel to compile.
+            discovery_ir: The DiscoveryIR to format for presentation.
 
         Returns:
             PresentationIR containing the structured presentation output.
 
         Raises:
-            ValueError: If discovery_model is invalid.
+            ValueError: If discovery_ir is invalid.
             RuntimeError: If pipeline completes without producing IR.
         """
-        if discovery_model is None:
-            raise ValueError("discovery_model is required")
+        if discovery_ir is None:
+            raise ValueError("discovery_ir is required")
 
-        # Initialize pass context with the engineering discovery model
+        # Initialize pass context with the discovery IR
         context = PresentationPassContext(
-            discovery_model=discovery_model,
+            discovery_ir=discovery_ir,
         )
 
         # Execute each pass in sequence
@@ -117,7 +111,7 @@ class PresentationCompiler:
 
     def compile_with_context(
         self,
-        discovery_model: EngineeringDiscoveryModel,
+        discovery_ir: DiscoveryIR,
     ) -> PresentationPassContext:
         """
         Compile and return the full pass context.
@@ -127,16 +121,16 @@ class PresentationCompiler:
         intermediate state.
 
         Args:
-            discovery_model: The EngineeringDiscoveryModel to compile.
+            discovery_ir: The DiscoveryIR to format for presentation.
 
         Returns:
             PresentationPassContext with all intermediate state.
         """
-        if discovery_model is None:
-            raise ValueError("discovery_model is required")
+        if discovery_ir is None:
+            raise ValueError("discovery_ir is required")
 
         context = PresentationPassContext(
-            discovery_model=discovery_model,
+            discovery_ir=discovery_ir,
         )
 
         for compiler_pass in self.passes:

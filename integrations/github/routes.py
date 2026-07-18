@@ -443,6 +443,13 @@ async def analyze_repository(
                 llm_response = llm_result.get("llm_response")
                 if llm_response:
                     presentation["llm_response"] = llm_response
+                # Include LLM input (system prompt + user prompt) and raw output
+                llm_input = llm_result.get("llm_input")
+                if llm_input:
+                    presentation["llm_input"] = llm_input
+                llm_raw_output = llm_result.get("llm_raw_output")
+                if llm_raw_output:
+                    presentation["llm_raw_output"] = llm_raw_output
                 response_content["presentation"] = presentation
                 print(f"[routes] LLM comment generated: model={llm_result.get('model')}, valid={llm_result.get('is_valid')}")
             except Exception as exc:

@@ -14,6 +14,7 @@ from change.model.repository_comparison import RepositoryComparison
 from change.model.repository_delta import RepositoryDelta
 from behavior.compiler import BehaviorCompiler
 from operational.compiler import OperationalCompiler, EngineeringDiscoveryCompiler
+from operational.discovery import DiscoveryCompiler
 from presentation.compiler import PresentationCompiler
 from presentation.llm.context_builder import LLMContextBuilder
 from presentation.llm.prompt_builder import PromptBuilder
@@ -93,6 +94,7 @@ class Pipeline:
         self._behavior_compiler = BehaviorCompiler()
         self._operational_compiler = OperationalCompiler()
         self._discovery_compiler = EngineeringDiscoveryCompiler()
+        self._discovery_discovery_compiler = DiscoveryCompiler()
         
         # Renderers
         self._json_renderer = JSONRenderer()
@@ -156,10 +158,15 @@ class Pipeline:
             await self._compile_discovery(context)
             print(f"[pipeline] Step 6 done")
             
-            # Step 7: Compile presentation IR
-            print(f"[pipeline] Step 7: Presentation IR compilation")
-            await self._compile_presentation(context)
+            # Step 7: Compile discovery IR (deterministic engineering discoveries)
+            print(f"[pipeline] Step 7: Discovery IR compilation")
+            await self._compile_discovery_ir(context)
             print(f"[pipeline] Step 7 done")
+            
+            # Step 8: Compile presentation IR
+            print(f"[pipeline] Step 8: Presentation IR compilation")
+            await self._compile_presentation(context)
+            print(f"[pipeline] Step 8 done")
             
             context.mark_complete()
             
@@ -522,9 +529,13 @@ class Pipeline:
                 details={"repository": context.repository},
             ) from exc
 
-    async def _compile_presentation(self, context: PipelineContext) -> None:
+    async def _compile_discovery_ir(self, context: PipelineContext) -> None:
         """
-        Compile presentation IR from the engineering discovery model.
+        Compile discovery IR from the engineering discovery model.
+        
+        The Discovery Compiler performs deterministic engineering discovery.
+        It produces DiscoveryIR — the canonical intermediate representation
+        that the Presentation Compiler consumes.
         
         Args:
             context: Pipeline context
@@ -534,7 +545,41 @@ class Pipeline:
         """
         if context.edm is None:
             raise PipelineExecutionError(
-                "Engineering discovery model not available for presentation compilation",
+                "Engineering discovery model not available for discovery IR compilation",
+                details={"repository": context.repository},
+            )
+        
+        try:
+            import time
+            start = time.time()
+            
+            discovery_compiler = DiscoveryCompiler()
+            context.discovery_ir = discovery_compiler.compile(context.edm)
+            
+            context.discovery_compile_time = time.time() - start
+            context.mark_discovery_compiled()
+        except Exception as exc:
+            raise PipelineExecutionError(
+                f"Discovery IR compilation failed: {exc}",
+                details={"repository": context.repository},
+            ) from exc
+
+    async def _compile_presentation(self, context: PipelineContext) -> None:
+        """
+        Compile presentation IR from the discovery IR.
+        
+        The Presentation Compiler formats discoveries for humans.
+        It never inspects graphs or discovers relationships.
+        
+        Args:
+            context: Pipeline context
+            
+        Raises:
+            PipelineExecutionError: If compilation fails
+        """
+        if context.discovery_ir is None:
+            raise PipelineExecutionError(
+                "Discovery IR not available for presentation compilation",
                 details={"repository": context.repository},
             )
         
@@ -543,7 +588,7 @@ class Pipeline:
             start = time.time()
             
             presentation_compiler = PresentationCompiler()
-            context.presentation_ir = presentation_compiler.compile(context.edm)
+            context.presentation_ir = presentation_compiler.compile(context.discovery_ir)
             
             context.presentation_compile_time = time.time() - start
             context.mark_presentation_compiled()
@@ -942,6 +987,11 @@ class Pipeline:
                     print(f"[pipeline] Could not extract structured LLM response: {exc}")
                     llm_response_data = None
             
+            # Extract prompts and raw LLM response from the generator
+            system_prompt_raw = generator.last_system_prompt
+            user_prompt_raw = generator.last_user_prompt
+            raw_llm_output = generator.last_raw_response
+            
             return {
                 "generated": True,
                 "model": "openai/gpt-oss-120b",
@@ -950,6 +1000,11 @@ class Pipeline:
                 "validation_errors": [],
                 "truncated": False,
                 "llm_response": llm_response_data,
+                "llm_input": {
+                    "system_prompt": system_prompt_raw,
+                    "user_prompt": user_prompt_raw,
+                },
+                "llm_raw_output": raw_llm_output,
             }
             
         except Exception as exc:
@@ -963,4 +1018,6 @@ class Pipeline:
                 "validation_errors": [f"LLM generation failed: {exc}"],
                 "truncated": False,
                 "llm_response": None,
+                "llm_input": None,
+                "llm_raw_output": None,
             }

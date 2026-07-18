@@ -12,6 +12,7 @@ from presentation.context.comment_context import (
     ContextSurprisingDiscovery,
 )
 from presentation.context.builder import PresentationContextBuilder
+from presentation.context.merger import ContextMerger
 
 __all__ = [
     "GithubCommentContext",
@@ -20,4 +21,5 @@ __all__ = [
     "ContextValidationSection",
     "ContextSurprisingDiscovery",
     "PresentationContextBuilder",
+    "ContextMerger",
 ]

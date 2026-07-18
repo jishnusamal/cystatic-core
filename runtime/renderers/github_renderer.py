@@ -14,7 +14,6 @@ from jinja2 import Environment, FileSystemLoader, Template
 from operational.model import OperationalChangeModel, EngineeringDiscoveryArtifact
 from runtime.errors import RendererFailed
 
-
 class GitHubRenderer:
     """
     Renders OperationalChangeModel to GitHub Markdown comments.

@@ -66,6 +66,11 @@ class GithubCommentGenerator:
         self.llm_client = LLMClient(api_key=api_key, model=model)
         self.parser = LLMResponseParser()
         self.renderer = GithubCommentRenderer()
+        
+        # Storage for prompts and raw LLM response (for API exposure)
+        self.last_system_prompt: str | None = None
+        self.last_user_prompt: str | None = None
+        self.last_raw_response: str | None = None
     
     def generate(
         self,
@@ -97,12 +102,19 @@ class GithubCommentGenerator:
                 language=self.language,
             )
             
+            # Store prompts for API exposure
+            self.last_system_prompt = system_prompt
+            self.last_user_prompt = user_prompt
+            
             # Step 3: Call LLM for structured JSON
             try:
                 raw_json = self.llm_client.generate_structured_response(
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                 )
+                
+                # Store raw response for API exposure
+                self.last_raw_response = raw_json
                 
                 # Step 4: Parse JSON into GithubComment model
                 comment = self.parser.parse(raw_json)
@@ -145,12 +157,19 @@ class GithubCommentGenerator:
             language=self.language,
         )
         
+        # Store prompts for API exposure
+        self.last_system_prompt = system_prompt
+        self.last_user_prompt = user_prompt
+        
         # Call LLM
         try:
             raw_json = self.llm_client.generate_structured_response(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
             )
+            
+            # Store raw response for API exposure
+            self.last_raw_response = raw_json
             
             # Parse
             comment = self.parser.parse(raw_json)

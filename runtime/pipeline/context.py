@@ -13,6 +13,7 @@ from language_adapters.model import RepositoryModel
 from change.model import ChangeModel, RepositoryDelta
 from behavior.model import BehaviorModel
 from operational.model import OperationalChangeModel, EngineeringDiscoveryModel
+from operational.discovery.model import DiscoveryIR
 from presentation.model import PresentationIR
 
 
@@ -48,6 +49,9 @@ class PipelineContext:
     ocm: OperationalChangeModel | None = None
     edm: EngineeringDiscoveryModel | None = None
 
+    # Discovery IR (output of Discovery Compiler)
+    discovery_ir: DiscoveryIR | None = None
+
     # Presentation IR (output of Presentation Compiler)
     presentation_ir: PresentationIR | None = None
 
@@ -63,6 +67,7 @@ class PipelineContext:
     change_compile_time: float | None = None
     behavior_compile_time: float | None = None
     operational_compile_time: float | None = None
+    discovery_compile_time: float | None = None
     presentation_compile_time: float | None = None
     render_time: float | None = None
     total_time: float | None = None
@@ -99,6 +104,12 @@ class PipelineContext:
         if self.compile_started_at:
             self.operational_compile_time = time.time() - self.compile_started_at
 
+    def mark_discovery_compiled(self) -> None:
+        """Record discovery compilation completion."""
+        import time
+        if self.compile_started_at:
+            self.discovery_compile_time = time.time() - self.compile_started_at
+
     def mark_presentation_compiled(self) -> None:
         """Record presentation compilation completion."""
         import time
@@ -134,6 +145,7 @@ class PipelineContext:
             "behavior_compile_time": self.behavior_compile_time,
             "operational_compile_time": self.operational_compile_time,
             "has_discovery_model": self.edm is not None,
+            "has_discovery_ir": self.discovery_ir is not None,
             "has_presentation_ir": self.presentation_ir is not None,
             "render_time": self.render_time,
             "total_time": self.total_time,
