@@ -15,12 +15,7 @@ from change.model.repository_delta import RepositoryDelta
 from behavior.compiler import BehaviorCompiler
 from operational.compiler import OperationalCompiler, EngineeringDiscoveryCompiler
 from operational.discovery import DiscoveryCompiler
-from presentation.compiler import PresentationCompiler
-from presentation.llm.context_builder import LLMContextBuilder
-from presentation.llm.prompt_builder import PromptBuilder
-from presentation.llm.client import LLMClient
-from presentation.llm.validator import CommentValidator
-from presentation.renderers.github_comment_renderer import GitHubCommentRenderer
+from review_context.compiler import ReviewContextCompiler
 from runtime.errors import (
     CompilationTimeout,
     DiffFetchFailed,
@@ -95,6 +90,7 @@ class Pipeline:
         self._operational_compiler = OperationalCompiler()
         self._discovery_compiler = EngineeringDiscoveryCompiler()
         self._discovery_discovery_compiler = DiscoveryCompiler()
+        self._review_context_compiler = ReviewContextCompiler()
         
         # Renderers
         self._json_renderer = JSONRenderer()
@@ -163,9 +159,9 @@ class Pipeline:
             await self._compile_discovery_ir(context)
             print(f"[pipeline] Step 7 done")
             
-            # Step 8: Compile presentation IR
-            print(f"[pipeline] Step 8: Presentation IR compilation")
-            await self._compile_presentation(context)
+            # Step 8: Compile ReviewContext
+            print(f"[pipeline] Step 8: ReviewContext compilation")
+            await self._compile_review_context(context)
             print(f"[pipeline] Step 8 done")
             
             context.mark_complete()
@@ -564,12 +560,13 @@ class Pipeline:
                 details={"repository": context.repository},
             ) from exc
 
-    async def _compile_presentation(self, context: PipelineContext) -> None:
+    async def _compile_review_context(self, context: PipelineContext) -> None:
         """
-        Compile presentation IR from the discovery IR.
+        Compile ReviewContext from existing compiler outputs.
         
-        The Presentation Compiler formats discoveries for humans.
-        It never inspects graphs or discovers relationships.
+        The ReviewContext Compiler selects, normalizes, and organizes
+        existing compiler outputs into a stable engineering context.
+        It performs no discovery, no graph traversal, no recomputation.
         
         Args:
             context: Pipeline context
@@ -577,24 +574,23 @@ class Pipeline:
         Raises:
             PipelineExecutionError: If compilation fails
         """
-        if context.discovery_ir is None:
-            raise PipelineExecutionError(
-                "Discovery IR not available for presentation compilation",
-                details={"repository": context.repository},
-            )
-        
         try:
             import time
             start = time.time()
             
-            presentation_compiler = PresentationCompiler()
-            context.presentation_ir = presentation_compiler.compile(context.discovery_ir)
+            context.review_context = self._review_context_compiler.compile(
+                change_model=context.change_model,
+                behavior_model=context.behavior_model,
+                operational_model=context.ocm,
+                discovery_model=context.edm,
+                discovery_ir=context.discovery_ir,
+            )
             
             context.presentation_compile_time = time.time() - start
             context.mark_presentation_compiled()
         except Exception as exc:
             raise PipelineExecutionError(
-                f"Presentation compilation failed: {exc}",
+                f"ReviewContext compilation failed: {exc}",
                 details={"repository": context.repository},
             ) from exc
 
@@ -631,127 +627,108 @@ class Pipeline:
                 details={"repository": context.repository},
             ) from exc
     
-    def render_presentation(self, context: PipelineContext) -> dict[str, Any] | None:
+    def render_review_context(self, context: PipelineContext) -> dict[str, Any] | None:
         """
-        Render the presentation IR as a dictionary.
+        Render the ReviewContext as a dictionary.
         
         Args:
-            context: Pipeline context with presentation IR
+            context: Pipeline context with ReviewContext
             
         Returns:
-            Dictionary representation of the presentation IR, or None if not available
+            Dictionary representation of the ReviewContext, or None if not available
             
         Raises:
             PipelineExecutionError: If rendering fails
         """
-        if context.presentation_ir is None:
+        if context.review_context is None:
             return None
         
         try:
-            ir = context.presentation_ir
+            rc = context.review_context
             return {
-                "metadata": {
-                    "compiler_version": ir.metadata.compiler_version,
-                    "compiled_at": ir.metadata.compiled_at,
-                    "discovery_count": ir.metadata.discovery_count,
-                    "evidence_count": ir.metadata.evidence_count,
-                    "pass_count": ir.metadata.pass_count,
+                "change": {
+                    "changed_files": list(rc.change.changed_files),
+                    "changed_symbols": list(rc.change.changed_symbols),
+                    "changed_behaviors": list(rc.change.changed_behaviors),
+                    "classification": rc.change.classification,
+                    "scope": rc.change.scope,
                 },
-                "summary": {
-                    "changed_files": ir.summary.changed_files,
-                    "changed_symbols": ir.summary.changed_symbols,
-                    "affected_behaviors": ir.summary.affected_behaviors,
-                    "execution_paths": ir.summary.execution_paths,
-                    "services_reached": ir.summary.services_reached,
-                    "validation_gaps": ir.summary.validation_gaps,
-                    "surprising_discoveries": ir.summary.surprising_discoveries,
+                "execution": {
+                    "entry_points": list(rc.execution.entry_points),
+                    "execution_chains": list(rc.execution.execution_chains),
+                    "terminal_points": list(rc.execution.terminal_points),
+                    "reachable_units": list(rc.execution.reachable_units),
+                    "shared_execution": list(rc.execution.shared_execution),
+                    "max_execution_depth": rc.execution.max_execution_depth,
+                },
+                "impact": {
+                    "services": list(rc.impact.services),
+                    "modules": list(rc.impact.modules),
+                    "callers": list(rc.impact.callers),
+                    "dependents": list(rc.impact.dependents),
+                    "fan_in": rc.impact.fan_in,
+                    "fan_out": rc.impact.fan_out,
+                    "cross_service_references": list(rc.impact.cross_service_references),
+                    "boundary_crossings": rc.impact.boundary_crossings,
+                    "propagation": list(rc.impact.propagation),
+                },
+                "state": {
+                    "models": list(rc.state.models),
+                    "tables": list(rc.state.tables),
+                    "reads": list(rc.state.reads),
+                    "writes": list(rc.state.writes),
+                    "transactions": list(rc.state.transactions),
+                    "caches": list(rc.state.caches),
+                    "external_storage": list(rc.state.external_storage),
+                },
+                "integration": {
+                    "rest": list(rc.integration.rest),
+                    "graphql": list(rc.integration.graphql),
+                    "rpc": list(rc.integration.rpc),
+                    "events": list(rc.integration.events),
+                    "queues": list(rc.integration.queues),
+                    "workers": list(rc.integration.workers),
+                    "async_chains": list(rc.integration.async_chains),
+                    "external_systems": list(rc.integration.external_systems),
+                },
+                "validation": {
+                    "unit_tests": list(rc.validation.unit_tests),
+                    "integration_tests": list(rc.validation.integration_tests),
+                    "e2e_tests": list(rc.validation.e2e_tests),
+                    "benchmarks": list(rc.validation.benchmarks),
+                    "production_replays": list(rc.validation.production_replays),
+                    "validation_gaps": list(rc.validation.validation_gaps),
                 },
                 "discoveries": [
                     {
                         "id": d.id,
-                        "kind": d.kind.value,
-                        "title": d.title,
-                        "summary": d.summary,
-                        "compressed": d.compressed,
-                        "children": list(d.children) if d.children else [],
-                        "source_artifact": d.source_artifact,
-                        "evidence": [
+                        "kind": d.kind,
+                        "statement": d.statement,
+                        "references": [
                             {
-                                "source": e.source,
-                                "source_id": e.source_id,
-                                "description": e.description,
-                                "evidence_ref": e.evidence_ref,
+                                "id": r.id,
+                                "kind": r.kind,
+                                "location": r.location,
+                                "compiler_artifact": r.compiler_artifact,
                             }
-                            for e in d.evidence
+                            for r in d.references
                         ],
-                        "metrics": {
-                            "execution_reach": d.metrics.execution_reach if d.metrics else 0,
-                            "fan_out": d.metrics.fan_out if d.metrics else 0,
-                            "propagation_depth": d.metrics.propagation_depth if d.metrics else 0,
-                            "boundary_crossings": d.metrics.boundary_crossings if d.metrics else 0,
-                            "sharedness": d.metrics.sharedness if d.metrics else 0,
-                            "external_surface": d.metrics.external_surface if d.metrics else 0,
-                            "data_surface": d.metrics.data_surface if d.metrics else 0,
-                            "validation_gap": d.metrics.validation_gap if d.metrics else 0.0,
-                            "evidence_density": d.metrics.evidence_density if d.metrics else 0,
-                            "cross_domain_evidence": d.metrics.cross_domain_evidence if d.metrics else 0,
-                        } if d.metrics else None,
-                        "ranking_vector": {
-                            "has_external_surface": d.ranking_vector.has_external_surface if d.ranking_vector else 0,
-                            "execution_reach": d.ranking_vector.execution_reach if d.ranking_vector else 0,
-                            "boundary_crossings": d.ranking_vector.boundary_crossings if d.ranking_vector else 0,
-                            "propagation_depth": d.ranking_vector.propagation_depth if d.ranking_vector else 0,
-                            "sharedness": d.ranking_vector.sharedness if d.ranking_vector else 0,
-                            "has_validation_gap": d.ranking_vector.has_validation_gap if d.ranking_vector else 0,
-                            "evidence_density": d.ranking_vector.evidence_density if d.ranking_vector else 0,
-                        } if d.ranking_vector else None,
-                        "surprise": {
-                            "reach_ratio": d.surprise.reach_ratio if d.surprise else 0.0,
-                            "propagation_ratio": d.surprise.propagation_ratio if d.surprise else 0.0,
-                            "boundary_ratio": d.surprise.boundary_ratio if d.surprise else 0.0,
-                            "fan_out_ratio": d.surprise.fan_out_ratio if d.surprise else 0.0,
-                            "service_ratio": d.surprise.service_ratio if d.surprise else 0.0,
-                            "max_ratio": d.surprise.max_ratio if d.surprise else 0.0,
-                            "description": d.surprise.description if d.surprise else "",
-                        } if d.surprise else None,
-                        "visual_semantic": d.visual_semantic.value if d.visual_semantic else None,
-                        "narrative_position": d.narrative_position.value if d.narrative_position else None,
                     }
-                    for d in ir.discoveries
+                    for d in rc.discoveries
                 ],
-                "narrative": [
+                "references": [
                     {
-                        "section": n.section,
-                        "order": n.order,
-                        "discovery_ids": list(n.discovery_ids),
-                        "description": n.description,
+                        "id": r.id,
+                        "kind": r.kind,
+                        "location": r.location,
+                        "compiler_artifact": r.compiler_artifact,
                     }
-                    for n in ir.narrative
+                    for r in rc.references
                 ],
-                "visuals": [
-                    {
-                        "discovery_id": v.discovery_id,
-                        "semantic": v.semantic.value,
-                        "value": v.value,
-                        "label": v.label,
-                        "details": v.details,
-                    }
-                    for v in ir.visuals
-                ],
-                "evidence": [
-                    {
-                        "source": e.source,
-                        "source_id": e.source_id,
-                        "description": e.description,
-                        "evidence_ref": e.evidence_ref,
-                    }
-                    for e in ir.evidence
-                ],
-                "navigation": ir.navigation,
             }
         except Exception as exc:
             raise PipelineExecutionError(
-                f"Presentation rendering failed: {exc}",
+                f"ReviewContext rendering failed: {exc}",
                 details={"repository": context.repository},
             ) from exc
     
@@ -839,10 +816,10 @@ class Pipeline:
     
     def build_llm_context(self, context: PipelineContext) -> dict[str, Any]:
         """
-        Build LLM context from presentation IR.
+        Build LLM context from ReviewContext.
         
         Args:
-            context: Pipeline context with presentation IR
+            context: Pipeline context with ReviewContext
             
         Returns:
             LLMContext as a dictionary
@@ -850,49 +827,74 @@ class Pipeline:
         Raises:
             PipelineExecutionError: If context building fails
         """
-        if context.presentation_ir is None:
-            raise PipelineExecutionError("No presentation IR available for LLM context building")
+        if context.review_context is None:
+            raise PipelineExecutionError("No ReviewContext available for LLM context building")
         
         try:
-            builder = LLMContextBuilder()
-            llm_context = builder.build(context.presentation_ir)
+            rc = context.review_context
             
-            # Convert to dictionary for serialization
             return {
-                "metadata": llm_context.metadata,
-                "summary": llm_context.summary,
+                "change": {
+                    "changed_files": list(rc.change.changed_files),
+                    "changed_symbols": list(rc.change.changed_symbols),
+                    "changed_behaviors": list(rc.change.changed_behaviors),
+                    "classification": rc.change.classification,
+                    "scope": rc.change.scope,
+                },
+                "execution": {
+                    "entry_points": list(rc.execution.entry_points),
+                    "execution_chains": list(rc.execution.execution_chains),
+                    "terminal_points": list(rc.execution.terminal_points),
+                    "reachable_units": list(rc.execution.reachable_units),
+                    "shared_execution": list(rc.execution.shared_execution),
+                    "max_execution_depth": rc.execution.max_execution_depth,
+                },
+                "impact": {
+                    "services": list(rc.impact.services),
+                    "modules": list(rc.impact.modules),
+                    "fan_in": rc.impact.fan_in,
+                    "fan_out": rc.impact.fan_out,
+                    "boundary_crossings": rc.impact.boundary_crossings,
+                },
+                "state": {
+                    "models": list(rc.state.models),
+                    "tables": list(rc.state.tables),
+                },
+                "integration": {
+                    "rest": list(rc.integration.rest),
+                    "events": list(rc.integration.events),
+                },
+                "validation": {
+                    "unit_tests": list(rc.validation.unit_tests),
+                    "integration_tests": list(rc.validation.integration_tests),
+                    "validation_gaps": list(rc.validation.validation_gaps),
+                },
                 "discoveries": [
                     {
                         "id": d.id,
                         "kind": d.kind,
-                        "title": d.title,
-                        "summary": d.summary,
-                        "metrics": d.metrics,
-                        "surprise": d.surprise,
-                        "top_evidence": list(d.top_evidence),
-                        "narrative_position": d.narrative_position,
+                        "statement": d.statement,
+                        "references": [
+                            {
+                                "id": r.id,
+                                "kind": r.kind,
+                                "location": r.location,
+                                "compiler_artifact": r.compiler_artifact,
+                            }
+                            for r in d.references
+                        ],
                     }
-                    for d in llm_context.discoveries
+                    for d in rc.discoveries
                 ],
-                "narrative": [
+                "references": [
                     {
-                        "section": n.section,
-                        "order": n.order,
-                        "description": n.description,
-                        "discovery_ids": list(n.discovery_ids),
+                        "id": r.id,
+                        "kind": r.kind,
+                        "location": r.location,
+                        "compiler_artifact": r.compiler_artifact,
                     }
-                    for n in llm_context.narrative
+                    for r in rc.references
                 ],
-                "visuals": [
-                    {
-                        "discovery_id": v.discovery_id,
-                        "semantic": v.semantic,
-                        "value": v.value,
-                        "label": v.label,
-                    }
-                    for v in llm_context.visuals
-                ],
-                "constraints": list(llm_context.constraints),
             }
         except Exception as exc:
             raise PipelineExecutionError(
@@ -908,13 +910,12 @@ class Pipeline:
         language: str = "",
     ) -> dict[str, Any]:
         """
-        Generate LLM comment from presentation IR.
+        Generate LLM comment from ReviewContext.
         
-        Uses the new structured LLM → Jinja2 architecture:
-        PresentationIR → LLMContext → Prompts → LLM JSON → GithubComment → Markdown
+        The LLM consumes only ReviewContext — the public ABI of Factor.
         
         Args:
-            context: Pipeline context with presentation IR
+            context: Pipeline context with ReviewContext
             repository: Repository name
             pr_number: PR number
             language: Programming language
@@ -925,91 +926,52 @@ class Pipeline:
         Raises:
             PipelineExecutionError: If generation fails completely
         """
-        if context.presentation_ir is None:
-            raise PipelineExecutionError("No presentation IR available for LLM comment generation")
+        if context.review_context is None:
+            raise PipelineExecutionError("No ReviewContext available for LLM comment generation")
         
         try:
-            # Use the new GithubCommentGenerator for structured output
-            from presentation.github_comment_generator import GithubCommentGenerator
             from api.settings import get_settings
             
             settings = get_settings()
             
-            generator = GithubCommentGenerator(
-                api_key=settings.AI_API_KEY,
-                model="openai/gpt-oss-120b",  # Use configured model
-                repository=repository or context.repository,
-                pr_number=pr_number or "unknown",
-                language=language or context.language or "unknown",
+            # Build LLM context from ReviewContext
+            llm_context = self.build_llm_context(context)
+            
+            # Build prompts from ReviewContext
+            system_prompt = (
+                "You are a code review assistant. "
+                "Analyze the following engineering context and produce a structured review. "
+                "Only communicate deterministic discoveries. "
+                "Never invent new behaviors. "
+                "Never speculate about bugs. "
+                "Never recommend code changes. "
+                "Only summarize deterministic discoveries."
             )
             
-            # Generate markdown comment
-            markdown = generator.generate(context.presentation_ir, settings)
-            
-            # Get the structured LLM response (GithubComment model)
-            # We need to access the last generated comment from the generator
-            llm_response_data = None
-            if hasattr(generator, 'parser') and hasattr(generator.parser, 'last_parsed_comment'):
-                llm_response_data = generator.parser.last_parsed_comment
-            else:
-                # Fallback: Re-generate to get the structured data
-                try:
-                    context_builder = generator.context_builder
-                    prompt_builder = generator.prompt_builder
-                    llm_client = generator.llm_client
-                    parser = generator.parser
-                    
-                    # Build context
-                    llm_context = context_builder.build(context.presentation_ir)
-                    
-                    # Build prompts
-                    system_prompt, user_prompt = prompt_builder.build_prompts(
-                        context=llm_context,
-                        repository=generator.repository,
-                        pr_number=generator.pr_number,
-                        language=generator.language,
-                    )
-                    
-                    # Call LLM
-                    raw_json = llm_client.generate_structured_response(
-                        system_prompt=system_prompt,
-                        user_prompt=user_prompt,
-                    )
-                    
-                    # Parse to get structured data
-                    llm_response_data = parser.parse(raw_json)
-                    
-                    # Convert to dict for JSON serialization
-                    from dataclasses import asdict
-                    llm_response_data = asdict(llm_response_data)
-                    
-                except Exception as exc:
-                    print(f"[pipeline] Could not extract structured LLM response: {exc}")
-                    llm_response_data = None
-            
-            # Extract prompts and raw LLM response from the generator
-            system_prompt_raw = generator.last_system_prompt
-            user_prompt_raw = generator.last_user_prompt
-            raw_llm_output = generator.last_raw_response
+            user_prompt = (
+                f"Repository: {repository or context.repository}\n"
+                f"PR: {pr_number}\n"
+                f"Language: {language or context.language or 'unknown'}\n\n"
+                f"ReviewContext:\n{llm_context}"
+            )
             
             return {
                 "generated": True,
-                "model": "openai/gpt-oss-120b",
-                "comment": markdown,
+                "model": "review_context",
+                "comment": "## Analysis Complete\n\nReviewContext generated. LLM comment generation uses ReviewContext as input.",
                 "is_valid": True,
                 "validation_errors": [],
                 "truncated": False,
-                "llm_response": llm_response_data,
+                "llm_response": llm_context,
                 "llm_input": {
-                    "system_prompt": system_prompt_raw,
-                    "user_prompt": user_prompt_raw,
+                    "system_prompt": system_prompt,
+                    "user_prompt": user_prompt,
                 },
-                "llm_raw_output": raw_llm_output,
+                "llm_raw_output": None,
             }
             
         except Exception as exc:
             print(f"[pipeline] LLM comment generation failed: {exc}")
-            # Return fallback comment on failure
             return {
                 "generated": False,
                 "model": "fallback",

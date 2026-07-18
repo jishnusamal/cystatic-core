@@ -74,12 +74,14 @@ class ChangeModel:
         modified_symbols: Symbols that were modified, with change details
         changed_imports: Import statements that changed
         changed_endpoints: API endpoints that changed
+        files_changed: Number of files changed in the diff
     """
     added_symbols: tuple[Symbol, ...]
     removed_symbols: tuple[Symbol, ...]
     modified_symbols: tuple[ModifiedSymbol, ...]
     changed_imports: tuple[ImportChange, ...]
     changed_endpoints: tuple[EndpointChange, ...]
+    files_changed: int = 0
     
     def __post_init__(self):
         """Validate change model after initialization."""

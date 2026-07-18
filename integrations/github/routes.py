@@ -395,8 +395,8 @@ async def analyze_repository(
                 if result.get(model_name) is not None:
                     discovery_summary[model_name] = result[model_name]
         
-        # Render presentation IR
-        presentation = pipeline.render_presentation(context)
+        # Render ReviewContext
+        review_context = pipeline.render_review_context(context)
         
         response_content = {
             "repository": repository,
@@ -413,14 +413,14 @@ async def analyze_repository(
                 "change": context.change_compile_time or 0.0,
                 "behavior": context.behavior_compile_time or 0.0,
                 "operational": context.operational_compile_time or 0.0,
-                "presentation": context.presentation_compile_time or 0.0,
+                "review_context": context.presentation_compile_time or 0.0,
                 "total": context.total_time or 0.0,
             },
         }
         
-        # Include presentation IR if available
-        if presentation is not None:
-            # Generate LLM comment if presentation IR is available
+        # Include ReviewContext if available
+        if review_context is not None:
+            # Generate LLM comment from ReviewContext
             try:
                 print("[routes] Generating LLM comment")
                 llm_result = pipeline.generate_llm_comment(
@@ -429,41 +429,41 @@ async def analyze_repository(
                     pr_number=str(pr_number) if pr_number else "",
                     language=context.language or "unknown",
                 )
-                # Add rendered comment to presentation
-                presentation["comment"] = llm_result.get("comment", "")
+                # Add rendered comment to review context
+                review_context["comment"] = llm_result.get("comment", "")
                 # Include full LLM result with metadata
-                presentation["llm_metadata"] = {
+                review_context["llm_metadata"] = {
                     "model": llm_result.get("model"),
                     "generated": llm_result.get("generated"),
                     "is_valid": llm_result.get("is_valid"),
                     "validation_errors": llm_result.get("validation_errors", []),
                     "truncated": llm_result.get("truncated", False),
                 }
-                # Include the structured LLM response (rendered from J2 template)
+                # Include the structured LLM response
                 llm_response = llm_result.get("llm_response")
                 if llm_response:
-                    presentation["llm_response"] = llm_response
+                    review_context["llm_response"] = llm_response
                 # Include LLM input (system prompt + user prompt) and raw output
                 llm_input = llm_result.get("llm_input")
                 if llm_input:
-                    presentation["llm_input"] = llm_input
+                    review_context["llm_input"] = llm_input
                 llm_raw_output = llm_result.get("llm_raw_output")
                 if llm_raw_output:
-                    presentation["llm_raw_output"] = llm_raw_output
-                response_content["presentation"] = presentation
+                    review_context["llm_raw_output"] = llm_raw_output
+                response_content["review_context"] = review_context
                 print(f"[routes] LLM comment generated: model={llm_result.get('model')}, valid={llm_result.get('is_valid')}")
             except Exception as exc:
                 print(f"[routes] LLM comment generation failed: {exc}")
-                # Include presentation with error comment
-                presentation["comment"] = "## ⚠️ Analysis Complete\n\nFactor analysis completed. LLM comment generation failed."
-                presentation["llm_metadata"] = {
+                # Include review context with error comment
+                review_context["comment"] = "## ⚠️ Analysis Complete\n\nFactor analysis completed. LLM comment generation failed."
+                review_context["llm_metadata"] = {
                     "model": "fallback",
                     "generated": False,
                     "is_valid": True,
                     "validation_errors": [f"LLM generation failed: {exc}"],
                     "truncated": False,
                 }
-                response_content["presentation"] = presentation
+                response_content["review_context"] = review_context
         
         return JSONResponse(
             content=response_content,
@@ -572,7 +572,7 @@ async def _process_pr_analysis(
     
     Side Effects:
         - Executes the full analysis pipeline (repository, change, behavior, operational)
-        - Generates LLM comment from presentation IR
+        - Generates LLM comment from ReviewContext
         - Posts analysis results as a comment on the pull request
         - Prints status messages to stdout for logging
     
@@ -581,7 +581,7 @@ async def _process_pr_analysis(
         - Errors are caught and logged but do not fail the webhook
         - Requires valid GitHub App installation token for posting results
         - Analysis results include change summary, behavior summary, and operational summary
-        - LLM comment is generated from presentation IR when available
+        - LLM comment is generated from ReviewContext when available
     """
     pipeline = get_pipeline_instance()
     registry = get_registry_instance()
@@ -609,9 +609,9 @@ async def _process_pr_analysis(
             token = await installation_provider.authenticate(str(installation_id))
             destination["token"] = token
         
-        # Try to generate LLM comment from presentation IR
+        # Try to generate LLM comment from ReviewContext
         llm_comment = None
-        if context.presentation_ir is not None:
+        if context.review_context is not None:
             try:
                 print(f"[_process_pr_analysis] Generating LLM comment for {request.repository.full_name}")
                 llm_result = pipeline.generate_llm_comment(

@@ -130,12 +130,19 @@ class ChangeCompiler:
             for ep in context.changed_endpoints
         ]
         
+        # Count files changed from diff data
+        files_changed = 0
+        diff_data = context.metadata.get('diff_data', {})
+        if diff_data and 'files' in diff_data:
+            files_changed = len(diff_data['files'])
+        
         return ChangeModel(
             added_symbols=tuple(context.added_symbols),
             removed_symbols=tuple(context.removed_symbols),
             modified_symbols=tuple(modified_symbols),
             changed_imports=tuple(changed_imports),
-            changed_endpoints=tuple(changed_endpoints)
+            changed_endpoints=tuple(changed_endpoints),
+            files_changed=files_changed
         )
     
     def get_pass_names(self) -> list[str]:

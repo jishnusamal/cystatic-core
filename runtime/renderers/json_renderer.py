@@ -161,6 +161,7 @@ class JSONRenderer:
             "modified_symbols_count": len(change.modified_symbols),
             "changed_imports_count": len(change.changed_imports),
             "changed_endpoints_count": len(change.changed_endpoints),
+            "files_changed": getattr(change, 'files_changed', 0),
             "added_symbols": [self._render_symbol_summary(s) for s in change.added_symbols],
             "removed_symbols": [self._render_symbol_summary(s) for s in change.removed_symbols],
             "modified_symbols": [

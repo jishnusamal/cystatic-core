@@ -14,7 +14,7 @@ from change.model import ChangeModel, RepositoryDelta
 from behavior.model import BehaviorModel
 from operational.model import OperationalChangeModel, EngineeringDiscoveryModel
 from operational.discovery.model import DiscoveryIR
-from presentation.model import PresentationIR
+from review_context.model import ReviewContext
 
 
 @dataclass
@@ -52,8 +52,8 @@ class PipelineContext:
     # Discovery IR (output of Discovery Compiler)
     discovery_ir: DiscoveryIR | None = None
 
-    # Presentation IR (output of Presentation Compiler)
-    presentation_ir: PresentationIR | None = None
+    # ReviewContext (output of ReviewContext Compiler)
+    review_context: ReviewContext | None = None
 
     # Metadata
     language: str | None = None
@@ -146,7 +146,7 @@ class PipelineContext:
             "operational_compile_time": self.operational_compile_time,
             "has_discovery_model": self.edm is not None,
             "has_discovery_ir": self.discovery_ir is not None,
-            "has_presentation_ir": self.presentation_ir is not None,
+            "has_review_context": self.review_context is not None,
             "render_time": self.render_time,
             "total_time": self.total_time,
             "has_error": self.error is not None,
