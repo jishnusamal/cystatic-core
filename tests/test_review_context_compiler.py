@@ -56,6 +56,10 @@ from review_context.compiler import ReviewContextCompiler
 from review_context.model import (
     ReviewContext,
     ChangeContext,
+    ChangeSummary,
+    FileChange,
+    Change,
+    SymbolRef,
     ExecutionContext,
     ImpactContext,
     StateContext,
@@ -470,37 +474,22 @@ class TestReviewContextCompilerInit:
 
 
 # ---------------------------------------------------------------------------
-# Tests: ReviewContextCompiler — ChangeContext Selection
+# Tests: ReviewContextCompiler — ChangeContext — Summary
 # ---------------------------------------------------------------------------
 
-class TestChangeContextSelection:
-    """Tests for ChangeContext selection (Pass 1)."""
+class TestChangeSummary:
+    """Tests for ChangeSummary (the summary section)."""
 
-    def test_change_context_with_added_symbols(self, sample_change_model):
-        """Test that added symbols appear in ChangeContext."""
-        compiler = ReviewContextCompiler()
-        result = compiler.compile(change_model=sample_change_model)
-        assert len(result.change.changed_symbols) > 0
-        assert "func2" in result.change.changed_symbols
-
-    def test_change_context_with_modified_symbols(self, sample_change_model):
-        """Test that modified symbols appear with ~ prefix."""
-        compiler = ReviewContextCompiler()
-        result = compiler.compile(change_model=sample_change_model)
-        modified = [s for s in result.change.changed_symbols if s.startswith("~")]
-        assert len(modified) > 0
-        assert "~func1" in modified
-
-    def test_change_context_classification_addition(self, sample_symbols):
+    def test_summary_classification_addition(self, sample_symbols):
         """Test classification is 'addition' when only added symbols exist."""
         change_model = TestHelper.create_change_model(
             added_symbols=[sample_symbols[0]],
         )
         compiler = ReviewContextCompiler()
         result = compiler.compile(change_model=change_model)
-        assert result.change.classification == "addition"
+        assert result.change.summary.classification == "addition"
 
-    def test_change_context_classification_modification(self, sample_symbols):
+    def test_summary_classification_modification(self, sample_symbols):
         """Test classification is 'modification' when only modified symbols exist."""
         change_model = TestHelper.create_change_model(
             modified_symbols=[
@@ -509,28 +498,28 @@ class TestChangeContextSelection:
         )
         compiler = ReviewContextCompiler()
         result = compiler.compile(change_model=change_model)
-        assert result.change.classification == "modification"
+        assert result.change.summary.classification == "modification"
 
-    def test_change_context_classification_removal(self, sample_symbols):
+    def test_summary_classification_removal(self, sample_symbols):
         """Test classification is 'removal' when only removed symbols exist."""
         change_model = TestHelper.create_change_model(
             removed_symbols=[sample_symbols[0]],
         )
         compiler = ReviewContextCompiler()
         result = compiler.compile(change_model=change_model)
-        assert result.change.classification == "removal"
+        assert result.change.summary.classification == "removal"
 
-    def test_change_context_classification_mixed(self, sample_symbols):
-        """Test classification is 'mixed' when both added and removed symbols exist."""
+    def test_summary_classification_mixed(self, sample_symbols):
+        """Test classification is 'mixed' when both added and removed."""
         change_model = TestHelper.create_change_model(
             added_symbols=[sample_symbols[0]],
             removed_symbols=[sample_symbols[1]],
         )
         compiler = ReviewContextCompiler()
         result = compiler.compile(change_model=change_model)
-        assert result.change.classification == "mixed"
+        assert result.change.summary.classification == "mixed"
 
-    def test_change_context_scope_local(self, sample_symbols):
+    def test_summary_scope_local(self, sample_symbols):
         """Test scope is 'local' when 1 file changed."""
         change_model = TestHelper.create_change_model(
             modified_symbols=[
@@ -540,9 +529,9 @@ class TestChangeContextSelection:
         )
         compiler = ReviewContextCompiler()
         result = compiler.compile(change_model=change_model)
-        assert result.change.scope == "local"
+        assert result.change.summary.scope == "local"
 
-    def test_change_context_scope_multi_file(self, sample_symbols):
+    def test_summary_scope_multi_file(self, sample_symbols):
         """Test scope is 'multi_file' when 2-5 files changed."""
         change_model = TestHelper.create_change_model(
             modified_symbols=[
@@ -552,9 +541,9 @@ class TestChangeContextSelection:
         )
         compiler = ReviewContextCompiler()
         result = compiler.compile(change_model=change_model)
-        assert result.change.scope == "multi_file"
+        assert result.change.summary.scope == "multi_file"
 
-    def test_change_context_scope_wide(self, sample_symbols):
+    def test_summary_scope_wide(self, sample_symbols):
         """Test scope is 'wide' when >5 files changed."""
         change_model = TestHelper.create_change_model(
             modified_symbols=[
@@ -564,40 +553,172 @@ class TestChangeContextSelection:
         )
         compiler = ReviewContextCompiler()
         result = compiler.compile(change_model=change_model)
-        assert result.change.scope == "wide"
+        assert result.change.summary.scope == "wide"
 
-    def test_change_context_with_removed_symbols(self, sample_symbols):
-        """Test that removed symbols appear with - prefix."""
+    def test_summary_counts(self, sample_change_model):
+        """Test that summary counts are correct."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(change_model=sample_change_model)
+        assert result.change.summary.file_count > 0
+        assert result.change.summary.symbol_count > 0
+
+
+# ---------------------------------------------------------------------------
+# Tests: ReviewContextCompiler — ChangeContext — Files
+# ---------------------------------------------------------------------------
+
+class TestFileChanges:
+    """Tests for the hierarchical file-centered change structure."""
+
+    def test_files_populated(self, sample_change_model):
+        """Test that files are populated from change model."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(change_model=sample_change_model)
+        assert len(result.change.files) > 0
+
+    def test_file_has_path(self, sample_change_model):
+        """Test that each file has a path."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(change_model=sample_change_model)
+        for f in result.change.files:
+            assert f.path != ""
+
+    def test_file_has_change_type(self, sample_change_model):
+        """Test that each file has a change type."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(change_model=sample_change_model)
+        for f in result.change.files:
+            assert f.change_type in ("added", "removed", "modified", "mixed")
+
+    def test_file_change_type_mixed(self, sample_symbols):
+        """Test file change type is 'mixed' when file has added + removed symbols."""
+        # Both symbols in same file
+        sym1 = TestHelper.create_symbol(
+            "python://test.py::func1", "func1", SymbolKind.FUNCTION,
+            file="test.py",
+        )
+        sym2 = TestHelper.create_symbol(
+            "python://test.py::func2", "func2", SymbolKind.FUNCTION,
+            file="test.py",
+        )
+        change_model = TestHelper.create_change_model(
+            added_symbols=[sym1],
+            removed_symbols=[sym2],
+            files_changed=1,
+        )
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(change_model=change_model)
+        assert len(result.change.files) == 1
+        assert result.change.files[0].change_type == "mixed"
+
+    def test_file_change_type_modified(self, sample_symbols):
+        """Test file change type is 'modified' when only modified symbols."""
+        change_model = TestHelper.create_change_model(
+            modified_symbols=[
+                ModifiedSymbol(symbol=sample_symbols[0], changes=()),
+            ],
+            files_changed=1,
+        )
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(change_model=change_model)
+        assert len(result.change.files) == 1
+        assert result.change.files[0].change_type == "modified"
+
+    def test_file_change_type_added(self, sample_symbols):
+        """Test file change type is 'added' when only added symbols."""
+        change_model = TestHelper.create_change_model(
+            added_symbols=[sample_symbols[0]],
+            files_changed=1,
+        )
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(change_model=change_model)
+        assert len(result.change.files) == 1
+        assert result.change.files[0].change_type == "added"
+
+    def test_file_has_language(self, sample_change_model):
+        """Test that files have a language from symbol metadata."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(change_model=sample_change_model)
+        for f in result.change.files:
+            assert f.language != ""
+
+    def test_file_changes_populated(self, sample_change_model):
+        """Test that file has changes (changed symbols)."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(change_model=sample_change_model)
+        for f in result.change.files:
+            assert len(f.changes) > 0
+
+    def test_change_symbol_ref(self, sample_change_model):
+        """Test that each change has a symbol ref with metadata."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(change_model=sample_change_model)
+        for f in result.change.files:
+            for c in f.changes:
+                assert c.symbol.name != ""
+                assert c.symbol.kind != ""
+                assert c.symbol.visibility != ""
+                assert c.symbol.location != ""
+
+    def test_change_type_added(self, sample_change_model):
+        """Test that added symbols have change_type 'added'."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(change_model=sample_change_model)
+        for f in result.change.files:
+            for c in f.changes:
+                if c.change_type == "added":
+                    assert "func2" in c.symbol.name
+
+    def test_change_type_modified(self, sample_change_model):
+        """Test that modified symbols have change_type 'modified'."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(change_model=sample_change_model)
+        for f in result.change.files:
+            for c in f.changes:
+                if c.change_type == "modified":
+                    assert "func1" in c.symbol.name
+
+    def test_change_behavior_changes(self, sample_change_model):
+        """Test that modified symbols carry behavior change types."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(change_model=sample_change_model)
+        for f in result.change.files:
+            for c in f.changes:
+                if c.change_type == "modified":
+                    assert len(c.behavior_changes) > 0
+                    assert "FunctionBodyChange" in c.behavior_changes
+
+    def test_change_type_removed(self, sample_symbols):
+        """Test that removed symbols have change_type 'removed'."""
         change_model = TestHelper.create_change_model(
             removed_symbols=[sample_symbols[0]],
         )
         compiler = ReviewContextCompiler()
         result = compiler.compile(change_model=change_model)
-        removed = [s for s in result.change.changed_symbols if s.startswith("-")]
-        assert len(removed) > 0
-        assert "-func1" in removed
+        for f in result.change.files:
+            for c in f.changes:
+                if c.change_type == "removed":
+                    assert "func1" in c.symbol.name
 
-    def test_change_context_changed_behaviors(self, sample_change_model):
-        """Test that changed behaviors are extracted from modified symbols."""
+    def test_no_flat_lists(self, sample_change_model):
+        """Test that the old flat lists are gone."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(change_model=sample_change_model)
-        assert len(result.change.changed_behaviors) > 0
-        assert "FunctionBodyChange" in result.change.changed_behaviors
+        # ChangeContext should have summary and files, not flat lists
+        assert hasattr(result.change, 'summary')
+        assert hasattr(result.change, 'files')
+        # Verify no old-style flat list attributes
+        assert not hasattr(result.change, 'changed_files')
+        assert not hasattr(result.change, 'changed_symbols')
+        assert not hasattr(result.change, 'changed_behaviors')
 
-    def test_change_context_changed_files(self, sample_change_model):
-        """Test that changed files are collected."""
-        compiler = ReviewContextCompiler()
-        result = compiler.compile(change_model=sample_change_model)
-        assert len(result.change.changed_files) > 0
-        assert "test.py" in result.change.changed_files
-
-    def test_change_context_none_model(self):
+    def test_none_model(self):
         """Test that None change model returns empty ChangeContext."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(change_model=None)
-        assert result.change.changed_files == ()
-        assert result.change.changed_symbols == ()
-        assert result.change.classification == ""
+        assert result.change.summary.classification == ""
+        assert result.change.summary.file_count == 0
+        assert result.change.files == ()
 
 
 # ---------------------------------------------------------------------------
@@ -819,7 +940,7 @@ class TestDiscoveryAssembly:
                 assert ref.compiler_artifact != ""
 
     def test_discovery_no_importance_scores(self, sample_discovery_ir):
-        """Test that importance scores are NOT present in ReviewContext discoveries."""
+        """Test that importance scores are NOT present."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(discovery_ir=sample_discovery_ir)
         for discovery in result.discoveries:
@@ -963,8 +1084,8 @@ class TestFullCompilation:
             discovery_model=sample_discovery_model,
             discovery_ir=sample_discovery_ir,
         )
-        assert len(result.change.changed_files) > 0
-        assert len(result.change.changed_symbols) > 0
+        assert result.change.summary.file_count > 0
+        assert len(result.change.files) > 0
         assert len(result.execution.entry_points) > 0
         assert len(result.impact.modules) > 0
         assert len(result.discoveries) > 0
@@ -1024,11 +1145,7 @@ class TestFullCompilation:
         sample_discovery_model,
         sample_discovery_ir,
     ):
-        """Structural test: compiler should not perform graph traversal.
-
-        The ReviewContextCompiler only selects, normalizes, organizes, and references.
-        It does not traverse graphs, calculate reachability, or compute new values.
-        """
+        """Structural test: compiler should not perform graph traversal."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(
             change_model=sample_change_model,
@@ -1055,9 +1172,8 @@ class TestEdgeCases:
         change_model = TestHelper.create_change_model()
         compiler = ReviewContextCompiler()
         result = compiler.compile(change_model=change_model)
-        assert result.change.changed_files == ()
-        assert result.change.changed_symbols == ()
-        assert result.change.classification == "modification"
+        assert result.change.files == ()
+        assert result.change.summary.classification == "modification"
 
     def test_empty_behavior_model(self):
         """Test with an empty behavior model."""
@@ -1079,7 +1195,7 @@ class TestEdgeCases:
         """Test with only change model provided."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(change_model=sample_change_model)
-        assert len(result.change.changed_symbols) > 0
+        assert len(result.change.files) > 0
         assert result.execution.entry_points == ()
         assert result.discoveries == ()
 
@@ -1088,7 +1204,7 @@ class TestEdgeCases:
         compiler = ReviewContextCompiler()
         result = compiler.compile(behavior_model=sample_behavior_model)
         assert len(result.execution.entry_points) > 0
-        assert result.change.changed_files == ()
+        assert result.change.summary.file_count == 0
         assert result.discoveries == ()
 
     def test_partial_models_discovery_only(self, sample_discovery_ir):
@@ -1096,28 +1212,8 @@ class TestEdgeCases:
         compiler = ReviewContextCompiler()
         result = compiler.compile(discovery_ir=sample_discovery_ir)
         assert len(result.discoveries) > 0
-        assert result.change.changed_files == ()
+        assert result.change.summary.file_count == 0
         assert result.execution.entry_points == ()
-
-    def test_removed_symbols_with_minus_prefix(self, sample_symbols):
-        """Test that removed symbols get '-' prefix."""
-        change_model = TestHelper.create_change_model(
-            removed_symbols=[sample_symbols[0]],
-        )
-        compiler = ReviewContextCompiler()
-        result = compiler.compile(change_model=change_model)
-        assert "-func1" in result.change.changed_symbols
-
-    def test_modified_symbols_with_tilde_prefix(self, sample_symbols):
-        """Test that modified symbols get '~' prefix."""
-        change_model = TestHelper.create_change_model(
-            modified_symbols=[
-                ModifiedSymbol(symbol=sample_symbols[0], changes=()),
-            ],
-        )
-        compiler = ReviewContextCompiler()
-        result = compiler.compile(change_model=change_model)
-        assert "~func1" in result.change.changed_symbols
 
     def test_discovery_without_evidence(self):
         """Test that a discovery without evidence still appears."""
@@ -1151,11 +1247,29 @@ class TestReviewContextModel:
         with pytest.raises(AttributeError):
             ctx.change = ChangeContext()  # type: ignore
 
-    def test_change_context_immutable(self):
-        """Test that ChangeContext is frozen."""
-        ctx = ChangeContext()
+    def test_change_summary_immutable(self):
+        """Test that ChangeSummary is frozen."""
+        s = ChangeSummary()
         with pytest.raises(AttributeError):
-            ctx.changed_files = ("new.py",)  # type: ignore
+            s.classification = "new"  # type: ignore
+
+    def test_file_change_immutable(self):
+        """Test that FileChange is frozen."""
+        f = FileChange()
+        with pytest.raises(AttributeError):
+            f.path = "new.py"  # type: ignore
+
+    def test_change_immutable(self):
+        """Test that Change is frozen."""
+        c = Change()
+        with pytest.raises(AttributeError):
+            c.change_type = "new"  # type: ignore
+
+    def test_symbol_ref_immutable(self):
+        """Test that SymbolRef is frozen."""
+        s = SymbolRef()
+        with pytest.raises(AttributeError):
+            s.name = "new"  # type: ignore
 
     def test_execution_context_immutable(self):
         """Test that ExecutionContext is frozen."""
@@ -1202,7 +1316,8 @@ class TestReviewContextModel:
     def test_review_context_defaults(self):
         """Test that ReviewContext has sensible defaults."""
         ctx = ReviewContext()
-        assert ctx.change.changed_files == ()
+        assert ctx.change.summary.file_count == 0
+        assert ctx.change.files == ()
         assert ctx.execution.entry_points == ()
         assert ctx.impact.services == ()
         assert ctx.state.models == ()

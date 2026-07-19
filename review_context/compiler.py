@@ -28,6 +28,14 @@ from operational.model import EngineeringDiscoveryModel
 from .model import (
     ReviewContext,
     ChangeContext,
+    ChangeSummary,
+    FileChange,
+    Change,
+    SymbolRef,
+    Relationships,
+    ChangeImpact,
+    ChangeValidation,
+    ChangeReferences,
     ExecutionContext,
     ImpactContext,
     StateContext,
@@ -96,7 +104,7 @@ class ReviewContextCompiler:
         )
 
     # -----------------------------------------------------------------------
-    # Pass 1 — Selection
+    # Pass 1 — Selection: ChangeContext
     # -----------------------------------------------------------------------
 
     def _select_change_context(
@@ -105,59 +113,143 @@ class ReviewContextCompiler:
     ) -> ChangeContext:
         """Select change-relevant information from ChangeModel.
 
-        Removes: compiler metadata, timing, internal IDs not required downstream.
+        Builds a hierarchical, file-centered structure.
+        No compiler-oriented flat lists.
         """
         if change_model is None:
             return ChangeContext()
 
-        # Collect changed file paths
-        changed_files: list[str] = []
-        changed_symbols: list[str] = []
+        # --- Summary ---
+        classification = self._determine_classification(change_model)
+        scope = self._determine_scope(change_model)
+        file_count = change_model.files_changed
+        symbol_count = (
+            len(change_model.added_symbols)
+            + len(change_model.removed_symbols)
+            + len(change_model.modified_symbols)
+        )
+        behavior_count = sum(
+            len(ms.changes) for ms in change_model.modified_symbols
+        )
 
-        for sym in change_model.added_symbols:
-            changed_symbols.append(sym.name)
-            if sym.file and sym.file not in changed_files:
-                changed_files.append(sym.file)
-
-        for sym in change_model.removed_symbols:
-            changed_symbols.append(f"-{sym.name}")
-            if sym.file and sym.file not in changed_files:
-                changed_files.append(sym.file)
-
-        for ms in change_model.modified_symbols:
-            changed_symbols.append(f"~{ms.symbol.name}")
-            if ms.symbol.file and ms.symbol.file not in changed_files:
-                changed_files.append(ms.symbol.file)
-
-        # Collect changed behaviors from modified symbols
-        changed_behaviors: list[str] = []
-        for ms in change_model.modified_symbols:
-            for change in ms.changes:
-                changed_behaviors.append(type(change).__name__)
-
-        # Determine classification from the change model
-        # Order matters: mixed takes priority over pure addition/removal
-        classification = "modification"
-        if change_model.added_symbols and change_model.removed_symbols:
-            classification = "mixed"
-        elif change_model.added_symbols and not change_model.modified_symbols:
-            classification = "addition"
-        elif change_model.removed_symbols and not change_model.added_symbols:
-            classification = "removal"
-
-        scope = "local"
-        if change_model.files_changed > 5:
-            scope = "wide"
-        elif change_model.files_changed > 1:
-            scope = "multi_file"
-
-        return ChangeContext(
-            changed_files=tuple(changed_files),
-            changed_symbols=tuple(changed_symbols),
-            changed_behaviors=tuple(changed_behaviors),
+        summary = ChangeSummary(
             classification=classification,
             scope=scope,
+            file_count=file_count,
+            symbol_count=symbol_count,
+            behavior_count=behavior_count,
         )
+
+        # --- Files: group changed symbols by file ---
+        files: dict[str, list[Change]] = {}
+
+        # Added symbols
+        for sym in change_model.added_symbols:
+            file_path = sym.file
+            if file_path not in files:
+                files[file_path] = []
+            files[file_path].append(self._build_change(sym, "added"))
+
+        # Removed symbols
+        for sym in change_model.removed_symbols:
+            file_path = sym.file
+            if file_path not in files:
+                files[file_path] = []
+            files[file_path].append(self._build_change(sym, "removed"))
+
+        # Modified symbols
+        for ms in change_model.modified_symbols:
+            sym = ms.symbol
+            file_path = sym.file
+            if file_path not in files:
+                files[file_path] = []
+            # Extract behavior change type names
+            behavior_changes = tuple(type(c).__name__ for c in ms.changes)
+            files[file_path].append(self._build_change(sym, "modified", behavior_changes))
+
+        # Build FileChange objects
+        file_changes: list[FileChange] = []
+        for file_path, changes in files.items():
+            # Determine file-level change type
+            change_types = {c.change_type for c in changes}
+            if len(change_types) > 1:
+                file_change_type = "mixed"
+            elif "added" in change_types:
+                file_change_type = "added"
+            elif "removed" in change_types:
+                file_change_type = "removed"
+            else:
+                file_change_type = "modified"
+
+            # Determine language from first symbol
+            language = ""
+            for c in changes:
+                if c.symbol.language:
+                    language = c.symbol.language
+                    break
+
+            file_changes.append(FileChange(
+                path=file_path,
+                language=language,
+                change_type=file_change_type,
+                changes=tuple(changes),
+            ))
+
+        return ChangeContext(
+            summary=summary,
+            files=tuple(file_changes),
+        )
+
+    def _build_change(
+        self,
+        sym: Any,
+        change_type: str,
+        behavior_changes: tuple[str, ...] = (),
+    ) -> Change:
+        """Build a Change from a symbol and its change type.
+
+        Only selects existing metadata. No new discovery.
+        """
+        symbol_ref = SymbolRef(
+            id=sym.id,
+            name=sym.name,
+            kind=sym.kind.value if hasattr(sym.kind, 'value') else str(sym.kind),
+            visibility=sym.visibility.value if hasattr(sym.visibility, 'value') else str(sym.visibility),
+            language=sym.language if hasattr(sym, 'language') else "",
+            location=f"{sym.file}:{sym.range[0]}-{sym.range[1]}" if hasattr(sym, 'range') else sym.file,
+        )
+
+        return Change(
+            symbol=symbol_ref,
+            change_type=change_type,
+            behavior_changes=behavior_changes,
+        )
+
+    def _determine_classification(self, change_model: ChangeModel) -> str:
+        """Determine change classification from existing model data."""
+        has_added = bool(change_model.added_symbols)
+        has_removed = bool(change_model.removed_symbols)
+        has_modified = bool(change_model.modified_symbols)
+
+        if has_added and has_removed:
+            return "mixed"
+        if has_added and not has_modified:
+            return "addition"
+        if has_removed and not has_added:
+            return "removal"
+        return "modification"
+
+    def _determine_scope(self, change_model: ChangeModel) -> str:
+        """Determine change scope from existing model data."""
+        if change_model.files_changed > 5:
+            return "wide"
+        if change_model.files_changed > 1:
+            return "multi_file"
+        return "local"
+
+    # -----------------------------------------------------------------------
+    # Pass 1 — Selection: ExecutionContext
+    # -----------------------------------------------------------------------
 
     def _select_execution_context(
         self,
@@ -241,6 +333,10 @@ class ReviewContextCompiler:
             max_execution_depth=max_execution_depth,
         )
 
+    # -----------------------------------------------------------------------
+    # Pass 1 — Selection: ImpactContext
+    # -----------------------------------------------------------------------
+
     def _select_impact_context(
         self,
         behavior_model: BehaviorModel | None,
@@ -307,6 +403,10 @@ class ReviewContextCompiler:
             propagation=tuple(propagation),
         )
 
+    # -----------------------------------------------------------------------
+    # Pass 1 — Selection: StateContext
+    # -----------------------------------------------------------------------
+
     def _select_state_context(
         self,
         operational_model: OperationalChangeModel | None,
@@ -363,6 +463,10 @@ class ReviewContextCompiler:
             external_storage=tuple(external_storage),
         )
 
+    # -----------------------------------------------------------------------
+    # Pass 1 — Selection: IntegrationContext
+    # -----------------------------------------------------------------------
+
     def _select_integration_context(
         self,
         operational_model: OperationalChangeModel | None,
@@ -416,6 +520,10 @@ class ReviewContextCompiler:
             rest=tuple(rest),
             events=tuple(events),
         )
+
+    # -----------------------------------------------------------------------
+    # Pass 1 — Selection: ValidationContext
+    # -----------------------------------------------------------------------
 
     def _select_validation_context(
         self,

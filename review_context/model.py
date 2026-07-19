@@ -10,21 +10,127 @@ from typing import Any
 
 
 # ---------------------------------------------------------------------------
-# ChangeContext
+# Change — hierarchical, file-centered structure
 # ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class ChangeSummary:
+    """High-level deterministic facts about the change.
+
+    These values are derived from existing compiler outputs.
+    No new computation.
+    """
+    classification: str = ""
+    scope: str = ""
+    file_count: int = 0
+    symbol_count: int = 0
+    behavior_count: int = 0
+
+
+@dataclass(frozen=True)
+class SymbolRef:
+    """A reference to a changed symbol.
+
+    Populated from existing symbol metadata.
+    No invented metadata.
+    """
+    id: str = ""
+    name: str = ""
+    kind: str = ""
+    visibility: str = ""
+    language: str = ""
+    location: str = ""
+
+
+@dataclass(frozen=True)
+class Relationships:
+    """Existing relationships organized around a changed symbol.
+
+    These come from existing behavior/dependency information.
+    No graph traversal inside ReviewContext.
+    """
+    entry_points: tuple[str, ...] = field(default_factory=tuple)
+    behaviors: tuple[str, ...] = field(default_factory=tuple)
+    callers: tuple[str, ...] = field(default_factory=tuple)
+    callees: tuple[str, ...] = field(default_factory=tuple)
+    dependents: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class ChangeImpact:
+    """Deterministic impact information already computed elsewhere.
+
+    Only exposes existing metrics. No new computation.
+    """
+    reachable_behaviors: int = 0
+    reachable_services: int = 0
+    fan_in: int = 0
+    fan_out: int = 0
+    shared_execution: bool = False
+
+
+@dataclass(frozen=True)
+class ChangeValidation:
+    """Validation already associated with the changed symbol.
+
+    No test searching inside ReviewContext.
+    """
+    unit_tests: tuple[str, ...] = field(default_factory=tuple)
+    integration_tests: tuple[str, ...] = field(default_factory=tuple)
+    e2e_tests: tuple[str, ...] = field(default_factory=tuple)
+    benchmarks: tuple[str, ...] = field(default_factory=tuple)
+    production_replays: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class ChangeReferences:
+    """Traceable references back to compiler artifacts.
+
+    Pointers only. No additional analysis.
+    """
+    symbol_references: tuple[str, ...] = field(default_factory=tuple)
+    behavior_references: tuple[str, ...] = field(default_factory=tuple)
+    execution_references: tuple[str, ...] = field(default_factory=tuple)
+    dependency_references: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class Change:
+    """A single changed symbol within a file.
+
+    Assembled from existing compiler artifacts.
+    No new discovery.
+    """
+    symbol: SymbolRef = field(default_factory=SymbolRef)
+    change_type: str = ""  # "added", "removed", "modified"
+    behavior_changes: tuple[str, ...] = field(default_factory=tuple)
+    relationships: Relationships = field(default_factory=Relationships)
+    impact: ChangeImpact = field(default_factory=ChangeImpact)
+    validation: ChangeValidation = field(default_factory=ChangeValidation)
+    references: ChangeReferences = field(default_factory=ChangeReferences)
+
+
+@dataclass(frozen=True)
+class FileChange:
+    """A file that was changed, with its changed symbols.
+
+    The file is the primary review unit.
+    """
+    path: str = ""
+    language: str = ""
+    change_type: str = ""  # "added", "removed", "modified", "mixed"
+    changes: tuple[Change, ...] = field(default_factory=tuple)
+
 
 @dataclass(frozen=True)
 class ChangeContext:
     """Describe what changed.
 
-    Only includes information required to understand the change.
-    No compiler metadata, timing, or internal IDs.
+    Organized hierarchically around files.
+    No compiler-oriented flat lists.
     """
-    changed_files: tuple[str, ...] = field(default_factory=tuple)
-    changed_symbols: tuple[str, ...] = field(default_factory=tuple)
-    changed_behaviors: tuple[str, ...] = field(default_factory=tuple)
-    classification: str = ""
-    scope: str = ""
+    summary: ChangeSummary = field(default_factory=ChangeSummary)
+    files: tuple[FileChange, ...] = field(default_factory=tuple)
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +276,7 @@ class ReviewContext:
     No downstream consumer should need access to internal compiler models.
 
     Attributes:
-        change: What changed.
+        change: What changed (hierarchical, file-centered).
         execution: Where the change can execute.
         impact: Everything affected.
         state: Data affected.

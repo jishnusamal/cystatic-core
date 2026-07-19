@@ -647,11 +647,35 @@ class Pipeline:
             rc = context.review_context
             return {
                 "change": {
-                    "changed_files": list(rc.change.changed_files),
-                    "changed_symbols": list(rc.change.changed_symbols),
-                    "changed_behaviors": list(rc.change.changed_behaviors),
-                    "classification": rc.change.classification,
-                    "scope": rc.change.scope,
+                    "summary": {
+                        "classification": rc.change.summary.classification,
+                        "scope": rc.change.summary.scope,
+                        "file_count": rc.change.summary.file_count,
+                        "symbol_count": rc.change.summary.symbol_count,
+                        "behavior_count": rc.change.summary.behavior_count,
+                    },
+                    "files": [
+                        {
+                            "path": f.path,
+                            "language": f.language,
+                            "change_type": f.change_type,
+                            "changes": [
+                                {
+                                    "symbol": {
+                                        "id": c.symbol.id,
+                                        "name": c.symbol.name,
+                                        "kind": c.symbol.kind,
+                                        "visibility": c.symbol.visibility,
+                                        "location": c.symbol.location,
+                                    },
+                                    "change_type": c.change_type,
+                                    "behavior_changes": list(c.behavior_changes),
+                                }
+                                for c in f.changes
+                            ],
+                        }
+                        for f in rc.change.files
+                    ],
                 },
                 "execution": {
                     "entry_points": list(rc.execution.entry_points),
@@ -835,11 +859,34 @@ class Pipeline:
             
             return {
                 "change": {
-                    "changed_files": list(rc.change.changed_files),
-                    "changed_symbols": list(rc.change.changed_symbols),
-                    "changed_behaviors": list(rc.change.changed_behaviors),
-                    "classification": rc.change.classification,
-                    "scope": rc.change.scope,
+                    "summary": {
+                        "classification": rc.change.summary.classification,
+                        "scope": rc.change.summary.scope,
+                        "file_count": rc.change.summary.file_count,
+                        "symbol_count": rc.change.summary.symbol_count,
+                        "behavior_count": rc.change.summary.behavior_count,
+                    },
+                    "files": [
+                        {
+                            "path": f.path,
+                            "language": f.language,
+                            "change_type": f.change_type,
+                            "changes": [
+                                {
+                                    "symbol": {
+                                        "name": c.symbol.name,
+                                        "kind": c.symbol.kind,
+                                        "visibility": c.symbol.visibility,
+                                        "location": c.symbol.location,
+                                    },
+                                    "change_type": c.change_type,
+                                    "behavior_changes": list(c.behavior_changes),
+                                }
+                                for c in f.changes
+                            ],
+                        }
+                        for f in rc.change.files
+                    ],
                 },
                 "execution": {
                     "entry_points": list(rc.execution.entry_points),
