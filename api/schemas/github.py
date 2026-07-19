@@ -33,11 +33,21 @@ class AnalysisRequest(BaseModel):
     diff_data: dict[str, Any] | None = Field(None, description="Raw diff data")
 
 
+class RepositoryResponse(BaseModel):
+    """Repository information in API responses."""
+    
+    provider: str = Field(description="Integration provider name (e.g., 'github', 'gitlab')")
+    owner: str = Field(description="Repository owner/organization")
+    repository: str = Field(description="Repository name")
+    full_name: str = Field(description="Full repository name (owner/repo)")
+    default_branch: str = Field(default="main", description="Default branch name")
+
+
 class AnalysisResponse(BaseModel):
     """Response from analysis endpoint."""
     
-    repository: str
     language: str
+    repository: RepositoryResponse
     change_summary: dict[str, Any]
     behavior_summary: dict[str, Any]
     operational_summary: dict[str, Any]

@@ -582,8 +582,7 @@ class Pipeline:
                 change_model=context.change_model,
                 behavior_model=context.behavior_model,
                 operational_model=context.ocm,
-                discovery_model=context.edm,
-                discovery_ir=context.discovery_ir,
+                discovery_model=context.discovery_ir,
             )
             
             context.presentation_compile_time = time.time() - start

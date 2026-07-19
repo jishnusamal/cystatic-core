@@ -22,8 +22,8 @@ from typing import Any
 from change.model import ChangeModel
 from behavior.model import BehaviorModel
 from operational.model import OperationalChangeModel
-from operational.discovery.model import DiscoveryIR, Discovery as DiscoveryIRDiscovery
-from operational.model import EngineeringDiscoveryModel
+from discovery.model import DiscoveryModel, Discovery as DiscoveryModelDiscovery
+from operational.discovery.model import DiscoveryIR, Discovery as OldDiscovery
 
 from .model import (
     ReviewContext,
@@ -42,6 +42,11 @@ from .model import (
     Reference,
 )
 
+# Maximum number of references to expose per discovery in ReviewContext.
+# The compiler computes the complete set internally, but only a representative
+# subset is exported to keep the payload compact.
+MAX_DISCOVERY_REFERENCES = 10
+
 
 class ReviewContextCompiler:
     """Compiles existing compiler outputs into a ReviewContext.
@@ -58,8 +63,7 @@ class ReviewContextCompiler:
         change_model: ChangeModel | None = None,
         behavior_model: BehaviorModel | None = None,
         operational_model: OperationalChangeModel | None = None,
-        discovery_model: EngineeringDiscoveryModel | None = None,
-        discovery_ir: DiscoveryIR | None = None,
+        discovery_model: DiscoveryModel | None = None,
     ) -> ReviewContext:
         """Compile compiler outputs into a ReviewContext.
 
@@ -67,8 +71,7 @@ class ReviewContextCompiler:
             change_model: The ChangeModel from change compilation.
             behavior_model: The BehaviorModel from behavior compilation.
             operational_model: The OperationalChangeModel from operational compilation.
-            discovery_model: The EngineeringDiscoveryModel from discovery compilation.
-            discovery_ir: The DiscoveryIR from discovery compilation.
+            discovery_model: The DiscoveryModel from discovery compilation.
 
         Returns:
             A ReviewContext containing only engineering context.
@@ -76,13 +79,13 @@ class ReviewContextCompiler:
         # Pass 1: Selection — select review-relevant information
         change_ctx = self._select_change_context(change_model)
         execution_ctx = self._select_execution_context(
-            behavior_model, discovery_model, change_model
+            behavior_model, operational_model, change_model
         )
 
         # Pass 2: Normalization — already done via schema construction above
 
-        # Pass 3: Discovery Assembly — populate from DiscoveryIR directly
-        discoveries = self._assemble_discoveries(discovery_ir)
+        # Pass 3: Discovery Assembly — populate from DiscoveryModel directly
+        discoveries = self._assemble_discoveries(discovery_model)
 
         # Pass 4: Reference Assembly — collect unique references
         references = self._assemble_references(discoveries)
@@ -245,7 +248,7 @@ class ReviewContextCompiler:
     def _select_execution_context(
         self,
         behavior_model: BehaviorModel | None,
-        discovery_model: EngineeringDiscoveryModel | None,
+        operational_model: OperationalChangeModel | None,
         change_model: ChangeModel | None = None,
     ) -> ExecutionContext:
         """Select execution-relevant information and build a hierarchical execution graph.
@@ -257,7 +260,7 @@ class ReviewContextCompiler:
         Reuses existing values — never recomputes.
         No graph traversal inside ReviewContext.
         """
-        if behavior_model is None and discovery_model is None:
+        if behavior_model is None:
             return ExecutionContext()
 
         # Collect changed symbol IDs for the 'changed' flag
@@ -275,15 +278,12 @@ class ReviewContextCompiler:
         if behavior_model is not None:
             for se in behavior_model.shared_executions:
                 shared_symbol_ids.add(se.symbol_id)
-        if discovery_model is not None:
-            for se in discovery_model.shared_executions:
-                shared_symbol_ids.add(se.symbol_id)
 
         # Build a symbol lookup from the repository model (if available)
         symbol_lookup: dict[str, Any] = {}
         repo_model = None
-        if discovery_model is not None and discovery_model.repository is not None:
-            repo_model = discovery_model.repository
+        if operational_model is not None and operational_model.repository is not None:
+            repo_model = operational_model.repository
         if repo_model is not None and hasattr(repo_model, 'symbols'):
             for sym in repo_model.symbols:
                 symbol_lookup[sym.id] = sym
@@ -293,28 +293,17 @@ class ReviewContextCompiler:
         if behavior_model is not None:
             for b in behavior_model.behaviors:
                 behavior_kind_map[b.id] = b.kind.value if hasattr(b.kind, 'value') else str(b.kind)
-        if discovery_model is not None:
-            for b in discovery_model.get_behaviors():
-                if b.id not in behavior_kind_map:
-                    behavior_kind_map[b.id] = b.kind.value if hasattr(b.kind, 'value') else str(b.kind)
 
         # Build a map of behavior_id -> behavior name (for reaches.module)
         behavior_name_map: dict[str, str] = {}
         if behavior_model is not None:
             for b in behavior_model.behaviors:
                 behavior_name_map[b.id] = b.name
-        if discovery_model is not None:
-            for b in discovery_model.get_behaviors():
-                if b.id not in behavior_name_map:
-                    behavior_name_map[b.id] = b.name
 
         # Build a map of behavior_id -> terminal point kind
         terminal_by_behavior: dict[str, str] = {}
         if behavior_model is not None:
             for tp in behavior_model.terminal_points:
-                terminal_by_behavior[tp.behavior_id] = tp.kind
-        if discovery_model is not None:
-            for tp in discovery_model.terminal_points:
                 terminal_by_behavior[tp.behavior_id] = tp.kind
 
         # Build a map of behavior_id -> execution chain units
@@ -322,24 +311,16 @@ class ReviewContextCompiler:
         if behavior_model is not None:
             for chain in behavior_model.execution_chains:
                 chain_units_by_behavior[chain.behavior_id] = list(chain.units)
-        if discovery_model is not None:
-            for chain in discovery_model.execution_chains:
-                if chain.behavior_id not in chain_units_by_behavior:
-                    chain_units_by_behavior[chain.behavior_id] = list(chain.units)
 
         # Build entry point executions
         entry_point_executions: list[EntryPointExecution] = []
         deepest_depth = 0
         deepest_ep = ""
 
-        # Collect all entry points (from behavior_model first, then discovery_model)
+        # Collect all entry points from behavior_model
         all_entry_points: list[Any] = []
         if behavior_model is not None:
             all_entry_points.extend(behavior_model.entry_points)
-        if discovery_model is not None:
-            for ep in discovery_model.entry_points:
-                if ep.id not in {e.id for e in all_entry_points}:
-                    all_entry_points.append(ep)
 
         for ep in all_entry_points:
             behavior_id = ep.behavior_id if hasattr(ep, 'behavior_id') else ""
@@ -462,43 +443,173 @@ class ReviewContextCompiler:
 
     def _assemble_discoveries(
         self,
-        discovery_ir: DiscoveryIR | None,
+        discovery_model: DiscoveryModel | DiscoveryIR | None,
     ) -> tuple[Discovery, ...]:
-        """Populate ReviewContext.discoveries directly from DiscoveryIR.
+        """Populate ReviewContext.discoveries from DiscoveryModel or DiscoveryIR.
+
+        Supports both the new DiscoveryModel (discovery.model) and the legacy
+        DiscoveryIR (operational.discovery.model) for backward compatibility.
 
         No new discoveries. No filtering beyond deterministic selection.
         Each discovery references supporting compiler artifacts.
 
-        Removes: importance scores, ranking vectors, surprise vectors,
-        compression metadata, presentation metadata.
+        References are deduplicated, deterministically ranked, and truncated
+        to at most MAX_DISCOVERY_REFERENCES per discovery. The total count
+        is preserved in reference_count.
         """
-        if discovery_ir is None:
+        if discovery_model is None:
             return ()
 
         discoveries: list[Discovery] = []
 
-        for d in discovery_ir.discoveries:
-            # Build references from evidence
-            references: list[Reference] = []
-            for evidence in d.evidence:
-                ref = Reference(
-                    id=evidence.source_id,
-                    kind=evidence.source,
-                    location=evidence.evidence_ref,
-                    compiler_artifact=evidence.source,
-                    supporting_nodes=(evidence.description,) if evidence.description else (),
-                )
-                references.append(ref)
+        # Determine which type of model we have
+        if isinstance(discovery_model, DiscoveryIR):
+            # Legacy DiscoveryIR from operational.discovery.model
+            for d in discovery_model.discoveries:
+                # Build references from evidence
+                all_references: list[Reference] = []
+                for ev in d.evidence:
+                    reference = Reference(
+                        id=ev.source_id,
+                        kind=ev.source,
+                        location=ev.evidence_ref,
+                        compiler_artifact=ev.source,
+                        supporting_nodes=(),
+                    )
+                    all_references.append(reference)
 
-            discovery = Discovery(
-                id=d.id,
-                kind=d.kind.value if hasattr(d.kind, 'value') else str(d.kind),
-                statement=d.statement,
-                references=tuple(references),
-            )
-            discoveries.append(discovery)
+                # Convert support to facts dict
+                facts_dict: dict[str, Any] = {}
+                if d.support:
+                    facts_dict = {
+                        "execution_reach": d.support.execution_reach,
+                        "fan_in": d.support.fan_in,
+                        "fan_out": d.support.fan_out,
+                        "propagation_depth": d.support.propagation_depth,
+                        "boundary_crossings": d.support.boundary_crossings,
+                        "external_surface": d.support.external_surface,
+                        "data_surface": d.support.data_surface,
+                        "event_surface": d.support.event_surface,
+                        "validation_coverage": d.support.validation_coverage,
+                        "validation_gaps": d.support.validation_gaps,
+                        "shared_by_count": d.support.shared_by_count,
+                        "cross_service_count": d.support.cross_service_count,
+                        "changed_symbol_count": d.support.changed_symbol_count,
+                        "changed_file_count": d.support.changed_file_count,
+                    }
+
+                # Deduplicate, rank, and truncate references
+                total_count = len(all_references)
+                selected = self._select_representative_references(all_references)
+
+                discovery = Discovery(
+                    id=d.id,
+                    kind=d.kind.value if hasattr(d.kind, 'value') else str(d.kind),
+                    statement=d.statement,
+                    facts=facts_dict,
+                    reference_count=total_count,
+                    references=tuple(selected),
+                )
+                discoveries.append(discovery)
+        else:
+            # New DiscoveryModel from discovery.model
+            for d in discovery_model.discoveries:
+                # Build references from discovery references
+                all_references: list[Reference] = []
+                for ref in d.references:
+                    reference = Reference(
+                        id=ref.artifact_id,
+                        kind=ref.artifact_type,
+                        location=ref.location,
+                        compiler_artifact=ref.artifact_type,
+                        supporting_nodes=(),
+                    )
+                    all_references.append(reference)
+
+                # Convert DiscoveryFact to dict for stable ABI
+                facts_dict: dict[str, Any] = {}
+                if d.facts:
+                    facts_dict = {
+                        "shared_symbol_ids": d.facts.shared_symbol_ids,
+                        "behavior_count": d.facts.behavior_count,
+                        "untested_symbol_ids": d.facts.untested_symbol_ids,
+                        "validation_coverage_ratio": d.facts.validation_coverage_ratio,
+                        "crossed_boundaries": d.facts.crossed_boundaries,
+                        "service_transitions": d.facts.service_transitions,
+                        "related_symbol_pairs": d.facts.related_symbol_pairs,
+                        "relationship_type": d.facts.relationship_type,
+                        "max_depth": d.facts.max_depth,
+                        "deep_paths": d.facts.deep_paths,
+                        "shared_dependencies": d.facts.shared_dependencies,
+                        "dependency_count": d.facts.dependency_count,
+                        "published_events": d.facts.published_events,
+                        "event_handlers": d.facts.event_handlers,
+                        "mutated_state": d.facts.mutated_state,
+                        "mutation_sources": d.facts.mutation_sources,
+                        "changed_interfaces": d.facts.changed_interfaces,
+                        "interface_types": d.facts.interface_types,
+                    }
+                
+                # Deduplicate, rank, and truncate references
+                total_count = len(all_references)
+                selected = self._select_representative_references(all_references)
+
+                discovery = Discovery(
+                    id=d.id,
+                    kind=d.kind.value if hasattr(d.kind, 'value') else str(d.kind),
+                    statement="",  # No statements in new model
+                    facts=facts_dict,
+                    reference_count=total_count,
+                    references=tuple(selected),
+                )
+                discoveries.append(discovery)
 
         return tuple(discoveries)
+
+    def _select_representative_references(
+        self,
+        references: list[Reference],
+    ) -> list[Reference]:
+        """Deduplicate, rank, and select representative references.
+
+        Selection priority (highest to lowest):
+            1. Changed symbols (kind == "change")
+            2. Public entrypoints (kind == "behavior" or "entry_point")
+            3. Cross-boundary nodes (kind == "boundary" or "operational")
+            4. High fan-in / high fan-out nodes (kind == "discovery")
+            5. Representative implementation nodes (kind == "symbol" or "execution")
+            6. Everything else
+
+        Deterministic: same input always produces same output.
+        """
+        # Step 1: Deduplicate by id, preserving first occurrence order
+        seen: set[str] = set()
+        unique: list[Reference] = []
+        for ref in references:
+            if ref.id and ref.id not in seen:
+                seen.add(ref.id)
+                unique.append(ref)
+
+        # Step 2: Rank by priority tiers
+        def _priority_tier(ref: Reference) -> int:
+            kind = ref.kind.lower()
+            if kind == "change":
+                return 0
+            if kind in ("behavior", "entry_point", "endpoint"):
+                return 1
+            if kind in ("boundary", "operational", "cross_service"):
+                return 2
+            if kind in ("discovery", "fan_in", "fan_out"):
+                return 3
+            if kind in ("symbol", "execution", "unit"):
+                return 4
+            return 5
+
+        # Sort by priority tier, then by id for determinism within tiers
+        unique.sort(key=lambda r: (_priority_tier(r), r.id))
+
+        # Step 3: Truncate to MAX_DISCOVERY_REFERENCES
+        return unique[:MAX_DISCOVERY_REFERENCES]
 
     # -----------------------------------------------------------------------
     # Pass 4 — Reference Assembly

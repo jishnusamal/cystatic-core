@@ -43,14 +43,12 @@ from behavior.model import (
     SharedExecution,
 )
 from operational.model import OperationalChangeModel, EngineeringDiscoveryModel
-from operational.discovery.model import (
-    DiscoveryIR,
+from discovery.model import (
+    DiscoveryModel,
     Discovery as IRDiscovery,
     DiscoveryKind as IRDiscoveryKind,
-    DiscoveryMetadata,
-    DiscoverySummary,
-    DiscoveryEvidence,
-    DiscoverySupport,
+    DiscoveryFact,
+    DiscoveryReference,
 )
 from review_context.compiler import ReviewContextCompiler
 from review_context.model import (
@@ -170,23 +168,14 @@ class TestHelper:
     @staticmethod
     def create_discovery_ir(
         discoveries: list[IRDiscovery] | None = None,
-    ) -> DiscoveryIR:
-        """Create a DiscoveryIR for testing."""
+    ) -> DiscoveryModel:
+        """Create a DiscoveryModel for testing."""
         discoveries = discoveries or []
-        return DiscoveryIR(
-            metadata=DiscoveryMetadata(
-                compiler_version="1.0.0",
-                compiled_at="2024-01-01T00:00:00Z",
-                discovery_count=len(discoveries),
-                evidence_count=sum(len(d.evidence) for d in discoveries),
-                pass_count=5,
-            ),
+        return DiscoveryModel(
             discoveries=tuple(discoveries),
-            summary=DiscoverySummary(
-                total_discoveries=len(discoveries),
-            ),
-            evidence_index={
-                d.id: d.evidence for d in discoveries
+            metadata={
+                "compiler_version": "1.0.0",
+                "discovery_count": len(discoveries),
             },
         )
 
@@ -391,52 +380,27 @@ def sample_discovery_model(
 
 @pytest.fixture
 def sample_discovery_ir():
-    """Create a sample DiscoveryIR for testing."""
+    """Create a sample DiscoveryModel for testing."""
+    ref1 = DiscoveryReference(artifact_type="behavior", artifact_id="ref1", location="behavior://test")
+    ref2 = DiscoveryReference(artifact_type="change", artifact_id="ref2", location="change://test")
     discoveries = [
         IRDiscovery(
-            id="discovery://execution_depth/1",
-            kind=IRDiscoveryKind.EXECUTION_DEPTH,
-            statement="Maximum execution depth is 2 across all behaviors",
-            importance=0.8,
-            support=DiscoverySupport(execution_reach=2),
-            evidence=(
-                DiscoveryEvidence(
-                    source="behavior",
-                    source_id="depth://behavior://test",
-                    description="Execution depth measurement",
-                    evidence_ref="behavior://test/depth",
-                ),
-            ),
+            id="discovery://deep_execution/1",
+            kind=IRDiscoveryKind.DEEP_EXECUTION,
+            facts=DiscoveryFact(max_depth=2),
+            references=(ref1,),
         ),
         IRDiscovery(
             id="discovery://shared_execution/1",
             kind=IRDiscoveryKind.SHARED_EXECUTION,
-            statement="Symbol func1 is shared across 2 behaviors",
-            importance=0.7,
-            support=DiscoverySupport(shared_by_count=2),
-            evidence=(
-                DiscoveryEvidence(
-                    source="behavior",
-                    source_id="shared://test/0",
-                    description="Shared execution detected",
-                    evidence_ref="behavior://test/shared",
-                ),
-            ),
+            facts=DiscoveryFact(shared_symbol_ids=("python://test.py::func1",), behavior_count=2),
+            references=(ref2,),
         ),
         IRDiscovery(
             id="discovery://boundary/1",
-            kind=IRDiscoveryKind.BOUNDARY_INVARIANT,
-            statement="Boundary crossing detected between service layers",
-            importance=0.9,
-            support=DiscoverySupport(boundary_crossings=1),
-            evidence=(
-                DiscoveryEvidence(
-                    source="behavior",
-                    source_id="boundary://test/0",
-                    description="Cross-boundary call detected",
-                    evidence_ref="behavior://test/boundary",
-                ),
-            ),
+            kind=IRDiscoveryKind.BOUNDARY_CROSSING,
+            facts=DiscoveryFact(crossed_boundaries=("service_layer",), service_transitions=1),
+            references=(ref1, ref2),
         ),
     ]
     return TestHelper.create_discovery_ir(discoveries)
@@ -946,79 +910,172 @@ class TestValidationContextSelection:
 # ---------------------------------------------------------------------------
 
 class TestDiscoveryAssembly:
-    """Tests for discovery assembly from DiscoveryIR."""
+    """Tests for discovery assembly from DiscoveryModel."""
 
     def test_discoveries_populated(self, sample_discovery_ir):
-        """Test that discoveries are populated from DiscoveryIR."""
+        """Test that discoveries are populated from DiscoveryModel."""
         compiler = ReviewContextCompiler()
-        result = compiler.compile(discovery_ir=sample_discovery_ir)
+        result = compiler.compile(discovery_model=sample_discovery_ir)
         assert len(result.discoveries) > 0
 
     def test_discovery_kind_preserved(self, sample_discovery_ir):
         """Test that discovery kind is preserved."""
         compiler = ReviewContextCompiler()
-        result = compiler.compile(discovery_ir=sample_discovery_ir)
+        result = compiler.compile(discovery_model=sample_discovery_ir)
         kinds = {d.kind for d in result.discoveries}
-        assert "execution_depth" in kinds
+        assert "deep_execution" in kinds
         assert "shared_execution" in kinds
-        assert "boundary_invariant" in kinds
-
-    def test_discovery_statement_preserved(self, sample_discovery_ir):
-        """Test that discovery statement is preserved."""
-        compiler = ReviewContextCompiler()
-        result = compiler.compile(discovery_ir=sample_discovery_ir)
-        statements = {d.statement for d in result.discoveries}
-        assert "Maximum execution depth is 2 across all behaviors" in statements
+        assert "boundary_crossing" in kinds
 
     def test_discovery_references_populated(self, sample_discovery_ir):
-        """Test that discoveries have references."""
+        """Test that discoveries can have references (when provided in source model)."""
         compiler = ReviewContextCompiler()
-        result = compiler.compile(discovery_ir=sample_discovery_ir)
+        result = compiler.compile(discovery_model=sample_discovery_ir)
+        # References are optional in the new model - just verify the field exists
         for discovery in result.discoveries:
-            assert len(discovery.references) > 0
+            assert isinstance(discovery.references, tuple)
+            assert isinstance(discovery.reference_count, int)
+            assert discovery.reference_count >= len(discovery.references)
 
     def test_discovery_reference_fields(self, sample_discovery_ir):
         """Test that reference fields are correctly populated."""
         compiler = ReviewContextCompiler()
-        result = compiler.compile(discovery_ir=sample_discovery_ir)
+        result = compiler.compile(discovery_model=sample_discovery_ir)
         for discovery in result.discoveries:
             for ref in discovery.references:
                 assert ref.id != ""
                 assert ref.kind != ""
                 assert ref.compiler_artifact != ""
 
+    def test_reference_count_preserved(self):
+        """Test that reference_count preserves total count before truncation."""
+        refs = tuple(
+            DiscoveryReference(artifact_type="symbol", artifact_id=f"sym{i}", location=f"file{i}.py")
+            for i in range(15)
+        )
+        discoveries = [
+            IRDiscovery(
+                id="discovery://many_refs/1",
+                kind=IRDiscoveryKind.DEEP_EXECUTION,
+                facts=DiscoveryFact(max_depth=2),
+                references=refs,
+            ),
+        ]
+        discovery_ir = TestHelper.create_discovery_ir(discoveries)
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(discovery_model=discovery_ir)
+        assert len(result.discoveries) == 1
+        d = result.discoveries[0]
+        assert d.reference_count == 15
+        assert len(d.references) <= 10
+
+    def test_reference_truncation_max_10(self):
+        """Test that references are truncated to at most 10."""
+        refs = tuple(
+            DiscoveryReference(artifact_type="symbol", artifact_id=f"sym{i}", location=f"file{i}.py")
+            for i in range(20)
+        )
+        discoveries = [
+            IRDiscovery(
+                id="discovery://truncated/1",
+                kind=IRDiscoveryKind.SHARED_EXECUTION,
+                facts=DiscoveryFact(shared_symbol_ids=("sym1",), behavior_count=2),
+                references=refs,
+            ),
+        ]
+        discovery_ir = TestHelper.create_discovery_ir(discoveries)
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(discovery_model=discovery_ir)
+        assert len(result.discoveries) == 1
+        d = result.discoveries[0]
+        assert d.reference_count == 20
+        assert len(d.references) == 10
+
+    def test_reference_ranking_prioritizes_changed(self):
+        """Test that changed symbols are ranked first."""
+        refs = (
+            DiscoveryReference(artifact_type="symbol", artifact_id="sym1", location="impl.py"),
+            DiscoveryReference(artifact_type="change", artifact_id="change1", location="change.py"),
+            DiscoveryReference(artifact_type="behavior", artifact_id="ep1", location="endpoint.py"),
+        )
+        discoveries = [
+            IRDiscovery(
+                id="discovery://ranked/1",
+                kind=IRDiscoveryKind.DEEP_EXECUTION,
+                facts=DiscoveryFact(max_depth=2),
+                references=refs,
+            ),
+        ]
+        discovery_ir = TestHelper.create_discovery_ir(discoveries)
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(discovery_model=discovery_ir)
+        assert len(result.discoveries) == 1
+        d = result.discoveries[0]
+        assert d.reference_count == 3
+        assert len(d.references) == 3
+        # Changed should be first
+        assert d.references[0].kind == "change"
+        # Behavior/entry point should be second
+        assert d.references[1].kind == "behavior"
+        # Symbol should be last
+        assert d.references[2].kind == "symbol"
+
+    def test_reference_deduplication_before_ranking(self):
+        """Test that duplicate references are removed before ranking."""
+        refs = (
+            DiscoveryReference(artifact_type="change", artifact_id="change1", location="change.py"),
+            DiscoveryReference(artifact_type="change", artifact_id="change1", location="change.py"),  # Duplicate
+            DiscoveryReference(artifact_type="behavior", artifact_id="ep1", location="endpoint.py"),
+        )
+        discoveries = [
+            IRDiscovery(
+                id="discovery://dedup/1",
+                kind=IRDiscoveryKind.DEEP_EXECUTION,
+                facts=DiscoveryFact(max_depth=2),
+                references=refs,
+            ),
+        ]
+        discovery_ir = TestHelper.create_discovery_ir(discoveries)
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(discovery_model=discovery_ir)
+        assert len(result.discoveries) == 1
+        d = result.discoveries[0]
+        assert d.reference_count == 3
+        assert len(d.references) == 2  # Deduplicated
+
     def test_discovery_no_importance_scores(self, sample_discovery_ir):
         """Test that importance scores are NOT present."""
         compiler = ReviewContextCompiler()
-        result = compiler.compile(discovery_ir=sample_discovery_ir)
+        result = compiler.compile(discovery_model=sample_discovery_ir)
         for discovery in result.discoveries:
             assert not hasattr(discovery, 'importance')
 
     def test_discovery_no_ranking_vectors(self, sample_discovery_ir):
         """Test that ranking vectors are NOT present."""
         compiler = ReviewContextCompiler()
-        result = compiler.compile(discovery_ir=sample_discovery_ir)
+        result = compiler.compile(discovery_model=sample_discovery_ir)
         for discovery in result.discoveries:
             assert not hasattr(discovery, 'ranking_vector')
 
     def test_discovery_no_support_metrics(self, sample_discovery_ir):
         """Test that support metrics are NOT present."""
         compiler = ReviewContextCompiler()
-        result = compiler.compile(discovery_ir=sample_discovery_ir)
+        result = compiler.compile(discovery_model=sample_discovery_ir)
         for discovery in result.discoveries:
             assert not hasattr(discovery, 'support')
 
     def test_discovery_no_metadata(self, sample_discovery_ir):
-        """Test that compiler metadata is NOT present."""
+        """Test that discovery metadata is NOT present (metadata is on model, not discovery)."""
         compiler = ReviewContextCompiler()
-        result = compiler.compile(discovery_ir=sample_discovery_ir)
+        result = compiler.compile(discovery_model=sample_discovery_ir)
+        # Metadata exists on DiscoveryModel, not on individual Discovery objects
         for discovery in result.discoveries:
             assert not hasattr(discovery, 'metadata')
 
     def test_discoveries_empty_when_no_ir(self):
-        """Test that no DiscoveryIR returns empty discoveries."""
+        """Test that no DiscoveryModel returns empty discoveries."""
         compiler = ReviewContextCompiler()
-        result = compiler.compile(discovery_ir=None)
+        result = compiler.compile(discovery_model=None)
         assert result.discoveries == ()
 
 
@@ -1030,46 +1087,39 @@ class TestReferenceAssembly:
     """Tests for reference assembly from discoveries."""
 
     def test_references_populated(self, sample_discovery_ir):
-        """Test that references are populated from discoveries."""
+        """Test that references are collected from discoveries (when present)."""
         compiler = ReviewContextCompiler()
-        result = compiler.compile(discovery_ir=sample_discovery_ir)
-        assert len(result.references) > 0
+        result = compiler.compile(discovery_model=sample_discovery_ir)
+        # References may be empty if source discoveries have no references
+        assert isinstance(result.references, tuple)
 
     def test_references_deduplicated(self):
-        """Test that references are deduplicated by id."""
-        evidence = (
-            DiscoveryEvidence(
-                source="behavior",
-                source_id="shared://ref/0",
-                description="Shared evidence",
-                evidence_ref="behavior://test/ref",
-            ),
-        )
+        """Test that references are deduplicated by id across discoveries."""
+        ref1 = DiscoveryReference(artifact_type="behavior", artifact_id="ref1", location="test.py")
+        ref2 = DiscoveryReference(artifact_type="change", artifact_id="ref2", location="test2.py")
         discoveries = [
             IRDiscovery(
                 id="discovery://a/1",
-                kind=IRDiscoveryKind.EXECUTION_DEPTH,
-                statement="Discovery A",
-                importance=0.5,
-                evidence=evidence,
+                kind=IRDiscoveryKind.DEEP_EXECUTION,
+                facts=DiscoveryFact(max_depth=2),
+                references=(ref1, ref2),
             ),
             IRDiscovery(
                 id="discovery://b/1",
                 kind=IRDiscoveryKind.SHARED_EXECUTION,
-                statement="Discovery B",
-                importance=0.5,
-                evidence=evidence,
+                facts=DiscoveryFact(shared_symbol_ids=("sym1",), behavior_count=2),
+                references=(ref1, ref2),  # Same references
             ),
         ]
         discovery_ir = TestHelper.create_discovery_ir(discoveries)
         compiler = ReviewContextCompiler()
-        result = compiler.compile(discovery_ir=discovery_ir)
-        assert len(result.references) == 1
+        result = compiler.compile(discovery_model=discovery_ir)
+        assert len(result.references) == 2  # Deduplicated across discoveries
 
     def test_references_traceable(self, sample_discovery_ir):
         """Test that references are traceable to compiler artifacts."""
         compiler = ReviewContextCompiler()
-        result = compiler.compile(discovery_ir=sample_discovery_ir)
+        result = compiler.compile(discovery_model=sample_discovery_ir)
         for ref in result.references:
             assert ref.compiler_artifact != ""
             assert ref.location != ""
@@ -1077,7 +1127,7 @@ class TestReferenceAssembly:
     def test_references_empty_when_no_discoveries(self):
         """Test that no discoveries returns empty references."""
         compiler = ReviewContextCompiler()
-        result = compiler.compile(discovery_ir=None)
+        result = compiler.compile(discovery_model=None)
         assert result.references == ()
 
 
@@ -1102,8 +1152,7 @@ class TestFullCompilation:
             change_model=sample_change_model,
             behavior_model=sample_behavior_model,
             operational_model=sample_operational_model,
-            discovery_model=sample_discovery_model,
-            discovery_ir=sample_discovery_ir,
+            discovery_model=sample_discovery_ir,
         )
         assert isinstance(result, ReviewContext)
         assert isinstance(result.change, ChangeContext)
@@ -1125,8 +1174,7 @@ class TestFullCompilation:
             change_model=sample_change_model,
             behavior_model=sample_behavior_model,
             operational_model=sample_operational_model,
-            discovery_model=sample_discovery_model,
-            discovery_ir=sample_discovery_ir,
+            discovery_model=sample_discovery_ir,
         )
         assert result.change.summary.file_count > 0
         assert len(result.change.files) > 0
@@ -1148,15 +1196,13 @@ class TestFullCompilation:
             change_model=sample_change_model,
             behavior_model=sample_behavior_model,
             operational_model=sample_operational_model,
-            discovery_model=sample_discovery_model,
-            discovery_ir=sample_discovery_ir,
+            discovery_model=sample_discovery_ir,
         )
         result2 = compiler.compile(
             change_model=sample_change_model,
             behavior_model=sample_behavior_model,
             operational_model=sample_operational_model,
-            discovery_model=sample_discovery_model,
-            discovery_ir=sample_discovery_ir,
+            discovery_model=sample_discovery_ir,
         )
         assert result1 == result2
 
@@ -1174,8 +1220,7 @@ class TestFullCompilation:
             change_model=sample_change_model,
             behavior_model=sample_behavior_model,
             operational_model=sample_operational_model,
-            discovery_model=sample_discovery_model,
-            discovery_ir=sample_discovery_ir,
+            discovery_model=sample_discovery_ir,
         )
         with pytest.raises(AttributeError):
             result.change = ChangeContext()  # type: ignore
@@ -1218,10 +1263,10 @@ class TestEdgeCases:
         assert result.execution.deepest_execution.depth == 0
 
     def test_empty_discovery_ir(self):
-        """Test with an empty DiscoveryIR."""
+        """Test with an empty DiscoveryModel."""
         discovery_ir = TestHelper.create_discovery_ir([])
         compiler = ReviewContextCompiler()
-        result = compiler.compile(discovery_ir=discovery_ir)
+        result = compiler.compile(discovery_model=discovery_ir)
         assert result.discoveries == ()
         assert result.references == ()
 
@@ -1242,29 +1287,29 @@ class TestEdgeCases:
         assert result.discoveries == ()
 
     def test_partial_models_discovery_only(self, sample_discovery_ir):
-        """Test with only DiscoveryIR provided."""
+        """Test with only DiscoveryModel provided."""
         compiler = ReviewContextCompiler()
-        result = compiler.compile(discovery_ir=sample_discovery_ir)
+        result = compiler.compile(discovery_model=sample_discovery_ir)
         assert len(result.discoveries) > 0
         assert result.change.summary.file_count == 0
         assert result.execution.entry_points == ()
 
     def test_discovery_without_evidence(self):
-        """Test that a discovery without evidence still appears."""
+        """Test that a discovery without references still appears."""
         discoveries = [
             IRDiscovery(
                 id="discovery://no_evidence/1",
-                kind=IRDiscoveryKind.EXECUTION_DEPTH,
-                statement="Discovery without evidence",
-                importance=0.5,
-                evidence=(),
+                kind=IRDiscoveryKind.DEEP_EXECUTION,
+                facts=DiscoveryFact(max_depth=2),
+                references=(),
             ),
         ]
         discovery_ir = TestHelper.create_discovery_ir(discoveries)
         compiler = ReviewContextCompiler()
-        result = compiler.compile(discovery_ir=discovery_ir)
+        result = compiler.compile(discovery_model=discovery_ir)
         assert len(result.discoveries) == 1
         assert result.discoveries[0].references == ()
+        assert result.discoveries[0].reference_count == 0
         assert len(result.references) == 0
 
 

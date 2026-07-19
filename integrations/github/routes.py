@@ -16,6 +16,7 @@ from runtime.errors import InvalidWebhook, MissingWebhookPayload, PipelineExecut
 from runtime.models import AnalysisRequest, AnalysisTrigger
 from runtime.pipeline.context import PipelineContext
 from runtime.pipeline.pipeline import Pipeline
+from api.schemas.github import RepositoryResponse
 
 router = APIRouter(tags=["github"])
 
@@ -399,7 +400,13 @@ async def analyze_repository(
         review_context = pipeline.render_review_context(context)
         
         response_content = {
-            "repository": repository,
+            "repository": RepositoryResponse(
+                provider="github",
+                owner=repo_ref.owner,
+                repository=repo_ref.repository,
+                full_name=repo_ref.full_name,
+                default_branch=repo_ref.default_branch,
+            ).model_dump(),
             "language": context.language or "unknown",
             "change_summary": result.get("change", {}),
             "behavior_summary": result.get("behavior", {}),

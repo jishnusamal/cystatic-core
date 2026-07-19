@@ -218,12 +218,22 @@ class Reference:
 class Discovery:
     """A single deterministic engineering discovery.
 
-    The statement is deterministic and references point back to compiler artifacts.
+    Exposes the DiscoveryModel as a stable ABI.
     No ranking vectors, no scores, no rendering metadata, no presentation fields.
+
+    Attributes:
+        id: Stable identifier for this discovery.
+        kind: Discovery type (e.g., "shared_execution", "deep_execution").
+        statement: Deprecated — kept for backward compatibility.
+        facts: Structured deterministic data for this discovery.
+        reference_count: Total number of supporting references discovered (before truncation).
+        references: Representative subset of references (at most MAX_DISCOVERY_REFERENCES).
     """
     id: str = ""
     kind: str = ""
-    statement: str = ""
+    statement: str = ""  # Deprecated: kept for backward compatibility
+    facts: dict[str, Any] = field(default_factory=dict)  # Structured deterministic data
+    reference_count: int = 0
     references: tuple[Reference, ...] = field(default_factory=tuple)
 
 
