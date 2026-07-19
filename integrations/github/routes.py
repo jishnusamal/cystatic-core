@@ -450,10 +450,6 @@ async def analyze_repository(
                 llm_response = llm_result.get("llm_response")
                 if llm_response:
                     review_context["llm_response"] = llm_response
-                # Include LLM input (system prompt + user prompt) and raw output
-                llm_input = llm_result.get("llm_input")
-                if llm_input:
-                    review_context["llm_input"] = llm_input
                 llm_raw_output = llm_result.get("llm_raw_output")
                 if llm_raw_output:
                     review_context["llm_raw_output"] = llm_raw_output

@@ -431,7 +431,7 @@ class TestReviewContextCompilerInit:
         assert isinstance(result.change, ChangeContext)
         assert isinstance(result.execution, ExecutionContext)
         assert result.discoveries == ()
-        assert result.references == ()
+        assert not hasattr(result, 'references')
 
 
 # ---------------------------------------------------------------------------
@@ -1087,14 +1087,14 @@ class TestReferenceAssembly:
     """Tests for reference assembly from discoveries."""
 
     def test_references_populated(self, sample_discovery_ir):
-        """Test that references are collected from discoveries (when present)."""
+        """Test that references are NOT collected at top level (removed)."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(discovery_model=sample_discovery_ir)
-        # References may be empty if source discoveries have no references
-        assert isinstance(result.references, tuple)
+        # Top-level references were removed - each section owns its own
+        assert not hasattr(result, 'references')
 
     def test_references_deduplicated(self):
-        """Test that references are deduplicated by id across discoveries."""
+        """Test that references are deduplicated by id within each discovery."""
         ref1 = DiscoveryReference(artifact_type="behavior", artifact_id="ref1", location="test.py")
         ref2 = DiscoveryReference(artifact_type="change", artifact_id="ref2", location="test2.py")
         discoveries = [
@@ -1114,21 +1114,26 @@ class TestReferenceAssembly:
         discovery_ir = TestHelper.create_discovery_ir(discoveries)
         compiler = ReviewContextCompiler()
         result = compiler.compile(discovery_model=discovery_ir)
-        assert len(result.references) == 2  # Deduplicated across discoveries
+        # Each discovery owns its own references - no top-level collection
+        assert not hasattr(result, 'references')
+        # Verify references are within discoveries
+        for d in result.discoveries:
+            assert len(d.references) > 0
 
     def test_references_traceable(self, sample_discovery_ir):
-        """Test that references are traceable to compiler artifacts."""
+        """Test that references within discoveries are traceable to compiler artifacts."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(discovery_model=sample_discovery_ir)
-        for ref in result.references:
-            assert ref.compiler_artifact != ""
-            assert ref.location != ""
+        for d in result.discoveries:
+            for ref in d.references:
+                assert ref.compiler_artifact != ""
+                assert ref.location != ""
 
     def test_references_empty_when_no_discoveries(self):
-        """Test that no discoveries returns empty references."""
+        """Test that no discoveries returns no top-level references field."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(discovery_model=None)
-        assert result.references == ()
+        assert not hasattr(result, 'references')
 
 
 # ---------------------------------------------------------------------------
@@ -1158,7 +1163,7 @@ class TestFullCompilation:
         assert isinstance(result.change, ChangeContext)
         assert isinstance(result.execution, ExecutionContext)
         assert isinstance(result.discoveries, tuple)
-        assert isinstance(result.references, tuple)
+        assert not hasattr(result, 'references')
 
     def test_full_compile_all_sections_populated(
         self,
@@ -1180,7 +1185,9 @@ class TestFullCompilation:
         assert len(result.change.files) > 0
         assert len(result.execution.entry_points) > 0
         assert len(result.discoveries) > 0
-        assert len(result.references) > 0
+        # Each discovery owns its own references
+        for d in result.discoveries:
+            assert len(d.references) > 0
 
     def test_deterministic_output(
         self,
@@ -1268,7 +1275,7 @@ class TestEdgeCases:
         compiler = ReviewContextCompiler()
         result = compiler.compile(discovery_model=discovery_ir)
         assert result.discoveries == ()
-        assert result.references == ()
+        assert not hasattr(result, 'references')
 
     def test_partial_models_change_only(self, sample_change_model):
         """Test with only change model provided."""
@@ -1310,7 +1317,7 @@ class TestEdgeCases:
         assert len(result.discoveries) == 1
         assert result.discoveries[0].references == ()
         assert result.discoveries[0].reference_count == 0
-        assert len(result.references) == 0
+        assert not hasattr(result, 'references')
 
 
 # ---------------------------------------------------------------------------
@@ -1407,7 +1414,7 @@ class TestReviewContextModel:
         assert ctx.execution.deepest_execution.entry_point == ""
         assert ctx.execution.deepest_execution.depth == 0
         assert ctx.discoveries == ()
-        assert ctx.references == ()
+        assert not hasattr(ctx, 'references')
 
     def test_review_context_no_impact(self):
         """Test that ReviewContext no longer has an impact section."""
@@ -1420,7 +1427,7 @@ class TestReviewContextModel:
         assert hasattr(ctx, 'change')
         assert hasattr(ctx, 'execution')
         assert hasattr(ctx, 'discoveries')
-        assert hasattr(ctx, 'references')
+        assert not hasattr(ctx, 'references')  # Removed - each section owns its own
 
     def test_discovery_no_presentation_fields(self):
         """Test that Discovery has no presentation fields."""

@@ -252,15 +252,11 @@ class ReviewContext:
         change: What was modified (files, symbols, behavior changes).
         execution: How those modifications can execute (entry points, traces).
         discoveries: Deterministic conclusions a reviewer would care about.
-        references: Traceability back to compiler artifacts.
 
-    Attributes:
-        change: What changed (hierarchical, file-centered).
-        execution: Where the change can execute (hierarchical execution graph).
-        discoveries: Deterministic engineering discoveries.
-        references: Traceability back to compiler artifacts.
+    Each section owns its own supporting evidence — there is no global
+    references collection. Discoveries contain their own references,
+    execution contains its own evidence, etc.
     """
     change: ChangeContext = field(default_factory=ChangeContext)
     execution: ExecutionContext = field(default_factory=ExecutionContext)
     discoveries: tuple[Discovery, ...] = field(default_factory=tuple)
-    references: tuple[Reference, ...] = field(default_factory=tuple)

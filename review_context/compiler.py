@@ -87,14 +87,10 @@ class ReviewContextCompiler:
         # Pass 3: Discovery Assembly — populate from DiscoveryModel directly
         discoveries = self._assemble_discoveries(discovery_model)
 
-        # Pass 4: Reference Assembly — collect unique references
-        references = self._assemble_references(discoveries)
-
         return ReviewContext(
             change=change_ctx,
             execution=execution_ctx,
             discoveries=discoveries,
-            references=references,
         )
 
     # -----------------------------------------------------------------------
@@ -611,26 +607,7 @@ class ReviewContextCompiler:
         # Step 3: Truncate to MAX_DISCOVERY_REFERENCES
         return unique[:MAX_DISCOVERY_REFERENCES]
 
-    # -----------------------------------------------------------------------
-    # Pass 4 — Reference Assembly
-    # -----------------------------------------------------------------------
-
-    def _assemble_references(
-        self,
-        discoveries: tuple[Discovery, ...],
-    ) -> tuple[Reference, ...]:
-        """Collect unique references required by discoveries.
-
-        Deduplicates by reference id.
-        Maintains traceability.
-        """
-        seen: set[str] = set()
-        unique_references: list[Reference] = []
-
-        for discovery in discoveries:
-            for ref in discovery.references:
-                if ref.id and ref.id not in seen:
-                    seen.add(ref.id)
-                    unique_references.append(ref)
-
-        return tuple(unique_references)
+    # NOTE: Pass 4 (Reference Assembly) was removed. Top-level references
+    # are no longer collected. Each section owns its own supporting evidence.
+    # Discoveries contain their own references, execution contains its own
+    # evidence, etc.

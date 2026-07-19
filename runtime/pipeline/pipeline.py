@@ -716,6 +716,7 @@ class Pipeline:
                         "id": d.id,
                         "kind": d.kind,
                         "statement": d.statement,
+                        "reference_count": d.reference_count,
                         "references": [
                             {
                                 "id": r.id,
@@ -727,15 +728,6 @@ class Pipeline:
                         ],
                     }
                     for d in rc.discoveries
-                ],
-                "references": [
-                    {
-                        "id": r.id,
-                        "kind": r.kind,
-                        "location": r.location,
-                        "compiler_artifact": r.compiler_artifact,
-                    }
-                    for r in rc.references
                 ],
             }
         except Exception as exc:
@@ -913,6 +905,7 @@ class Pipeline:
                         "id": d.id,
                         "kind": d.kind,
                         "statement": d.statement,
+                        "reference_count": d.reference_count,
                         "references": [
                             {
                                 "id": r.id,
@@ -924,15 +917,6 @@ class Pipeline:
                         ],
                     }
                     for d in rc.discoveries
-                ],
-                "references": [
-                    {
-                        "id": r.id,
-                        "kind": r.kind,
-                        "location": r.location,
-                        "compiler_artifact": r.compiler_artifact,
-                    }
-                    for r in rc.references
                 ],
             }
         except Exception as exc:
@@ -1002,10 +986,6 @@ class Pipeline:
                 "validation_errors": [],
                 "truncated": False,
                 "llm_response": llm_context,
-                "llm_input": {
-                    "system_prompt": system_prompt,
-                    "user_prompt": user_prompt,
-                },
                 "llm_raw_output": None,
             }
             
@@ -1019,6 +999,5 @@ class Pipeline:
                 "validation_errors": [f"LLM generation failed: {exc}"],
                 "truncated": False,
                 "llm_response": None,
-                "llm_input": None,
                 "llm_raw_output": None,
             }
