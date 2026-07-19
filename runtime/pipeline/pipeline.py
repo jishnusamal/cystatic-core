@@ -678,50 +678,39 @@ class Pipeline:
                     ],
                 },
                 "execution": {
-                    "entry_points": list(rc.execution.entry_points),
-                    "execution_chains": list(rc.execution.execution_chains),
-                    "terminal_points": list(rc.execution.terminal_points),
-                    "reachable_units": list(rc.execution.reachable_units),
-                    "shared_execution": list(rc.execution.shared_execution),
-                    "max_execution_depth": rc.execution.max_execution_depth,
-                },
-                "impact": {
-                    "services": list(rc.impact.services),
-                    "modules": list(rc.impact.modules),
-                    "callers": list(rc.impact.callers),
-                    "dependents": list(rc.impact.dependents),
-                    "fan_in": rc.impact.fan_in,
-                    "fan_out": rc.impact.fan_out,
-                    "cross_service_references": list(rc.impact.cross_service_references),
-                    "boundary_crossings": rc.impact.boundary_crossings,
-                    "propagation": list(rc.impact.propagation),
-                },
-                "state": {
-                    "models": list(rc.state.models),
-                    "tables": list(rc.state.tables),
-                    "reads": list(rc.state.reads),
-                    "writes": list(rc.state.writes),
-                    "transactions": list(rc.state.transactions),
-                    "caches": list(rc.state.caches),
-                    "external_storage": list(rc.state.external_storage),
-                },
-                "integration": {
-                    "rest": list(rc.integration.rest),
-                    "graphql": list(rc.integration.graphql),
-                    "rpc": list(rc.integration.rpc),
-                    "events": list(rc.integration.events),
-                    "queues": list(rc.integration.queues),
-                    "workers": list(rc.integration.workers),
-                    "async_chains": list(rc.integration.async_chains),
-                    "external_systems": list(rc.integration.external_systems),
-                },
-                "validation": {
-                    "unit_tests": list(rc.validation.unit_tests),
-                    "integration_tests": list(rc.validation.integration_tests),
-                    "e2e_tests": list(rc.validation.e2e_tests),
-                    "benchmarks": list(rc.validation.benchmarks),
-                    "production_replays": list(rc.validation.production_replays),
-                    "validation_gaps": list(rc.validation.validation_gaps),
+                    "entry_points": [
+                        {
+                            "endpoint": ep.endpoint,
+                            "method": ep.method,
+                            "path": ep.path,
+                            "execution_chain": [
+                                {
+                                    "behavior": step.behavior,
+                                    "symbol": {
+                                        "id": step.symbol.id,
+                                        "name": step.symbol.name,
+                                        "kind": step.symbol.kind,
+                                        "location": step.symbol.location,
+                                    },
+                                    "kind": step.kind,
+                                    "depth": step.depth,
+                                    "changed": step.changed,
+                                    "shared": step.shared,
+                                    "references": list(step.references),
+                                }
+                                for step in ep.execution_chain
+                            ],
+                            "terminal": ep.terminal,
+                            "max_depth": ep.max_depth,
+                            "references": list(ep.references),
+                        }
+                        for ep in rc.execution.entry_points
+                    ],
+                    "deepest_execution": {
+                        "entry_point": rc.execution.deepest_execution.entry_point,
+                        "depth": rc.execution.deepest_execution.depth,
+                        "references": list(rc.execution.deepest_execution.references),
+                    },
                 },
                 "discoveries": [
                     {
@@ -889,32 +878,36 @@ class Pipeline:
                     ],
                 },
                 "execution": {
-                    "entry_points": list(rc.execution.entry_points),
-                    "execution_chains": list(rc.execution.execution_chains),
-                    "terminal_points": list(rc.execution.terminal_points),
-                    "reachable_units": list(rc.execution.reachable_units),
-                    "shared_execution": list(rc.execution.shared_execution),
-                    "max_execution_depth": rc.execution.max_execution_depth,
-                },
-                "impact": {
-                    "services": list(rc.impact.services),
-                    "modules": list(rc.impact.modules),
-                    "fan_in": rc.impact.fan_in,
-                    "fan_out": rc.impact.fan_out,
-                    "boundary_crossings": rc.impact.boundary_crossings,
-                },
-                "state": {
-                    "models": list(rc.state.models),
-                    "tables": list(rc.state.tables),
-                },
-                "integration": {
-                    "rest": list(rc.integration.rest),
-                    "events": list(rc.integration.events),
-                },
-                "validation": {
-                    "unit_tests": list(rc.validation.unit_tests),
-                    "integration_tests": list(rc.validation.integration_tests),
-                    "validation_gaps": list(rc.validation.validation_gaps),
+                    "entry_points": [
+                        {
+                            "endpoint": ep.endpoint,
+                            "method": ep.method,
+                            "path": ep.path,
+                            "execution_chain": [
+                                {
+                                    "behavior": step.behavior,
+                                    "symbol": {
+                                        "id": step.symbol.id,
+                                        "name": step.symbol.name,
+                                        "kind": step.symbol.kind,
+                                        "location": step.symbol.location,
+                                    },
+                                    "kind": step.kind,
+                                    "depth": step.depth,
+                                    "changed": step.changed,
+                                    "shared": step.shared,
+                                }
+                                for step in ep.execution_chain
+                            ],
+                            "terminal": ep.terminal,
+                            "max_depth": ep.max_depth,
+                        }
+                        for ep in rc.execution.entry_points
+                    ],
+                    "deepest_execution": {
+                        "entry_point": rc.execution.deepest_execution.entry_point,
+                        "depth": rc.execution.deepest_execution.depth,
+                    },
                 },
                 "discoveries": [
                     {

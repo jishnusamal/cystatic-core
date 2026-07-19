@@ -32,15 +32,12 @@ from .model import (
     FileChange,
     Change,
     SymbolRef,
-    Relationships,
-    ChangeImpact,
-    ChangeValidation,
-    ChangeReferences,
     ExecutionContext,
-    ImpactContext,
-    StateContext,
-    IntegrationContext,
-    ValidationContext,
+    EntryPointExecution,
+    ExecutionStep,
+    SymbolReference,
+    ReachedComponents,
+    DeepestExecution,
     Discovery,
     Reference,
 )
@@ -78,11 +75,9 @@ class ReviewContextCompiler:
         """
         # Pass 1: Selection — select review-relevant information
         change_ctx = self._select_change_context(change_model)
-        execution_ctx = self._select_execution_context(behavior_model, discovery_model)
-        impact_ctx = self._select_impact_context(behavior_model, discovery_model)
-        state_ctx = self._select_state_context(operational_model, discovery_model)
-        integration_ctx = self._select_integration_context(operational_model, discovery_model)
-        validation_ctx = self._select_validation_context(operational_model, discovery_model)
+        execution_ctx = self._select_execution_context(
+            behavior_model, discovery_model, change_model
+        )
 
         # Pass 2: Normalization — already done via schema construction above
 
@@ -95,10 +90,6 @@ class ReviewContextCompiler:
         return ReviewContext(
             change=change_ctx,
             execution=execution_ctx,
-            impact=impact_ctx,
-            state=state_ctx,
-            integration=integration_ctx,
-            validation=validation_ctx,
             discoveries=discoveries,
             references=references,
         )
@@ -248,330 +239,222 @@ class ReviewContextCompiler:
         return "local"
 
     # -----------------------------------------------------------------------
-    # Pass 1 — Selection: ExecutionContext
+    # Pass 1 — Selection: ExecutionContext (hierarchical execution graph)
     # -----------------------------------------------------------------------
 
     def _select_execution_context(
         self,
         behavior_model: BehaviorModel | None,
         discovery_model: EngineeringDiscoveryModel | None,
+        change_model: ChangeModel | None = None,
     ) -> ExecutionContext:
-        """Select execution-relevant information from BehaviorModel and EngineeringDiscoveryModel.
+        """Select execution-relevant information and build a hierarchical execution graph.
+
+        Organizes execution information around entry points, each with its own
+        execution chain containing per-step metadata (changed, shared, symbol info,
+        reached components).
 
         Reuses existing values — never recomputes.
+        No graph traversal inside ReviewContext.
         """
         if behavior_model is None and discovery_model is None:
             return ExecutionContext()
 
-        entry_points: list[str] = []
-        execution_chains: list[str] = []
-        terminal_points: list[str] = []
-        reachable_units: list[str] = []
-        shared_execution: list[str] = []
-        max_execution_depth: int = 0
+        # Collect changed symbol IDs for the 'changed' flag
+        changed_symbol_ids: set[str] = set()
+        if change_model is not None:
+            for sym in change_model.added_symbols:
+                changed_symbol_ids.add(sym.id)
+            for sym in change_model.removed_symbols:
+                changed_symbol_ids.add(sym.id)
+            for ms in change_model.modified_symbols:
+                changed_symbol_ids.add(ms.symbol.id)
 
-        # From BehaviorModel
+        # Collect shared symbol IDs for the 'shared' flag
+        shared_symbol_ids: set[str] = set()
         if behavior_model is not None:
-            for ep in behavior_model.entry_points:
-                label = ep.route if hasattr(ep, 'route') and ep.route else ep.kind if hasattr(ep, 'kind') else str(ep.id)
-                entry_points.append(label)
-
-            for chain in behavior_model.execution_chains:
-                label = chain.behavior_id if hasattr(chain, 'behavior_id') else str(chain.id)
-                execution_chains.append(label)
-
-            for tp in behavior_model.terminal_points:
-                label = tp.kind if hasattr(tp, 'kind') else str(tp.id)
-                terminal_points.append(label)
-
-            for ru in behavior_model.reachable_units:
-                label = ru.name if hasattr(ru, 'name') else str(ru.id)
-                reachable_units.append(label)
-
             for se in behavior_model.shared_executions:
-                label = se.symbol_id if hasattr(se, 'symbol_id') else str(se.id)
-                shared_execution.append(label)
+                shared_symbol_ids.add(se.symbol_id)
+        if discovery_model is not None:
+            for se in discovery_model.shared_executions:
+                shared_symbol_ids.add(se.symbol_id)
 
-            max_execution_depth = behavior_model.execution_depth
+        # Build a symbol lookup from the repository model (if available)
+        symbol_lookup: dict[str, Any] = {}
+        repo_model = None
+        if discovery_model is not None and discovery_model.repository is not None:
+            repo_model = discovery_model.repository
+        if repo_model is not None and hasattr(repo_model, 'symbols'):
+            for sym in repo_model.symbols:
+                symbol_lookup[sym.id] = sym
 
-        # From EngineeringDiscoveryModel (if available, use as supplement)
+        # Build a map of behavior_id -> behavior kind (for reaches.service)
+        behavior_kind_map: dict[str, str] = {}
+        if behavior_model is not None:
+            for b in behavior_model.behaviors:
+                behavior_kind_map[b.id] = b.kind.value if hasattr(b.kind, 'value') else str(b.kind)
+        if discovery_model is not None:
+            for b in discovery_model.get_behaviors():
+                if b.id not in behavior_kind_map:
+                    behavior_kind_map[b.id] = b.kind.value if hasattr(b.kind, 'value') else str(b.kind)
+
+        # Build a map of behavior_id -> behavior name (for reaches.module)
+        behavior_name_map: dict[str, str] = {}
+        if behavior_model is not None:
+            for b in behavior_model.behaviors:
+                behavior_name_map[b.id] = b.name
+        if discovery_model is not None:
+            for b in discovery_model.get_behaviors():
+                if b.id not in behavior_name_map:
+                    behavior_name_map[b.id] = b.name
+
+        # Build a map of behavior_id -> terminal point kind
+        terminal_by_behavior: dict[str, str] = {}
+        if behavior_model is not None:
+            for tp in behavior_model.terminal_points:
+                terminal_by_behavior[tp.behavior_id] = tp.kind
+        if discovery_model is not None:
+            for tp in discovery_model.terminal_points:
+                terminal_by_behavior[tp.behavior_id] = tp.kind
+
+        # Build a map of behavior_id -> execution chain units
+        chain_units_by_behavior: dict[str, list[Any]] = {}
+        if behavior_model is not None:
+            for chain in behavior_model.execution_chains:
+                chain_units_by_behavior[chain.behavior_id] = list(chain.units)
+        if discovery_model is not None:
+            for chain in discovery_model.execution_chains:
+                if chain.behavior_id not in chain_units_by_behavior:
+                    chain_units_by_behavior[chain.behavior_id] = list(chain.units)
+
+        # Build entry point executions
+        entry_point_executions: list[EntryPointExecution] = []
+        deepest_depth = 0
+        deepest_ep = ""
+
+        # Collect all entry points (from behavior_model first, then discovery_model)
+        all_entry_points: list[Any] = []
+        if behavior_model is not None:
+            all_entry_points.extend(behavior_model.entry_points)
         if discovery_model is not None:
             for ep in discovery_model.entry_points:
-                label = ep.route if hasattr(ep, 'route') and ep.route else ep.kind if hasattr(ep, 'kind') else str(ep.id)
-                if label not in entry_points:
-                    entry_points.append(label)
+                if ep.id not in {e.id for e in all_entry_points}:
+                    all_entry_points.append(ep)
 
-            for chain in discovery_model.execution_chains:
-                label = chain.behavior_id if hasattr(chain, 'behavior_id') else str(chain.id)
-                if label not in execution_chains:
-                    execution_chains.append(label)
+        for ep in all_entry_points:
+            behavior_id = ep.behavior_id if hasattr(ep, 'behavior_id') else ""
+            endpoint = ep.route if hasattr(ep, 'route') and ep.route else (
+                ep.kind if hasattr(ep, 'kind') else str(ep.id)
+            )
+            method = self._extract_method(ep)
+            path = ep.route if hasattr(ep, 'route') else endpoint
 
-            for tp in discovery_model.terminal_points:
-                label = tp.kind if hasattr(tp, 'kind') else str(tp.id)
-                if label not in terminal_points:
-                    terminal_points.append(label)
+            # Build execution chain steps from the behavior's execution units
+            units = chain_units_by_behavior.get(behavior_id, [])
+            steps: list[ExecutionStep] = []
+            max_depth = 0
 
-            for ru in discovery_model.reachable_units:
-                label = ru.name if hasattr(ru, 'name') else str(ru.id)
-                if label not in reachable_units:
-                    reachable_units.append(label)
+            for unit in units:
+                symbol_id = unit.symbol_id if hasattr(unit, 'symbol_id') else ""
+                depth = unit.order if hasattr(unit, 'order') else 0
+                if depth > max_depth:
+                    max_depth = depth
 
-            for se in discovery_model.shared_executions:
-                label = se.symbol_id if hasattr(se, 'symbol_id') else str(se.id)
-                if label not in shared_execution:
-                    shared_execution.append(label)
+                # Look up symbol metadata from repository model
+                sym_obj = symbol_lookup.get(symbol_id)
+                sym_name = unit.name if hasattr(unit, 'name') else (
+                    sym_obj.name if sym_obj else symbol_id
+                )
+                sym_kind = sym_obj.kind.value if sym_obj and hasattr(sym_obj.kind, 'value') else (
+                    str(sym_obj.kind) if sym_obj else ""
+                )
+                sym_location = (
+                    f"{sym_obj.file}:{sym_obj.range[0]}-{sym_obj.range[1]}"
+                    if sym_obj and hasattr(sym_obj, 'file')
+                    else ""
+                )
 
-            if discovery_model.execution_depth > max_execution_depth:
-                max_execution_depth = discovery_model.execution_depth
+                # Build reached components from behavior metadata
+                reaches = ReachedComponents(
+                    service=behavior_kind_map.get(behavior_id, ""),
+                    module=behavior_name_map.get(behavior_id, ""),
+                    package="",
+                )
+
+                step = ExecutionStep(
+                    behavior=behavior_id,
+                    symbol=SymbolReference(
+                        id=symbol_id,
+                        name=sym_name,
+                        kind=sym_kind,
+                        location=sym_location,
+                    ),
+                    kind=sym_kind,
+                    depth=depth,
+                    changed=symbol_id in changed_symbol_ids,
+                    shared=symbol_id in shared_symbol_ids,
+                    reaches=reaches,
+                    references=(unit.id,) if hasattr(unit, 'id') and unit.id else (),
+                )
+                steps.append(step)
+
+            # Determine terminal kind for this behavior
+            terminal = terminal_by_behavior.get(behavior_id, "")
+
+            # Build references
+            ep_refs: list[str] = [ep.id] if hasattr(ep, 'id') and ep.id else []
+            if behavior_id:
+                ep_refs.append(behavior_id)
+
+            ep_execution = EntryPointExecution(
+                endpoint=endpoint,
+                method=method,
+                path=path,
+                execution_chain=tuple(steps),
+                terminal=terminal,
+                max_depth=max_depth,
+                references=tuple(ep_refs),
+            )
+            entry_point_executions.append(ep_execution)
+
+            # Track deepest execution
+            if max_depth > deepest_depth:
+                deepest_depth = max_depth
+                deepest_ep = endpoint
+
+        # Build deepest execution
+        deepest = DeepestExecution(
+            entry_point=deepest_ep,
+            depth=deepest_depth,
+            references=(deepest_ep,) if deepest_ep else (),
+        )
 
         return ExecutionContext(
-            entry_points=tuple(entry_points),
-            execution_chains=tuple(execution_chains),
-            terminal_points=tuple(terminal_points),
-            reachable_units=tuple(reachable_units),
-            shared_execution=tuple(shared_execution),
-            max_execution_depth=max_execution_depth,
+            entry_points=tuple(entry_point_executions),
+            deepest_execution=deepest,
         )
 
-    # -----------------------------------------------------------------------
-    # Pass 1 — Selection: ImpactContext
-    # -----------------------------------------------------------------------
+    def _extract_method(self, ep: Any) -> str:
+        """Extract HTTP method or trigger type from an entry point."""
+        kind = ep.kind if hasattr(ep, 'kind') else ""
+        route = ep.route if hasattr(ep, 'route') else ""
 
-    def _select_impact_context(
-        self,
-        behavior_model: BehaviorModel | None,
-        discovery_model: EngineeringDiscoveryModel | None,
-    ) -> ImpactContext:
-        """Select impact-relevant information.
+        # Try to extract method from route (e.g., "POST /test" -> "POST")
+        if " " in route:
+            parts = route.split(" ", 1)
+            return parts[0]
 
-        Only deterministic relationships. No scoring.
-        """
-        if behavior_model is None and discovery_model is None:
-            return ImpactContext()
-
-        services: list[str] = []
-        modules: list[str] = []
-        callers: list[str] = []
-        dependents: list[str] = []
-        cross_service_references: list[str] = []
-        propagation: list[str] = []
-
-        fan_in: int = 0
-        fan_out: int = 0
-        boundary_crossings: int = 0
-
-        # From BehaviorModel — extract module/service names from behaviors
-        if behavior_model is not None:
-            for behavior in behavior_model.behaviors:
-                name = behavior.name if hasattr(behavior, 'name') else str(behavior.id)
-                modules.append(name)
-                kind = behavior.kind.value if hasattr(behavior.kind, 'value') else str(behavior.kind)
-                services.append(kind)
-
-            # Count reachable units as fan-out
-            fan_out = len(behavior_model.reachable_units)
-            fan_in = len(behavior_model.entry_points)
-
-            # Count boundary crossings from execution chains
-            for chain in behavior_model.execution_chains:
-                if hasattr(chain, 'boundary_crossings'):
-                    boundary_crossings += len(chain.boundary_crossings)
-
-        # From EngineeringDiscoveryModel
-        if discovery_model is not None:
-            for behavior in discovery_model.get_behaviors():
-                name = behavior.name if hasattr(behavior, 'name') else str(behavior.id)
-                if name not in modules:
-                    modules.append(name)
-                kind = behavior.kind.value if hasattr(behavior.kind, 'value') else str(behavior.kind)
-                if kind not in services:
-                    services.append(kind)
-
-            if discovery_model.execution_chains:
-                fan_out = max(fan_out, len(discovery_model.reachable_units))
-                fan_in = max(fan_in, len(discovery_model.entry_points))
-
-        return ImpactContext(
-            services=tuple(services),
-            modules=tuple(modules),
-            callers=tuple(callers),
-            dependents=tuple(dependents),
-            fan_in=fan_in,
-            fan_out=fan_out,
-            cross_service_references=tuple(cross_service_references),
-            boundary_crossings=boundary_crossings,
-            propagation=tuple(propagation),
-        )
-
-    # -----------------------------------------------------------------------
-    # Pass 1 — Selection: StateContext
-    # -----------------------------------------------------------------------
-
-    def _select_state_context(
-        self,
-        operational_model: OperationalChangeModel | None,
-        discovery_model: EngineeringDiscoveryModel | None,
-    ) -> StateContext:
-        """Select state/data-relevant information.
-
-        Reuses Operational Compiler outputs.
-        """
-        if operational_model is None and discovery_model is None:
-            return StateContext()
-
-        models: list[str] = []
-        tables: list[str] = []
-        reads: list[str] = []
-        writes: list[str] = []
-        transactions: list[str] = []
-        caches: list[str] = []
-        external_storage: list[str] = []
-
-        # From OperationalChangeModel data model
-        if operational_model is not None and operational_model.data is not None:
-            data = operational_model.data
-            if hasattr(data, 'models'):
-                for m in data.models:
-                    name = m.name if hasattr(m, 'name') else str(m)
-                    models.append(name)
-            if hasattr(data, 'tables'):
-                for t in data.tables:
-                    name = t.name if hasattr(t, 'name') else str(t)
-                    tables.append(name)
-
-        # From EngineeringDiscoveryModel data model
-        if discovery_model is not None and discovery_model.data is not None:
-            data = discovery_model.data
-            if hasattr(data, 'models'):
-                for m in data.models:
-                    name = m.name if hasattr(m, 'name') else str(m)
-                    if name not in models:
-                        models.append(name)
-            if hasattr(data, 'tables'):
-                for t in data.tables:
-                    name = t.name if hasattr(t, 'name') else str(t)
-                    if name not in tables:
-                        tables.append(name)
-
-        return StateContext(
-            models=tuple(models),
-            tables=tuple(tables),
-            reads=tuple(reads),
-            writes=tuple(writes),
-            transactions=tuple(transactions),
-            caches=tuple(caches),
-            external_storage=tuple(external_storage),
-        )
-
-    # -----------------------------------------------------------------------
-    # Pass 1 — Selection: IntegrationContext
-    # -----------------------------------------------------------------------
-
-    def _select_integration_context(
-        self,
-        operational_model: OperationalChangeModel | None,
-        discovery_model: EngineeringDiscoveryModel | None,
-    ) -> IntegrationContext:
-        """Select integration-relevant information.
-
-        Only expose facts. No summaries.
-        """
-        if operational_model is None and discovery_model is None:
-            return IntegrationContext()
-
-        rest: list[str] = []
-        events: list[str] = []
-
-        # From OperationalChangeModel API model
-        if operational_model is not None and operational_model.api is not None:
-            api = operational_model.api
-            if hasattr(api, 'endpoints'):
-                for ep in api.endpoints:
-                    route = ep.route if hasattr(ep, 'route') else str(ep)
-                    rest.append(route)
-
-        # From EngineeringDiscoveryModel API model
-        if discovery_model is not None and discovery_model.api is not None:
-            api = discovery_model.api
-            if hasattr(api, 'endpoints'):
-                for ep in api.endpoints:
-                    route = ep.route if hasattr(ep, 'route') else str(ep)
-                    if route not in rest:
-                        rest.append(route)
-
-        # From OperationalChangeModel event model
-        if operational_model is not None and operational_model.event is not None:
-            event = operational_model.event
-            if hasattr(event, 'events'):
-                for e in event.events:
-                    name = e.name if hasattr(e, 'name') else str(e)
-                    events.append(name)
-
-        # From EngineeringDiscoveryModel event model
-        if discovery_model is not None and discovery_model.event is not None:
-            event = discovery_model.event
-            if hasattr(event, 'events'):
-                for e in event.events:
-                    name = e.name if hasattr(e, 'name') else str(e)
-                    if name not in events:
-                        events.append(name)
-
-        return IntegrationContext(
-            rest=tuple(rest),
-            events=tuple(events),
-        )
-
-    # -----------------------------------------------------------------------
-    # Pass 1 — Selection: ValidationContext
-    # -----------------------------------------------------------------------
-
-    def _select_validation_context(
-        self,
-        operational_model: OperationalChangeModel | None,
-        discovery_model: EngineeringDiscoveryModel | None,
-    ) -> ValidationContext:
-        """Select validation-relevant information.
-
-        No recommendations.
-        """
-        if operational_model is None and discovery_model is None:
-            return ValidationContext()
-
-        unit_tests: list[str] = []
-        integration_tests: list[str] = []
-        validation_gaps: list[str] = []
-
-        # From OperationalChangeModel validation model
-        if operational_model is not None and operational_model.validation is not None:
-            validation = operational_model.validation
-            if hasattr(validation, 'unit_tests'):
-                for t in validation.unit_tests:
-                    name = t.name if hasattr(t, 'name') else str(t)
-                    unit_tests.append(name)
-            if hasattr(validation, 'integration_tests'):
-                for t in validation.integration_tests:
-                    name = t.name if hasattr(t, 'name') else str(t)
-                    integration_tests.append(name)
-
-        # From EngineeringDiscoveryModel validation model
-        if discovery_model is not None and discovery_model.validation is not None:
-            validation = discovery_model.validation
-            if hasattr(validation, 'unit_tests'):
-                for t in validation.unit_tests:
-                    name = t.name if hasattr(t, 'name') else str(t)
-                    if name not in unit_tests:
-                        unit_tests.append(name)
-            if hasattr(validation, 'integration_tests'):
-                for t in validation.integration_tests:
-                    name = t.name if hasattr(t, 'name') else str(t)
-                    if name not in integration_tests:
-                        integration_tests.append(name)
-
-        return ValidationContext(
-            unit_tests=tuple(unit_tests),
-            integration_tests=tuple(integration_tests),
-            validation_gaps=tuple(validation_gaps),
-        )
+        # Map from entry point kind
+        kind_to_method = {
+            "REST_ENDPOINT": "POST",
+            "GRAPHQL_RESOLVER": "POST",
+            "RPC_HANDLER": "RPC",
+            "CLI_COMMAND": "CLI",
+            "SCHEDULED_JOB": "SCHEDULE",
+            "WORKER_ENTRY": "WORKER",
+            "EVENT_CONSUMER": "EVENT",
+        }
+        return kind_to_method.get(kind, kind)
 
     # -----------------------------------------------------------------------
     # Pass 3 — Discovery Assembly

@@ -43,58 +43,6 @@ class SymbolRef:
 
 
 @dataclass(frozen=True)
-class Relationships:
-    """Existing relationships organized around a changed symbol.
-
-    These come from existing behavior/dependency information.
-    No graph traversal inside ReviewContext.
-    """
-    entry_points: tuple[str, ...] = field(default_factory=tuple)
-    behaviors: tuple[str, ...] = field(default_factory=tuple)
-    callers: tuple[str, ...] = field(default_factory=tuple)
-    callees: tuple[str, ...] = field(default_factory=tuple)
-    dependents: tuple[str, ...] = field(default_factory=tuple)
-
-
-@dataclass(frozen=True)
-class ChangeImpact:
-    """Deterministic impact information already computed elsewhere.
-
-    Only exposes existing metrics. No new computation.
-    """
-    reachable_behaviors: int = 0
-    reachable_services: int = 0
-    fan_in: int = 0
-    fan_out: int = 0
-    shared_execution: bool = False
-
-
-@dataclass(frozen=True)
-class ChangeValidation:
-    """Validation already associated with the changed symbol.
-
-    No test searching inside ReviewContext.
-    """
-    unit_tests: tuple[str, ...] = field(default_factory=tuple)
-    integration_tests: tuple[str, ...] = field(default_factory=tuple)
-    e2e_tests: tuple[str, ...] = field(default_factory=tuple)
-    benchmarks: tuple[str, ...] = field(default_factory=tuple)
-    production_replays: tuple[str, ...] = field(default_factory=tuple)
-
-
-@dataclass(frozen=True)
-class ChangeReferences:
-    """Traceable references back to compiler artifacts.
-
-    Pointers only. No additional analysis.
-    """
-    symbol_references: tuple[str, ...] = field(default_factory=tuple)
-    behavior_references: tuple[str, ...] = field(default_factory=tuple)
-    execution_references: tuple[str, ...] = field(default_factory=tuple)
-    dependency_references: tuple[str, ...] = field(default_factory=tuple)
-
-
-@dataclass(frozen=True)
 class Change:
     """A single changed symbol within a file.
 
@@ -104,10 +52,6 @@ class Change:
     symbol: SymbolRef = field(default_factory=SymbolRef)
     change_type: str = ""  # "added", "removed", "modified"
     behavior_changes: tuple[str, ...] = field(default_factory=tuple)
-    relationships: Relationships = field(default_factory=Relationships)
-    impact: ChangeImpact = field(default_factory=ChangeImpact)
-    validation: ChangeValidation = field(default_factory=ChangeValidation)
-    references: ChangeReferences = field(default_factory=ChangeReferences)
 
 
 @dataclass(frozen=True)
@@ -134,100 +78,119 @@ class ChangeContext:
 
 
 # ---------------------------------------------------------------------------
-# ExecutionContext
+# Execution — hierarchical execution graph
 # ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class SymbolReference:
+    """A reference to a repository symbol in an execution step.
+
+    Must include enough metadata for downstream consumers.
+    Reuses existing RepositoryModel metadata.
+    """
+    id: str = ""
+    name: str = ""
+    kind: str = ""
+    location: str = ""
+
+
+@dataclass(frozen=True)
+class ReachedComponents:
+    """Components reached by an execution step.
+
+    Describes what service, module, or package this step reaches.
+    Populated from existing compiler metadata — no new computation.
+    """
+    service: str = ""
+    module: str = ""
+    package: str = ""
+
+
+@dataclass(frozen=True)
+class ExecutionStep:
+    """A single step in an execution chain.
+
+    Represents one execution unit within a behavior's execution flow.
+    Every field comes from existing compiler outputs — no new computation.
+
+    Attributes:
+        behavior: Behavior identifier (e.g., "behavior://...").
+        symbol: Repository symbol corresponding to the behavior.
+        kind: Repository symbol kind (function, method, endpoint, etc.).
+        depth: Execution depth from the originating entry point.
+        changed: True if the symbol exists in the ChangeModel.
+        shared: True if this step participates in shared execution.
+        reaches: Components (service, module, package) reached by this step.
+        references: Compiler references backing this execution step.
+    """
+    behavior: str = ""
+    symbol: SymbolReference = field(default_factory=SymbolReference)
+    kind: str = ""
+    depth: int = 0
+    changed: bool = False
+    shared: bool = False
+    reaches: ReachedComponents = field(default_factory=ReachedComponents)
+    references: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class EntryPointExecution:
+    """An entry point with its full execution chain.
+
+    Organizes everything needed to understand execution starting from
+    this entry point into a single navigable structure.
+    Replaces the old flat collections (execution_chains, reachable_units,
+    terminal_points, shared_execution).
+
+    Attributes:
+        endpoint: Name or identifier of the endpoint.
+        method: HTTP method or trigger type (POST, GET, worker, etc.).
+        path: Route path or trigger identifier.
+        execution_chain: Ordered sequence of execution steps.
+        terminal: Terminal point kind for this behavior.
+        max_depth: Maximum execution depth from this entry point.
+        references: Compiler references backing this entry point.
+    """
+    endpoint: str = ""
+    method: str = ""
+    path: str = ""
+    execution_chain: tuple[ExecutionStep, ...] = field(default_factory=tuple)
+    terminal: str = ""
+    max_depth: int = 0
+    references: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class DeepestExecution:
+    """The deepest execution path across all entry points.
+
+    Eliminates the need for downstream consumers to search every
+    entry point for the maximum depth.
+    Reuses existing execution metrics — no recomputation.
+
+    Attributes:
+        entry_point: The entry point with the deepest execution.
+        depth: The maximum execution depth.
+        references: Compiler references.
+    """
+    entry_point: str = ""
+    depth: int = 0
+    references: tuple[str, ...] = field(default_factory=tuple)
+
 
 @dataclass(frozen=True)
 class ExecutionContext:
     """Describe where the change can execute.
 
+    Organized hierarchically around entry points.
+    Each entry point contains its own execution chain with
+    per-step metadata (changed, shared, symbol info, reached components).
+
     These values already exist in Behavior and Discovery outputs.
     Reused — never recomputed.
     """
-    entry_points: tuple[str, ...] = field(default_factory=tuple)
-    execution_chains: tuple[str, ...] = field(default_factory=tuple)
-    terminal_points: tuple[str, ...] = field(default_factory=tuple)
-    reachable_units: tuple[str, ...] = field(default_factory=tuple)
-    shared_execution: tuple[str, ...] = field(default_factory=tuple)
-    max_execution_depth: int = 0
-
-
-# ---------------------------------------------------------------------------
-# ImpactContext
-# ---------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class ImpactContext:
-    """Describe everything affected.
-
-    Only deterministic relationships. No scoring.
-    """
-    services: tuple[str, ...] = field(default_factory=tuple)
-    modules: tuple[str, ...] = field(default_factory=tuple)
-    callers: tuple[str, ...] = field(default_factory=tuple)
-    dependents: tuple[str, ...] = field(default_factory=tuple)
-    fan_in: int = 0
-    fan_out: int = 0
-    cross_service_references: tuple[str, ...] = field(default_factory=tuple)
-    boundary_crossings: int = 0
-    propagation: tuple[str, ...] = field(default_factory=tuple)
-
-
-# ---------------------------------------------------------------------------
-# StateContext
-# ---------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class StateContext:
-    """Describe data affected.
-
-    Reuses Operational Compiler outputs.
-    """
-    models: tuple[str, ...] = field(default_factory=tuple)
-    tables: tuple[str, ...] = field(default_factory=tuple)
-    reads: tuple[str, ...] = field(default_factory=tuple)
-    writes: tuple[str, ...] = field(default_factory=tuple)
-    transactions: tuple[str, ...] = field(default_factory=tuple)
-    caches: tuple[str, ...] = field(default_factory=tuple)
-    external_storage: tuple[str, ...] = field(default_factory=tuple)
-
-
-# ---------------------------------------------------------------------------
-# IntegrationContext
-# ---------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class IntegrationContext:
-    """Describe interactions outside local execution.
-
-    Only expose facts. No summaries.
-    """
-    rest: tuple[str, ...] = field(default_factory=tuple)
-    graphql: tuple[str, ...] = field(default_factory=tuple)
-    rpc: tuple[str, ...] = field(default_factory=tuple)
-    events: tuple[str, ...] = field(default_factory=tuple)
-    queues: tuple[str, ...] = field(default_factory=tuple)
-    workers: tuple[str, ...] = field(default_factory=tuple)
-    async_chains: tuple[str, ...] = field(default_factory=tuple)
-    external_systems: tuple[str, ...] = field(default_factory=tuple)
-
-
-# ---------------------------------------------------------------------------
-# ValidationContext
-# ---------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class ValidationContext:
-    """Describe validation available.
-
-    No recommendations.
-    """
-    unit_tests: tuple[str, ...] = field(default_factory=tuple)
-    integration_tests: tuple[str, ...] = field(default_factory=tuple)
-    e2e_tests: tuple[str, ...] = field(default_factory=tuple)
-    benchmarks: tuple[str, ...] = field(default_factory=tuple)
-    production_replays: tuple[str, ...] = field(default_factory=tuple)
-    validation_gaps: tuple[str, ...] = field(default_factory=tuple)
+    entry_points: tuple[EntryPointExecution, ...] = field(default_factory=tuple)
+    deepest_execution: DeepestExecution = field(default_factory=DeepestExecution)
 
 
 # ---------------------------------------------------------------------------
@@ -275,21 +238,19 @@ class ReviewContext:
     Everything after ReviewContext is replaceable.
     No downstream consumer should need access to internal compiler models.
 
+    Each section owns a single, well-defined purpose:
+        change: What was modified (files, symbols, behavior changes).
+        execution: How those modifications can execute (entry points, traces).
+        discoveries: Deterministic conclusions a reviewer would care about.
+        references: Traceability back to compiler artifacts.
+
     Attributes:
         change: What changed (hierarchical, file-centered).
-        execution: Where the change can execute.
-        impact: Everything affected.
-        state: Data affected.
-        integration: Interactions outside local execution.
-        validation: Validation available.
+        execution: Where the change can execute (hierarchical execution graph).
         discoveries: Deterministic engineering discoveries.
         references: Traceability back to compiler artifacts.
     """
     change: ChangeContext = field(default_factory=ChangeContext)
     execution: ExecutionContext = field(default_factory=ExecutionContext)
-    impact: ImpactContext = field(default_factory=ImpactContext)
-    state: StateContext = field(default_factory=StateContext)
-    integration: IntegrationContext = field(default_factory=IntegrationContext)
-    validation: ValidationContext = field(default_factory=ValidationContext)
     discoveries: tuple[Discovery, ...] = field(default_factory=tuple)
     references: tuple[Reference, ...] = field(default_factory=tuple)

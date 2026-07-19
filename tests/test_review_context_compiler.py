@@ -61,10 +61,11 @@ from review_context.model import (
     Change,
     SymbolRef,
     ExecutionContext,
-    ImpactContext,
-    StateContext,
-    IntegrationContext,
-    ValidationContext,
+    EntryPointExecution,
+    ExecutionStep,
+    SymbolReference,
+    ReachedComponents,
+    DeepestExecution,
     Discovery,
     Reference,
 )
@@ -465,10 +466,6 @@ class TestReviewContextCompilerInit:
         result = compiler.compile()
         assert isinstance(result.change, ChangeContext)
         assert isinstance(result.execution, ExecutionContext)
-        assert isinstance(result.impact, ImpactContext)
-        assert isinstance(result.state, StateContext)
-        assert isinstance(result.integration, IntegrationContext)
-        assert isinstance(result.validation, ValidationContext)
         assert result.discoveries == ()
         assert result.references == ()
 
@@ -592,7 +589,6 @@ class TestFileChanges:
 
     def test_file_change_type_mixed(self, sample_symbols):
         """Test file change type is 'mixed' when file has added + removed symbols."""
-        # Both symbols in same file
         sym1 = TestHelper.create_symbol(
             "python://test.py::func1", "func1", SymbolKind.FUNCTION,
             file="test.py",
@@ -704,10 +700,8 @@ class TestFileChanges:
         """Test that the old flat lists are gone."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(change_model=sample_change_model)
-        # ChangeContext should have summary and files, not flat lists
         assert hasattr(result.change, 'summary')
         assert hasattr(result.change, 'files')
-        # Verify no old-style flat list attributes
         assert not hasattr(result.change, 'changed_files')
         assert not hasattr(result.change, 'changed_symbols')
         assert not hasattr(result.change, 'changed_behaviors')
@@ -722,149 +716,222 @@ class TestFileChanges:
 
 
 # ---------------------------------------------------------------------------
-# Tests: ReviewContextCompiler — ExecutionContext Selection
+# Tests: ReviewContextCompiler — ExecutionContext — Hierarchical Graph
 # ---------------------------------------------------------------------------
 
-class TestExecutionContextSelection:
-    """Tests for ExecutionContext selection (Pass 1)."""
+class TestExecutionContextHierarchical:
+    """Tests for the hierarchical execution graph structure."""
 
     def test_execution_context_with_behavior_model(self, sample_behavior_model):
         """Test that execution context is populated from behavior model."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(behavior_model=sample_behavior_model)
         assert len(result.execution.entry_points) > 0
-        assert "POST /test" in result.execution.entry_points
-        assert result.execution.max_execution_depth == 2
 
-    def test_execution_context_entry_points(self, sample_behavior_model):
-        """Test that entry points are extracted."""
+    def test_entry_point_has_endpoint(self, sample_behavior_model):
+        """Test that entry point has an endpoint."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(behavior_model=sample_behavior_model)
-        assert "POST /test" in result.execution.entry_points
+        for ep in result.execution.entry_points:
+            assert ep.endpoint != ""
 
-    def test_execution_context_execution_chains(self, sample_behavior_model):
-        """Test that execution chains are extracted."""
+    def test_entry_point_has_method(self, sample_behavior_model):
+        """Test that entry point has a method extracted from route."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(behavior_model=sample_behavior_model)
-        assert len(result.execution.execution_chains) > 0
+        for ep in result.execution.entry_points:
+            assert ep.method != ""
 
-    def test_execution_context_terminal_points(self, sample_behavior_model):
-        """Test that terminal points are extracted."""
+    def test_entry_point_method_from_route(self, sample_behavior_model):
+        """Test that method is extracted from route (e.g., POST /test -> POST)."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(behavior_model=sample_behavior_model)
-        assert len(result.execution.terminal_points) > 0
+        for ep in result.execution.entry_points:
+            if "POST" in ep.path:
+                assert ep.method == "POST"
 
-    def test_execution_context_reachable_units(self, sample_behavior_model):
-        """Test that reachable units are extracted."""
+    def test_entry_point_has_path(self, sample_behavior_model):
+        """Test that entry point has a path."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(behavior_model=sample_behavior_model)
-        assert len(result.execution.reachable_units) > 0
+        for ep in result.execution.entry_points:
+            assert ep.path != ""
 
-    def test_execution_context_shared_execution(self, sample_behavior_model):
-        """Test that shared executions are extracted."""
+    def test_entry_point_execution_chain_populated(self, sample_behavior_model):
+        """Test that execution chain has steps."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(behavior_model=sample_behavior_model)
-        assert len(result.execution.shared_execution) > 0
+        for ep in result.execution.entry_points:
+            assert len(ep.execution_chain) > 0
 
-    def test_execution_context_max_depth(self, sample_behavior_model):
-        """Test that max execution depth is extracted."""
+    def test_execution_step_has_behavior(self, sample_behavior_model):
+        """Test that each execution step has a behavior identifier."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(behavior_model=sample_behavior_model)
-        assert result.execution.max_execution_depth == 2
+        for ep in result.execution.entry_points:
+            for step in ep.execution_chain:
+                assert step.behavior != ""
+
+    def test_execution_step_has_symbol_id(self, sample_behavior_model):
+        """Test that each execution step has a symbol reference."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        for ep in result.execution.entry_points:
+            for step in ep.execution_chain:
+                assert step.symbol.id != ""
+
+    def test_execution_step_symbol_has_name(self, sample_behavior_model):
+        """Test that symbol reference has a name."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        for ep in result.execution.entry_points:
+            for step in ep.execution_chain:
+                assert step.symbol.name != ""
+
+    def test_execution_step_depth(self, sample_behavior_model):
+        """Test that execution step preserves depth."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        for ep in result.execution.entry_points:
+            for step in ep.execution_chain:
+                assert isinstance(step.depth, int)
+
+    def test_execution_step_changed_flag(self, sample_behavior_model):
+        """Test that changed flag is present (boolean)."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        for ep in result.execution.entry_points:
+            for step in ep.execution_chain:
+                assert isinstance(step.changed, bool)
+
+    def test_execution_step_shared_flag(self, sample_behavior_model):
+        """Test that shared flag is present (boolean)."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        for ep in result.execution.entry_points:
+            for step in ep.execution_chain:
+                assert isinstance(step.shared, bool)
+
+    def test_execution_step_reaches(self, sample_behavior_model):
+        """Test that execution step has reached components."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        for ep in result.execution.entry_points:
+            for step in ep.execution_chain:
+                assert isinstance(step.reaches, ReachedComponents)
+
+    def test_execution_step_reaches_service(self, sample_behavior_model):
+        """Test that reached service is populated from behavior kind."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        for ep in result.execution.entry_points:
+            for step in ep.execution_chain:
+                assert step.reaches.service != ""
+
+    def test_execution_step_reaches_module(self, sample_behavior_model):
+        """Test that reached module is populated from behavior name."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        for ep in result.execution.entry_points:
+            for step in ep.execution_chain:
+                assert step.reaches.module != ""
+
+    def test_execution_step_references(self, sample_behavior_model):
+        """Test that execution step has references."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        for ep in result.execution.entry_points:
+            for step in ep.execution_chain:
+                assert isinstance(step.references, tuple)
+
+    def test_entry_point_terminal(self, sample_behavior_model):
+        """Test that entry point has terminal point kind."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        for ep in result.execution.entry_points:
+            assert ep.terminal == "return"
+
+    def test_entry_point_max_depth(self, sample_behavior_model):
+        """Test that entry point has max depth."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        for ep in result.execution.entry_points:
+            assert ep.max_depth >= 0
+
+    def test_entry_point_references(self, sample_behavior_model):
+        """Test that entry point has references."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        for ep in result.execution.entry_points:
+            assert len(ep.references) > 0
+
+    def test_deepest_execution_populated(self, sample_behavior_model):
+        """Test that deepest execution is populated."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        assert result.execution.deepest_execution.entry_point != ""
+        assert result.execution.deepest_execution.depth > 0
+
+    def test_deepest_execution_depth_matches_max(self, sample_behavior_model):
+        """Test that deepest execution depth matches max depth across entry points."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        max_depth = 0
+        for ep in result.execution.entry_points:
+            if ep.max_depth > max_depth:
+                max_depth = ep.max_depth
+        assert result.execution.deepest_execution.depth == max_depth
+
+    def test_execution_order_preserved(self, sample_behavior_model):
+        """Test that execution chain order matches the behavior graph."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        for ep in result.execution.entry_points:
+            depths = [step.depth for step in ep.execution_chain]
+            assert depths == sorted(depths)
+
+    def test_changed_step_marked_correctly(self, sample_behavior_model, sample_change_model):
+        """Test that changed symbols are marked correctly in execution steps."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(
+            behavior_model=sample_behavior_model,
+            change_model=sample_change_model,
+        )
+        has_changed = any(
+            step.changed
+            for ep in result.execution.entry_points
+            for step in ep.execution_chain
+        )
+        assert has_changed
+
+    def test_shared_step_marked_correctly(self, sample_behavior_model):
+        """Test that shared execution symbols are marked correctly."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        has_shared = any(
+            step.shared
+            for ep in result.execution.entry_points
+            for step in ep.execution_chain
+        )
+        assert has_shared
+
+    def test_no_flat_lists(self, sample_behavior_model):
+        """Test that the old flat lists are gone from execution context."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        assert not hasattr(result.execution, 'execution_chains')
+        assert not hasattr(result.execution, 'terminal_points')
+        assert not hasattr(result.execution, 'reachable_units')
+        assert not hasattr(result.execution, 'shared_execution')
+        assert not hasattr(result.execution, 'max_execution_depth')
 
     def test_execution_context_none_models(self):
         """Test that None models return empty ExecutionContext."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(behavior_model=None, discovery_model=None)
         assert result.execution.entry_points == ()
-        assert result.execution.max_execution_depth == 0
-
-
-# ---------------------------------------------------------------------------
-# Tests: ReviewContextCompiler — ImpactContext Selection
-# ---------------------------------------------------------------------------
-
-class TestImpactContextSelection:
-    """Tests for ImpactContext selection (Pass 1)."""
-
-    def test_impact_context_with_behavior_model(self, sample_behavior_model):
-        """Test that impact context is populated from behavior model."""
-        compiler = ReviewContextCompiler()
-        result = compiler.compile(behavior_model=sample_behavior_model)
-        assert len(result.impact.modules) > 0
-        assert len(result.impact.services) > 0
-
-    def test_impact_context_fan_in(self, sample_behavior_model):
-        """Test that fan-in is extracted from entry points."""
-        compiler = ReviewContextCompiler()
-        result = compiler.compile(behavior_model=sample_behavior_model)
-        assert result.impact.fan_in > 0
-
-    def test_impact_context_fan_out(self, sample_behavior_model):
-        """Test that fan-out is extracted from reachable units."""
-        compiler = ReviewContextCompiler()
-        result = compiler.compile(behavior_model=sample_behavior_model)
-        assert result.impact.fan_out > 0
-
-    def test_impact_context_none_models(self):
-        """Test that None models return empty ImpactContext."""
-        compiler = ReviewContextCompiler()
-        result = compiler.compile(behavior_model=None, discovery_model=None)
-        assert result.impact.services == ()
-        assert result.impact.fan_in == 0
-        assert result.impact.fan_out == 0
-
-
-# ---------------------------------------------------------------------------
-# Tests: ReviewContextCompiler — StateContext Selection
-# ---------------------------------------------------------------------------
-
-class TestStateContextSelection:
-    """Tests for StateContext selection (Pass 1)."""
-
-    def test_state_context_none_models(self):
-        """Test that None models return empty StateContext."""
-        compiler = ReviewContextCompiler()
-        result = compiler.compile(operational_model=None, discovery_model=None)
-        assert result.state.models == ()
-        assert result.state.tables == ()
-
-    def test_state_context_empty_operational(self, sample_behavior_model):
-        """Test that operational model without data returns empty state."""
-        operational = OperationalChangeModel(
-            repository=TestHelper.create_repository_model(symbols=[]),
-            change=TestHelper.create_change_model(),
-            behavior=sample_behavior_model,
-        )
-        compiler = ReviewContextCompiler()
-        result = compiler.compile(operational_model=operational)
-        assert result.state.models == ()
-
-
-# ---------------------------------------------------------------------------
-# Tests: ReviewContextCompiler — IntegrationContext Selection
-# ---------------------------------------------------------------------------
-
-class TestIntegrationContextSelection:
-    """Tests for IntegrationContext selection (Pass 1)."""
-
-    def test_integration_context_none_models(self):
-        """Test that None models return empty IntegrationContext."""
-        compiler = ReviewContextCompiler()
-        result = compiler.compile(operational_model=None, discovery_model=None)
-        assert result.integration.rest == ()
-        assert result.integration.events == ()
-
-    def test_integration_context_empty_operational(self, sample_behavior_model):
-        """Test that operational model without API/events returns empty."""
-        operational = OperationalChangeModel(
-            repository=TestHelper.create_repository_model(symbols=[]),
-            change=TestHelper.create_change_model(),
-            behavior=sample_behavior_model,
-        )
-        compiler = ReviewContextCompiler()
-        result = compiler.compile(operational_model=operational)
-        assert result.integration.rest == ()
+        assert result.execution.deepest_execution.entry_point == ""
+        assert result.execution.deepest_execution.depth == 0
 
 
 # ---------------------------------------------------------------------------
@@ -873,25 +940,6 @@ class TestIntegrationContextSelection:
 
 class TestValidationContextSelection:
     """Tests for ValidationContext selection (Pass 1)."""
-
-    def test_validation_context_none_models(self):
-        """Test that None models return empty ValidationContext."""
-        compiler = ReviewContextCompiler()
-        result = compiler.compile(operational_model=None, discovery_model=None)
-        assert result.validation.unit_tests == ()
-        assert result.validation.integration_tests == ()
-
-    def test_validation_context_empty_operational(self, sample_behavior_model):
-        """Test that operational model without validation returns empty."""
-        operational = OperationalChangeModel(
-            repository=TestHelper.create_repository_model(symbols=[]),
-            change=TestHelper.create_change_model(),
-            behavior=sample_behavior_model,
-        )
-        compiler = ReviewContextCompiler()
-        result = compiler.compile(operational_model=operational)
-        assert result.validation.unit_tests == ()
-
 
 # ---------------------------------------------------------------------------
 # Tests: ReviewContextCompiler — Discovery Assembly (Pass 3)
@@ -1060,10 +1108,6 @@ class TestFullCompilation:
         assert isinstance(result, ReviewContext)
         assert isinstance(result.change, ChangeContext)
         assert isinstance(result.execution, ExecutionContext)
-        assert isinstance(result.impact, ImpactContext)
-        assert isinstance(result.state, StateContext)
-        assert isinstance(result.integration, IntegrationContext)
-        assert isinstance(result.validation, ValidationContext)
         assert isinstance(result.discoveries, tuple)
         assert isinstance(result.references, tuple)
 
@@ -1087,7 +1131,6 @@ class TestFullCompilation:
         assert result.change.summary.file_count > 0
         assert len(result.change.files) > 0
         assert len(result.execution.entry_points) > 0
-        assert len(result.impact.modules) > 0
         assert len(result.discoveries) > 0
         assert len(result.references) > 0
 
@@ -1137,27 +1180,18 @@ class TestFullCompilation:
         with pytest.raises(AttributeError):
             result.change = ChangeContext()  # type: ignore
 
-    def test_no_graph_traversal(
-        self,
-        sample_change_model,
-        sample_behavior_model,
-        sample_operational_model,
-        sample_discovery_model,
-        sample_discovery_ir,
-    ):
-        """Structural test: compiler should not perform graph traversal."""
+    def test_no_impact_section(self, sample_behavior_model):
+        """Test that ImpactContext is no longer part of ReviewContext."""
         compiler = ReviewContextCompiler()
-        result = compiler.compile(
-            change_model=sample_change_model,
-            behavior_model=sample_behavior_model,
-            operational_model=sample_operational_model,
-            discovery_model=sample_discovery_model,
-            discovery_ir=sample_discovery_ir,
-        )
-        assert isinstance(result.execution.max_execution_depth, int)
-        assert isinstance(result.impact.fan_in, int)
-        assert isinstance(result.impact.fan_out, int)
-        assert isinstance(result.impact.boundary_crossings, int)
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        assert not hasattr(result, 'impact')
+
+    def test_no_compiler_metrics_in_execution(self, sample_behavior_model):
+        """Test that compiler metrics (fan_in, fan_out) are not in execution."""
+        compiler = ReviewContextCompiler()
+        result = compiler.compile(behavior_model=sample_behavior_model)
+        assert not hasattr(result.execution, 'fan_in')
+        assert not hasattr(result.execution, 'fan_out')
 
 
 # ---------------------------------------------------------------------------
@@ -1181,7 +1215,7 @@ class TestEdgeCases:
         compiler = ReviewContextCompiler()
         result = compiler.compile(behavior_model=behavior_model)
         assert result.execution.entry_points == ()
-        assert result.execution.max_execution_depth == 0
+        assert result.execution.deepest_execution.depth == 0
 
     def test_empty_discovery_ir(self):
         """Test with an empty DiscoveryIR."""
@@ -1277,29 +1311,35 @@ class TestReviewContextModel:
         with pytest.raises(AttributeError):
             ctx.entry_points = ("ep1",)  # type: ignore
 
-    def test_impact_context_immutable(self):
-        """Test that ImpactContext is frozen."""
-        ctx = ImpactContext()
+    def test_entry_point_execution_immutable(self):
+        """Test that EntryPointExecution is frozen."""
+        ep = EntryPointExecution()
         with pytest.raises(AttributeError):
-            ctx.services = ("svc1",)  # type: ignore
+            ep.endpoint = "new"  # type: ignore
 
-    def test_state_context_immutable(self):
-        """Test that StateContext is frozen."""
-        ctx = StateContext()
+    def test_execution_step_immutable(self):
+        """Test that ExecutionStep is frozen."""
+        step = ExecutionStep()
         with pytest.raises(AttributeError):
-            ctx.models = ("Model1",)  # type: ignore
+            step.behavior = "new"  # type: ignore
 
-    def test_integration_context_immutable(self):
-        """Test that IntegrationContext is frozen."""
-        ctx = IntegrationContext()
+    def test_symbol_reference_immutable(self):
+        """Test that SymbolReference is frozen."""
+        sr = SymbolReference()
         with pytest.raises(AttributeError):
-            ctx.rest = ("/api/v1",)  # type: ignore
+            sr.name = "new"  # type: ignore
 
-    def test_validation_context_immutable(self):
-        """Test that ValidationContext is frozen."""
-        ctx = ValidationContext()
+    def test_reached_components_immutable(self):
+        """Test that ReachedComponents is frozen."""
+        rc = ReachedComponents()
         with pytest.raises(AttributeError):
-            ctx.unit_tests = ("test_a",)  # type: ignore
+            rc.service = "new"  # type: ignore
+
+    def test_deepest_execution_immutable(self):
+        """Test that DeepestExecution is frozen."""
+        de = DeepestExecution()
+        with pytest.raises(AttributeError):
+            de.depth = 10  # type: ignore
 
     def test_discovery_immutable(self):
         """Test that Discovery is frozen."""
@@ -1319,22 +1359,21 @@ class TestReviewContextModel:
         assert ctx.change.summary.file_count == 0
         assert ctx.change.files == ()
         assert ctx.execution.entry_points == ()
-        assert ctx.impact.services == ()
-        assert ctx.state.models == ()
-        assert ctx.integration.rest == ()
-        assert ctx.validation.unit_tests == ()
+        assert ctx.execution.deepest_execution.entry_point == ""
+        assert ctx.execution.deepest_execution.depth == 0
         assert ctx.discoveries == ()
         assert ctx.references == ()
+
+    def test_review_context_no_impact(self):
+        """Test that ReviewContext no longer has an impact section."""
+        ctx = ReviewContext()
+        assert not hasattr(ctx, 'impact')
 
     def test_review_context_all_fields_present(self):
         """Test that ReviewContext has all required fields."""
         ctx = ReviewContext()
         assert hasattr(ctx, 'change')
         assert hasattr(ctx, 'execution')
-        assert hasattr(ctx, 'impact')
-        assert hasattr(ctx, 'state')
-        assert hasattr(ctx, 'integration')
-        assert hasattr(ctx, 'validation')
         assert hasattr(ctx, 'discoveries')
         assert hasattr(ctx, 'references')
 
