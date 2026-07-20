@@ -16,6 +16,7 @@ from behavior.compiler import BehaviorCompiler
 from operational.compiler import OperationalCompiler, EngineeringDiscoveryCompiler
 from operational.discovery import DiscoveryCompiler
 from review_context.compiler import ReviewContextCompiler
+from llm_context.compiler import LLMContextCompiler
 from runtime.errors import (
     CompilationTimeout,
     DiffFetchFailed,
@@ -91,6 +92,7 @@ class Pipeline:
         self._discovery_compiler = EngineeringDiscoveryCompiler()
         self._discovery_discovery_compiler = DiscoveryCompiler()
         self._review_context_compiler = ReviewContextCompiler()
+        self._llm_context_compiler = LLMContextCompiler()
         
         # Renderers
         self._json_renderer = JSONRenderer()
@@ -163,6 +165,11 @@ class Pipeline:
             print(f"[pipeline] Step 8: ReviewContext compilation")
             await self._compile_review_context(context)
             print(f"[pipeline] Step 8 done")
+            
+            # Step 9: Compile LLMContext (token-efficient representation)
+            print(f"[pipeline] Step 9: LLMContext compilation")
+            await self._compile_llm_context(context)
+            print(f"[pipeline] Step 9 done")
             
             context.mark_complete()
             
@@ -593,6 +600,42 @@ class Pipeline:
                 details={"repository": context.repository},
             ) from exc
 
+    async def _compile_llm_context(self, context: PipelineContext) -> None:
+        """
+        Compile LLMContext from ReviewContext.
+        
+        The LLMContext Compiler produces a lossless, token-efficient
+        representation of the ReviewContext by eliminating representational
+        redundancy. It performs no semantic interpretation, no AI/LLM usage,
+        and no information loss.
+        
+        Args:
+            context: Pipeline context
+            
+        Raises:
+            PipelineExecutionError: If compilation fails
+        """
+        if context.review_context is None:
+            raise PipelineExecutionError(
+                "ReviewContext not available for LLMContext compilation",
+                details={"repository": context.repository},
+            )
+        
+        try:
+            import time
+            start = time.time()
+            
+            context.llm_context = self._llm_context_compiler.compile(
+                context.review_context
+            )
+            
+            context.llm_compile_time = time.time() - start
+        except Exception as exc:
+            raise PipelineExecutionError(
+                f"LLMContext compilation failed: {exc}",
+                details={"repository": context.repository},
+            ) from exc
+
     def render_json(self, context: PipelineContext) -> dict[str, Any]:
         """
         Render the pipeline result as JSON.
@@ -924,6 +967,139 @@ class Pipeline:
                 f"LLM context building failed: {exc}",
                 details={"repository": context.repository},
             ) from exc
+
+    def serialize_llm_context(self, context: PipelineContext) -> dict[str, Any] | None:
+        """
+        Serialize LLMContext to a dictionary for API response.
+        
+        Args:
+            context: Pipeline context with LLMContext
+            
+        Returns:
+            Dictionary representation of LLMContext, or None if not available
+        """
+        if context.llm_context is None:
+            return None
+        
+        try:
+            llm_ctx = context.llm_context
+            
+            # Helper to resolve string indices
+            strings = llm_ctx.strings.entries
+            
+            def resolve(idx: int) -> str:
+                return strings[idx] if idx < len(strings) else ""
+            
+            # Serialize string table
+            result = {
+                "strings": list(strings),
+            }
+            
+            # Serialize lookup tables
+            result["files"] = [
+                [resolve(f[0]), resolve(f[1]), resolve(f[2])]
+                for f in llm_ctx.files
+            ]
+            
+            result["symbols"] = [
+                [resolve(s[0]), resolve(s[1]), resolve(s[2]), resolve(s[3]), resolve(s[4]), resolve(s[5])]
+                for s in llm_ctx.symbols
+            ]
+            
+            result["behaviors"] = [
+                [resolve(b[0]), resolve(b[1]), resolve(b[2])]
+                for b in llm_ctx.behaviors
+            ]
+            
+            result["references"] = [
+                [resolve(r[0]), resolve(r[1]), resolve(r[2]), resolve(r[3])]
+                for r in llm_ctx.references
+            ]
+            
+            result["endpoints"] = [
+                [resolve(e[0]), resolve(e[1]), resolve(e[2])]
+                for e in llm_ctx.endpoints
+            ]
+            
+            # Serialize change section
+            classification_idx, scope_idx, file_count, symbol_count, behavior_count = llm_ctx.change_summary
+            result["change_summary"] = {
+                "classification": resolve(classification_idx),
+                "scope": resolve(scope_idx),
+                "file_count": file_count,
+                "symbol_count": symbol_count,
+                "behavior_count": behavior_count,
+            }
+            
+            result["change_files"] = []
+            for file_entry in llm_ctx.change_files:
+                file_idx = file_entry[0]
+                changes = file_entry[1]
+                change_list = []
+                for change_entry in changes:
+                    sym_idx = change_entry[0]
+                    change_type_idx = change_entry[1]
+                    behavior_change_idxs = change_entry[2]
+                    change_list.append({
+                        "symbol_idx": sym_idx,
+                        "change_type": resolve(change_type_idx),
+                        "behavior_changes": [resolve(bc) for bc in behavior_change_idxs],
+                    })
+                result["change_files"].append({
+                    "file_idx": file_idx,
+                    "changes": change_list,
+                })
+            
+            # Serialize execution section
+            result["execution_graph"] = {
+                "nodes": [],
+                "edges": list(llm_ctx.execution_graph.edges),
+            }
+            for node in llm_ctx.execution_graph.nodes:
+                result["execution_graph"]["nodes"].append({
+                    "behavior_idx": node[0],
+                    "symbol_idx": node[1],
+                    "kind_idx": node[2],
+                    "depth": node[3],
+                    "changed": node[4],
+                    "shared": node[5],
+                    "reaches_service_idx": node[6],
+                    "reaches_module_idx": node[7],
+                    "reaches_package_idx": node[8],
+                    "reference_idxs": list(node[9]) if len(node) > 9 else [],
+                })
+            
+            result["entry_points"] = []
+            for ep in llm_ctx.entry_points:
+                endpoint_idx, chain_node_idxs, terminal_idx, max_depth = ep
+                result["entry_points"].append({
+                    "endpoint_idx": endpoint_idx,
+                    "chain_node_idxs": list(chain_node_idxs),
+                    "terminal": resolve(terminal_idx),
+                    "max_depth": max_depth,
+                })
+            
+            endpoint_idx, depth = llm_ctx.deepest_execution
+            result["deepest_execution"] = {
+                "endpoint_idx": endpoint_idx,
+                "depth": depth,
+            }
+            
+            # Serialize discoveries
+            result["discoveries"] = []
+            for d in llm_ctx.discoveries:
+                id_idx, kind_idx, facts, ref_idxs = d
+                result["discoveries"].append({
+                    "id": resolve(id_idx),
+                    "kind": resolve(kind_idx),
+                    "facts": facts,
+                    "reference_idxs": list(ref_idxs),
+                })
+            
+            return result
+        except Exception as exc:
+            print(f"[pipeline] LLMContext serialization failed: {exc}")
+            return None
     
     def generate_llm_comment(
         self,

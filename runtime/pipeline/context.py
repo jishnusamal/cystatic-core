@@ -15,6 +15,7 @@ from behavior.model import BehaviorModel
 from operational.model import OperationalChangeModel, EngineeringDiscoveryModel
 from operational.discovery.model import DiscoveryIR
 from review_context.model import ReviewContext
+from llm_context.model import LLMContext
 
 
 @dataclass
@@ -55,6 +56,9 @@ class PipelineContext:
     # ReviewContext (output of ReviewContext Compiler)
     review_context: ReviewContext | None = None
 
+    # LLMContext (output of LLMContext Compiler)
+    llm_context: LLMContext | None = None
+
     # Metadata
     language: str | None = None
     adapter: str | None = None
@@ -69,6 +73,7 @@ class PipelineContext:
     operational_compile_time: float | None = None
     discovery_compile_time: float | None = None
     presentation_compile_time: float | None = None
+    llm_compile_time: float | None = None
     render_time: float | None = None
     total_time: float | None = None
 
@@ -147,6 +152,7 @@ class PipelineContext:
             "has_discovery_model": self.edm is not None,
             "has_discovery_ir": self.discovery_ir is not None,
             "has_review_context": self.review_context is not None,
+            "has_llm_context": self.llm_context is not None,
             "render_time": self.render_time,
             "total_time": self.total_time,
             "has_error": self.error is not None,

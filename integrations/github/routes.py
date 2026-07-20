@@ -399,6 +399,9 @@ async def analyze_repository(
         # Render ReviewContext
         review_context = pipeline.render_review_context(context)
         
+        # Serialize LLMContext
+        llm_context = pipeline.serialize_llm_context(context)
+        
         response_content = {
             "repository": RepositoryResponse(
                 provider="github",
@@ -421,9 +424,14 @@ async def analyze_repository(
                 "behavior": context.behavior_compile_time or 0.0,
                 "operational": context.operational_compile_time or 0.0,
                 "review_context": context.presentation_compile_time or 0.0,
+                "llm_context": context.llm_compile_time or 0.0,
                 "total": context.total_time or 0.0,
             },
         }
+        
+        # Include LLM context if available
+        if llm_context is not None:
+            response_content["llm_context"] = llm_context
         
         # Include ReviewContext if available
         if review_context is not None:
