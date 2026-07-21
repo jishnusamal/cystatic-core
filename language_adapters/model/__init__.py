@@ -32,6 +32,21 @@ from .persistence import (
 from .events import EventConstruct, EventOperationKind
 from .tests import TestDefinition, TestFramework, TestFixture
 from .configuration import ConfigurationReference, ConfigReferenceKind
+from .repository_index import (
+    RepositoryIndex,
+    FileIndex,
+    SymbolEntry,
+    ImportEntry,
+    RawReference,
+    CallEntry,
+    EntrypointEntry,
+    TypeRelationshipEntry,
+    PersistenceEntry,
+    RepositoryMethodEntry,
+    EventEntry,
+    TestEntry,
+    ConfigEntry,
+)
 
 __all__ = [
     # Symbol
@@ -72,4 +87,18 @@ __all__ = [
     # Configuration
     "ConfigurationReference",
     "ConfigReferenceKind",
+    # Repository Index (IR)
+    "RepositoryIndex",
+    "FileIndex",
+    "SymbolEntry",
+    "ImportEntry",
+    "RawReference",
+    "CallEntry",
+    "EntrypointEntry",
+    "TypeRelationshipEntry",
+    "PersistenceEntry",
+    "RepositoryMethodEntry",
+    "EventEntry",
+    "TestEntry",
+    "ConfigEntry",
 ]

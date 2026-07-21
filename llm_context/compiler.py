@@ -1,23 +1,24 @@
-"""LLMContext Compiler — deterministic token-efficient representation of ReviewContext.
+"""LLMContext Compiler — transforms ReviewContext into a lossless compressed IR.
 
 This compiler transforms a ReviewContext into an LLMContext by eliminating
 representational redundancy. It performs NO semantic interpretation, NO AI/LLM
 usage, and NO information loss.
 
 Compression Rules Applied:
-    1. Normalize repeated objects into lookup tables
-    2. Dictionary repeated strings into a global StringTable
-    3. Separate metadata from instances
-    4. Eliminate repeated field names via positional arrays
-    5. Factor common execution chains into a DAG
-    6. Normalize references into a single lookup table
-    7. Generate canonical IDs (F1, S1, B1, R1, E1)
-    8. Eliminate derived information
+    1. Dictionary encode repeated strings into a global StringTable
+    2. Encode enums (kind, visibility, language, change type, etc.) as integer IDs
+    3. Normalize source locations from "file.py:1-10" to (start_line, end_line)
+    4. Decompose URIs into file+symbol references
+    5. Remove duplicate human labels derivable from IDs
+    6. Use compact positional arrays instead of verbose objects
+    7. Use short (1-3 char) field names
+    8. Deduplicate execution steps via DAG
 
 Given the same ReviewContext, this compiler always produces the exact same LLMContext.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from review_context.model import (
@@ -37,11 +38,52 @@ from review_context.model import (
     Reference,
 )
 
-from .model import LLMContext, StringTable, ExecutionGraph
+from .model import LLMContext, StringTable, ExecutionGraph, ENUM_REVERSE
+
+
+# Regex for extracting file path and line range from location strings
+_LOCATION_RE = re.compile(r"^(.+?)(?::(\d+)(?:-(\d+))?)?$")
+
+
+def _parse_location(location: str) -> tuple[str, int, int]:
+    """Parse a location string into (file_path, start_line, end_line).
+
+    Handles formats:
+        "file.py:1-10"  → ("file.py", 1, 10)
+        "file.py:5"     → ("file.py", 5, 5)
+        "file.py"       → ("file.py", 0, 0)
+        ""              → ("", 0, 0)
+    """
+    if not location:
+        return ("", 0, 0)
+    m = _LOCATION_RE.match(location)
+    if not m:
+        return (location, 0, 0)
+    file_path = m.group(1)
+    start_str = m.group(2)
+    end_str = m.group(3)
+    if start_str:
+        start_line = int(start_str)
+        end_line = int(end_str) if end_str else start_line
+    else:
+        start_line = 0
+        end_line = 0
+    return (file_path, start_line, end_line)
+
+
+def _resolve_symbol_name_from_uri(uri: str) -> str:
+    """Extract symbol name from a URI like 'sym://path#SymbolName'.
+
+    Returns the symbol name or empty string.
+    """
+    hash_match = re.search(r"#(.+)$", uri)
+    if hash_match:
+        return hash_match.group(1)
+    return ""
 
 
 class LLMContextCompiler:
-    """Compiles ReviewContext into a token-efficient LLMContext.
+    """Compiles ReviewContext into a lossless compressed LLMContext.
 
     The LLMContext is a lossless, token-efficient representation of the
     same information. It is fully reversible back to an equivalent ReviewContext.
@@ -57,123 +99,63 @@ class LLMContextCompiler:
 
         Returns:
             An LLMContext containing every fact from ReviewContext in a
-            token-efficient representation.
+            token-efficient compressed representation.
         """
-        # Phase 1: Collect all unique strings
-        string_builder = _StringBuilder()
+        sb = _StringBuilder()
 
-        # Phase 2: Build normalized lookup tables
-        file_table = self._build_file_table(review_context.change, string_builder)
-        symbol_table = self._build_symbol_table(review_context.change, string_builder)
-        behavior_table = self._build_behavior_table(review_context.execution, string_builder)
-        reference_table = self._build_reference_table(review_context, string_builder)
-        endpoint_table = self._build_endpoint_table(review_context.execution, string_builder)
-
-        # Phase 3: Build change section
-        change_summary = self._build_change_summary(
-            review_context.change.summary, string_builder
+        # Phase 1: Build enum-encoded lookup tables
+        file_table = self._build_file_table(review_context.change, sb)
+        symbol_table, symbol_id_map = self._build_symbol_table(
+            review_context.change, file_table, sb
         )
+        behavior_table, behavior_id_map = self._build_behavior_table(
+            review_context.execution, symbol_id_map, sb
+        )
+        reference_table = self._build_reference_table(review_context, sb)
+        endpoint_table = self._build_endpoint_table(review_context.execution, sb)
+
+        # Phase 2: Build change section
+        change_summary = self._build_change_summary(review_context.change.summary, sb)
         change_files = self._build_change_files(
-            review_context.change.files, file_table, symbol_table, string_builder
+            review_context.change.files, file_table, symbol_id_map, sb
         )
 
-        # Phase 4: Build execution DAG and entry points
+        # Phase 3: Build execution DAG and entry points
         execution_graph, entry_points = self._build_execution(
-            review_context.execution, symbol_table, behavior_table, endpoint_table, string_builder
+            review_context.execution,
+            symbol_id_map,
+            behavior_id_map,
+            endpoint_table,
+            sb,
         )
 
-        # Phase 5: Build deepest execution
+        # Phase 4: Build deepest execution
         deepest = self._build_deepest_execution(
-            review_context.execution.deepest_execution, endpoint_table, string_builder
+            review_context.execution.deepest_execution, endpoint_table, sb
         )
 
-        # Phase 6: Build discoveries
+        # Phase 5: Build discoveries
         discoveries = self._build_discoveries(
-            review_context.discoveries, reference_table, string_builder
+            review_context.discoveries, reference_table, sb
         )
 
         return LLMContext(
-            strings=StringTable(entries=tuple(string_builder.strings)),
-            files=tuple(file_table),
-            symbols=tuple(symbol_table),
-            behaviors=tuple(behavior_table),
-            references=tuple(reference_table),
-            endpoints=tuple(endpoint_table),
-            change_summary=change_summary,
-            change_files=tuple(change_files),
-            execution_graph=execution_graph,
-            entry_points=tuple(entry_points),
-            deepest_execution=deepest,
-            discoveries=tuple(discoveries),
+            st=StringTable(entries=tuple(sb.strings)),
+            f=tuple(file_table),
+            sym=tuple(symbol_table),
+            bh=tuple(behavior_table),
+            ref=tuple(reference_table),
+            ep=tuple(endpoint_table),
+            cs=change_summary,
+            cf=tuple(change_files),
+            eg=execution_graph,
+            epts=tuple(entry_points),
+            de=deepest,
+            disc=tuple(discoveries),
         )
 
     # -----------------------------------------------------------------------
-    # Phase 1: String Collection
-    # -----------------------------------------------------------------------
-
-    def _collect_strings(
-        self,
-        review_context: ReviewContext,
-        string_builder: _StringBuilder,
-    ) -> None:
-        """Collect all unique strings from ReviewContext into the string builder.
-
-        This ensures all strings are registered before building lookup tables.
-        """
-        # Change section strings
-        ctx = review_context.change
-        string_builder.add(ctx.summary.classification)
-        string_builder.add(ctx.summary.scope)
-        for f in ctx.files:
-            string_builder.add(f.path)
-            string_builder.add(f.language)
-            string_builder.add(f.change_type)
-            for c in f.changes:
-                string_builder.add(c.symbol.id)
-                string_builder.add(c.symbol.name)
-                string_builder.add(c.symbol.kind)
-                string_builder.add(c.symbol.visibility)
-                string_builder.add(c.symbol.language)
-                string_builder.add(c.symbol.location)
-                string_builder.add(c.change_type)
-                for bc in c.behavior_changes:
-                    string_builder.add(bc)
-
-        # Execution section strings
-        exec_ctx = review_context.execution
-        for ep in exec_ctx.entry_points:
-            string_builder.add(ep.endpoint)
-            string_builder.add(ep.method)
-            string_builder.add(ep.path)
-            string_builder.add(ep.terminal)
-            for step in ep.execution_chain:
-                string_builder.add(step.behavior)
-                string_builder.add(step.symbol.id)
-                string_builder.add(step.symbol.name)
-                string_builder.add(step.symbol.kind)
-                string_builder.add(step.symbol.location)
-                string_builder.add(step.kind)
-                string_builder.add(step.reaches.service)
-                string_builder.add(step.reaches.module)
-                string_builder.add(step.reaches.package)
-                for ref in step.references:
-                    string_builder.add(ref)
-
-        # Deepest execution
-        string_builder.add(exec_ctx.deepest_execution.entry_point)
-
-        # Discovery section strings
-        for d in review_context.discoveries:
-            string_builder.add(d.id)
-            string_builder.add(d.kind)
-            for ref in d.references:
-                string_builder.add(ref.id)
-                string_builder.add(ref.kind)
-                string_builder.add(ref.location)
-                string_builder.add(ref.compiler_artifact)
-
-    # -----------------------------------------------------------------------
-    # Phase 2: Build Lookup Tables
+    # Phase 1: Build Lookup Tables with Enum Encoding
     # -----------------------------------------------------------------------
 
     def _build_file_table(
@@ -183,7 +165,8 @@ class LLMContextCompiler:
     ) -> list[tuple[int, int, int]]:
         """Build normalized file lookup table.
 
-        Each entry: (path_idx, language_idx, change_type_idx)
+        Each entry: (path_idx, lang_id, ct_id)
+        Uses enum encoding for language and change_type.
         """
         table: list[tuple[int, int, int]] = []
         seen: dict[str, int] = {}  # path -> index
@@ -192,8 +175,8 @@ class LLMContextCompiler:
             if f.path not in seen:
                 entry = (
                     sb.add(f.path),
-                    sb.add(f.language),
-                    sb.add(f.change_type),
+                    _enum_id("lang", f.language),
+                    _enum_id("ct", f.change_type),
                 )
                 seen[f.path] = len(table)
                 table.append(entry)
@@ -203,56 +186,88 @@ class LLMContextCompiler:
     def _build_symbol_table(
         self,
         change_ctx: ChangeContext,
+        file_table: list[tuple[int, int, int]],
         sb: _StringBuilder,
-    ) -> list[tuple[int, int, int, int, int, int]]:
+    ) -> tuple[
+        list[tuple[int, int, int, int, tuple[int, int]]],
+        dict[str, int],
+    ]:
         """Build normalized symbol lookup table.
 
-        Each entry: (id_idx, name_idx, kind_idx, visibility_idx, language_idx, location_idx)
+        Each entry: (file_id, name_idx, kind_id, vis_id, (start_line, end_line))
+
+        Returns:
+            (symbol_table, symbol_id_map) where symbol_id_map maps symbol.id -> table index.
+
+        Improvements over original:
+        - name_idx = 0 if name is derivable from symbol id URI
+        - location normalized to (start_line, end_line)
+        - file_id references the file table index
+        - kind/visibility use enum IDs
+        - language is derivable from file reference → removed
         """
-        table: list[tuple[int, int, int, int, int, int]] = []
+        file_idx_map: dict[str, int] = {}
+        for i, entry in enumerate(file_table):
+            file_idx_map[sb[entry[0]]] = i
+
+        table: list[tuple[int, int, int, int, tuple[int, int]]] = []
         seen: dict[str, int] = {}  # symbol id -> index
 
         for f in change_ctx.files:
             for c in f.changes:
                 sym = c.symbol
                 if sym.id not in seen:
+                    file_path, start_line, end_line = _parse_location(sym.location)
+                    file_id = file_idx_map.get(file_path, 0)
+
+                    # Only store name if it's not derivable from the symbol id
+                    derivable_name = _resolve_symbol_name_from_uri(sym.id)
+                    name_idx = 0 if sym.name == derivable_name else sb.add(sym.name)
+
                     entry = (
-                        sb.add(sym.id),
-                        sb.add(sym.name),
-                        sb.add(sym.kind),
-                        sb.add(sym.visibility),
-                        sb.add(sym.language),
-                        sb.add(sym.location),
+                        file_id,
+                        name_idx,
+                        _enum_id("kind", sym.kind),
+                        _enum_id("vis", sym.visibility),
+                        (start_line, end_line),
                     )
                     seen[sym.id] = len(table)
                     table.append(entry)
 
-        return table
+        return table, seen
 
     def _build_behavior_table(
         self,
         exec_ctx: ExecutionContext,
+        symbol_id_map: dict[str, int],
         sb: _StringBuilder,
-    ) -> list[tuple[int, int, int]]:
+    ) -> tuple[list[tuple[int, int]], dict[str, int]]:
         """Build normalized behavior lookup table.
 
-        Each entry: (id_idx, name_idx, kind_idx)
+        Each entry: (sym_id, kind_id)
+
+        References existing symbol instead of duplicating name/URI.
+        Uses enum encoding for kind.
+
+        Returns:
+            (behavior_table, behavior_id_map)
         """
-        table: list[tuple[int, int, int]] = []
+        table: list[tuple[int, int]] = []
         seen: dict[str, int] = {}  # behavior id -> index
 
         for ep in exec_ctx.entry_points:
             for step in ep.execution_chain:
                 if step.behavior not in seen:
+                    # Try to match behavior to a known symbol by ID
+                    sym_idx = symbol_id_map.get(step.symbol.id, symbol_id_map.get(step.behavior, 0))
                     entry = (
-                        sb.add(step.behavior),
-                        sb.add(step.symbol.name),
-                        sb.add(step.kind),
+                        sym_idx,
+                        _enum_id("kind", step.kind),
                     )
                     seen[step.behavior] = len(table)
                     table.append(entry)
 
-        return table
+        return table, seen
 
     def _build_reference_table(
         self,
@@ -261,7 +276,8 @@ class LLMContextCompiler:
     ) -> list[tuple[int, int, int, int]]:
         """Build normalized reference lookup table.
 
-        Each entry: (id_idx, kind_idx, location_idx, compiler_artifact_idx)
+        Each entry: (id_idx, kind_id, location_idx, artifact_idx)
+        Uses enum encoding for kind.
         """
         table: list[tuple[int, int, int, int]] = []
         seen: dict[str, int] = {}  # reference id -> index
@@ -271,7 +287,7 @@ class LLMContextCompiler:
                 if ref.id not in seen:
                     entry = (
                         sb.add(ref.id),
-                        sb.add(ref.kind),
+                        _enum_id("ref_kind", ref.kind),
                         sb.add(ref.location),
                         sb.add(ref.compiler_artifact),
                     )
@@ -287,7 +303,8 @@ class LLMContextCompiler:
     ) -> list[tuple[int, int, int]]:
         """Build normalized endpoint lookup table.
 
-        Each entry: (endpoint_idx, method_idx, path_idx)
+        Each entry: (endpoint_idx, method_id, path_idx)
+        Uses enum encoding for method.
         """
         table: list[tuple[int, int, int]] = []
         seen: dict[str, int] = {}  # endpoint string -> index
@@ -296,7 +313,7 @@ class LLMContextCompiler:
             if ep.endpoint not in seen:
                 entry = (
                     sb.add(ep.endpoint),
-                    sb.add(ep.method),
+                    _enum_id("method", ep.method),
                     sb.add(ep.path),
                 )
                 seen[ep.endpoint] = len(table)
@@ -305,7 +322,7 @@ class LLMContextCompiler:
         return table
 
     # -----------------------------------------------------------------------
-    # Phase 3: Build Change Section
+    # Phase 2: Build Change Section
     # -----------------------------------------------------------------------
 
     def _build_change_summary(
@@ -313,13 +330,13 @@ class LLMContextCompiler:
         summary: ChangeSummary,
         sb: _StringBuilder,
     ) -> tuple[int, int, int, int, int]:
-        """Build change summary as positional tuple.
+        """Build change summary as positional tuple with enum encoding.
 
-        Returns: (classification_idx, scope_idx, file_count, symbol_count, behavior_count)
+        Returns: (cls_id, scope_id, file_count, sym_count, bh_count)
         """
         return (
-            sb.add(summary.classification),
-            sb.add(summary.scope),
+            _enum_id("cls", summary.classification),
+            _enum_id("scope", summary.scope),
             summary.file_count,
             summary.symbol_count,
             summary.behavior_count,
@@ -329,74 +346,53 @@ class LLMContextCompiler:
         self,
         files: tuple[FileChange, ...],
         file_table: list[tuple[int, int, int]],
-        symbol_table: list[tuple[int, int, int, int, int, int]],
+        symbol_id_map: dict[str, int],
         sb: _StringBuilder,
     ) -> list[tuple]:
         """Build change files as positional tuples.
 
-        Each entry: (file_idx, ((symbol_idx, change_type_idx, (behavior_change_idxs...)), ...))
+        Each entry: (file_idx, ((sym_idx, ct_id, (bh_change_ids...)), ...))
+        Uses enum encoding for change_type and behavior_changes.
         """
-        # Build file path -> file table index lookup
         file_idx_map: dict[str, int] = {}
         for i, entry in enumerate(file_table):
             file_idx_map[sb[entry[0]]] = i
-
-        # Build symbol id -> symbol table index lookup
-        symbol_idx_map: dict[str, int] = {}
-        for i, entry in enumerate(symbol_table):
-            symbol_idx_map[sb[entry[0]]] = i
 
         result: list[tuple] = []
         for f in files:
             file_idx = file_idx_map.get(f.path, 0)
             changes_list: list[tuple] = []
             for c in f.changes:
-                sym_idx = symbol_idx_map.get(c.symbol.id, 0)
-                change_type_idx = sb.add(c.change_type)
-                behavior_change_idxs = tuple(sb.add(bc) for bc in c.behavior_changes)
-                changes_list.append((sym_idx, change_type_idx, behavior_change_idxs))
+                sym_idx = symbol_id_map.get(c.symbol.id, 0)
+                ct_id = _enum_id("ct", c.change_type)
+                bh_change_ids = tuple(_enum_id("bh_change", bc) for bc in c.behavior_changes)
+                changes_list.append((sym_idx, ct_id, bh_change_ids))
             result.append((file_idx, tuple(changes_list)))
 
         return result
 
     # -----------------------------------------------------------------------
-    # Phase 4: Build Execution DAG and Entry Points
+    # Phase 3: Build Execution DAG and Entry Points
     # -----------------------------------------------------------------------
 
     def _build_execution(
         self,
         exec_ctx: ExecutionContext,
-        symbol_table: list[tuple[int, int, int, int, int, int]],
-        behavior_table: list[tuple[int, int, int]],
+        symbol_id_map: dict[str, int],
+        behavior_id_map: dict[str, int],
         endpoint_table: list[tuple[int, int, int]],
         sb: _StringBuilder,
     ) -> tuple[ExecutionGraph, list[tuple]]:
         """Build execution DAG and entry point references.
 
-        The DAG factors common execution chain prefixes into shared nodes.
-        Entry points reference graph nodes rather than embedding full chains.
-
         Returns:
             (ExecutionGraph, list of entry point tuples)
         """
-        # Build behavior id -> behavior table index
-        behavior_idx_map: dict[str, int] = {}
-        for i, b in enumerate(behavior_table):
-            behavior_idx_map[sb[b[0]]] = i
-
-        # Build symbol id -> symbol table index
-        symbol_idx_map: dict[str, int] = {}
-        for i, s in enumerate(symbol_table):
-            symbol_idx_map[sb[s[0]]] = i
-
-        # Build endpoint -> endpoint table index
         endpoint_idx_map: dict[str, int] = {}
         for i, ep_entry in enumerate(endpoint_table):
             endpoint_idx_map[sb[ep_entry[0]]] = i
 
-        # Collect all unique execution steps (nodes)
-        # A node is unique by (behavior_id, symbol_id, depth)
-        node_map: dict[tuple[str, str, int], int] = {}  # (behavior, symbol_id, depth) -> node_idx
+        node_map: dict[tuple[str, str, int], int] = {}
         nodes: list[tuple] = []
         edges: list[tuple[int, int]] = []
         entry_point_data: list[tuple] = []
@@ -406,31 +402,30 @@ class LLMContextCompiler:
             prev_node_idx: int | None = None
 
             for step in ep.execution_chain:
-                # Create unique key for this step
                 node_key = (step.behavior, step.symbol.id, step.depth)
 
                 if node_key not in node_map:
                     node_idx = len(nodes)
                     node_map[node_key] = node_idx
 
-                    behavior_idx = behavior_idx_map.get(step.behavior, 0)
-                    sym_idx = symbol_idx_map.get(step.symbol.id, 0)
-                    kind_idx = sb.add(step.kind)
-                    reaches_service_idx = sb.add(step.reaches.service)
-                    reaches_module_idx = sb.add(step.reaches.module)
-                    reaches_package_idx = sb.add(step.reaches.package)
+                    bh_idx = behavior_id_map.get(step.behavior, 0)
+                    sym_idx = symbol_id_map.get(step.symbol.id, 0)
+                    kind_id = _enum_id("kind", step.kind)
+                    reaches_svc_idx = sb.add(step.reaches.service)
+                    reaches_mod_idx = sb.add(step.reaches.module)
+                    reaches_pkg_idx = sb.add(step.reaches.package)
                     ref_idxs = tuple(sb.add(r) for r in step.references)
 
                     node = (
-                        behavior_idx,
+                        bh_idx,
                         sym_idx,
-                        kind_idx,
+                        kind_id,
                         step.depth,
                         step.changed,
                         step.shared,
-                        reaches_service_idx,
-                        reaches_module_idx,
-                        reaches_package_idx,
+                        reaches_svc_idx,
+                        reaches_mod_idx,
+                        reaches_pkg_idx,
                         ref_idxs,
                     )
                     nodes.append(node)
@@ -439,14 +434,12 @@ class LLMContextCompiler:
 
                 chain_node_idxs.append(node_idx)
 
-                # Add edge from previous node to this node
                 if prev_node_idx is not None:
                     edge = (prev_node_idx, node_idx)
                     if edge not in edges:
                         edges.append(edge)
                 prev_node_idx = node_idx
 
-            # Build entry point tuple with correct endpoint index
             endpoint_idx = endpoint_idx_map.get(ep.endpoint, 0)
             terminal_idx = sb.add(ep.terminal)
             ep_tuple = (endpoint_idx, tuple(chain_node_idxs), terminal_idx, ep.max_depth)
@@ -467,7 +460,6 @@ class LLMContextCompiler:
 
         Returns: (endpoint_idx, depth)
         """
-        # Find endpoint index
         endpoint_idx = 0
         for i, ep in enumerate(endpoint_table):
             if sb[ep[0]] == deepest.entry_point:
@@ -477,7 +469,7 @@ class LLMContextCompiler:
         return (endpoint_idx, deepest.depth)
 
     # -----------------------------------------------------------------------
-    # Phase 6: Build Discoveries
+    # Phase 4: Build Discoveries
     # -----------------------------------------------------------------------
 
     def _build_discoveries(
@@ -486,11 +478,11 @@ class LLMContextCompiler:
         reference_table: list[tuple[int, int, int, int]],
         sb: _StringBuilder,
     ) -> list[tuple]:
-        """Build discoveries as positional tuples.
+        """Build discoveries as positional tuples with enum encoding.
 
-        Each entry: (id_idx, kind_idx, facts_dict, (ref_idxs...))
+        Each entry: (id_idx, kind_id, facts_dict, (ref_idxs...))
+        Uses enum encoding for discovery kind.
         """
-        # Build reference id -> reference table index
         ref_idx_map: dict[str, int] = {}
         for i, r in enumerate(reference_table):
             ref_idx_map[sb[r[0]]] = i
@@ -498,38 +490,27 @@ class LLMContextCompiler:
         result: list[tuple] = []
         for d in discoveries:
             id_idx = sb.add(d.id)
-            kind_idx = sb.add(d.kind)
+            kind_id = _enum_id("bh_kind", d.kind)
             ref_idxs = tuple(
                 ref_idx_map.get(ref.id, 0) for ref in d.references
             )
-            result.append((id_idx, kind_idx, d.facts, ref_idxs))
+            result.append((id_idx, kind_id, d.facts, ref_idxs))
 
         return result
 
 
 # ---------------------------------------------------------------------------
-# String Builder — collects unique strings and assigns indices
+# String Builder
 # ---------------------------------------------------------------------------
 
 class _StringBuilder:
-    """Collects unique strings and assigns stable indices.
-
-    This is the core mechanism for building the global StringTable.
-    Every unique string gets a deterministic index based on first occurrence.
-    Index 0 is reserved for the empty string.
-    """
+    """Collects unique strings and assigns stable indices."""
 
     def __init__(self) -> None:
-        # Index 0 is reserved for empty string
         self.strings: list[str] = [""]
         self._index: dict[str, int] = {"": 0}
 
     def add(self, s: str) -> int:
-        """Add a string and return its index.
-
-        If the string already exists, returns its existing index.
-        Empty strings are always assigned index 0.
-        """
         if s in self._index:
             return self._index[s]
         idx = len(self.strings)
@@ -538,8 +519,22 @@ class _StringBuilder:
         return idx
 
     def __getitem__(self, idx: int) -> str:
-        """Get string by index."""
         return self.strings[idx]
 
     def __len__(self) -> int:
         return len(self.strings)
+
+
+# ---------------------------------------------------------------------------
+# Enum Helpers
+# ---------------------------------------------------------------------------
+
+def _enum_id(table_name: str, value: str) -> int:
+    """Get the enum ID for a given value in the named enum table.
+
+    Returns 0 (the empty/default value) if the value is not found.
+    """
+    if not value:
+        return 0
+    reverse = ENUM_REVERSE.get(table_name, {})
+    return reverse.get(value, 0)

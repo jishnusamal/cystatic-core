@@ -76,15 +76,20 @@ class _ModelCompiler:
         for file_path, file_data in semantic_graph.items():
             self._collect_symbols(file_path, language, file_data, symbols, symbol_index)
 
+        # Build name index ONCE for O(1) lookups - CRITICAL for performance
+        name_to_symbols: dict[str, list[Symbol]] = {}
+        for sym_id, symbol in symbol_index.items():
+            name_to_symbols.setdefault(symbol.name, []).append(symbol)
+        
         # Pass 2: Reference Resolution (imports)
         for symbol in symbols:
             if symbol.kind == SymbolKind.IMPORT:
-                self._resolve_import_references(symbol, symbol_index, reference_graph_edges)
+                self._resolve_import_references(symbol, name_to_symbols, reference_graph_edges)
 
         # Pass 3: Call Graph
         for file_path, file_data in semantic_graph.items():
             for call in file_data.get('function_calls', []):
-                self._process_call(call, symbol_index, call_graph_edges)
+                self._process_call(call, name_to_symbols, symbol_index, call_graph_edges)
 
         # Pass 4: Endpoint Discovery
         for file_path, file_data in semantic_graph.items():
@@ -295,19 +300,21 @@ class _ModelCompiler:
     def _resolve_import_references(
         self,
         import_symbol: Symbol,
-        symbol_index: dict[str, Symbol],
+        name_to_symbols: dict[str, list[Symbol]],
         reference_graph_edges: list[ReferenceEdge],
     ) -> None:
-        """Resolve references for an import symbol."""
+        """Resolve references for an import symbol using pre-built name index."""
         imported_module = import_symbol.properties.get('module', '')
         imported_names = import_symbol.properties.get('names', [])
 
         for imported_name in imported_names:
-            for symbol_id, symbol in symbol_index.items():
-                if symbol_id == import_symbol.id:
+            # O(1) lookup instead of O(n) scan
+            candidates = name_to_symbols.get(imported_name, [])
+            for symbol in candidates:
+                # Skip self-references
+                if symbol.id == import_symbol.id:
                     continue
-
-                if self._matches_import(symbol, imported_module, imported_name):
+                if imported_module in symbol.file:
                     edge = ReferenceEdge(
                         source_id=import_symbol.id,
                         target_id=symbol.id,
@@ -333,6 +340,7 @@ class _ModelCompiler:
     def _process_call(
         self,
         call: dict[str, Any],
+        name_to_symbols: dict[str, list[Symbol]],
         symbol_index: dict[str, Symbol],
         call_graph_edges: list[CallEdge],
     ) -> None:
@@ -346,7 +354,7 @@ class _ModelCompiler:
         if not caller_id or not callee_name:
             return
 
-        callee_id = self._resolve_callee_id(callee_name, caller_id, symbol_index)
+        callee_id = self._resolve_callee_id(callee_name, caller_id, name_to_symbols, symbol_index)
 
         if callee_id:
             caller_symbol = symbol_index.get(caller_id)
@@ -388,13 +396,14 @@ class _ModelCompiler:
         self,
         callee_name: str,
         caller_id: str,
+        name_to_symbols: dict[str, list[Symbol]],
         symbol_index: dict[str, Symbol],
     ) -> str | None:
-        """Resolve a callee name to a symbol id."""
-        # Try exact name match first
-        for symbol_id, symbol in symbol_index.items():
-            if symbol.name == callee_name:
-                return symbol_id
+        """Resolve a callee name to a symbol id using index."""
+        # Try exact name match using index (O(1) instead of O(S))
+        candidates = name_to_symbols.get(callee_name, [])
+        if candidates:
+            return candidates[0].id  # Return first match
 
         # Try to construct id from caller's file path
         if '::' in caller_id:

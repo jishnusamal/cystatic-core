@@ -6,9 +6,11 @@ No compiler logic - pure orchestration.
 
 from __future__ import annotations
 
+import json
 import time
 from typing import TYPE_CHECKING, Any
 
+from runtime.instrumentation.timer import timer
 from change.compiler import ChangeCompiler
 from change.model.repository_comparison import RepositoryComparison
 from change.model.repository_delta import RepositoryDelta
@@ -118,10 +120,11 @@ class Pipeline:
         try:
             context.mark_compilation_start()
             
-            # Step 1: Compile both base and head repository models
-            print(f"[pipeline] Step 1: Repository model compilation for {request.repository.full_name}")
-            await self._compile_both_repository_models(context, request)
-            print(f"[pipeline] Step 1 done: language={context.language}, base_model={'set' if context.base_repository_model else 'None'}, head_model={'set' if context.head_repository_model else 'None'}")
+            with timer.timed("Total Pipeline", metadata={"repository": request.repository.full_name}):
+                # Step 1: Compile both base and head repository models
+                print(f"[pipeline] Step 1: Repository model compilation for {request.repository.full_name}")
+                await self._compile_both_repository_models(context, request)
+                print(f"[pipeline] Step 1 done: language={context.language}, base_model={'set' if context.base_repository_model else 'None'}, head_model={'set' if context.head_repository_model else 'None'}")
             
             # Step 2: Fetch diff if not provided
             if context.diff_data is None and request.has_diff:
@@ -136,40 +139,57 @@ class Pipeline:
                 await self._fetch_diff(context, request)
                 print(f"[pipeline] Step 2 done: {len(context.diff_data.get('files', []))} files in diff" if context.diff_data else "[pipeline] Step 2 done: no diff")
             
-            # Step 3: Compile change model
-            print(f"[pipeline] Step 3: Change model compilation")
-            await self._compile_change(context)
-            print(f"[pipeline] Step 3 done")
+            with timer.timed("Change Compilation"):
+                # Step 3: Compile change model
+                print(f"[pipeline] Step 3: Change model compilation")
+                await self._compile_change(context)
+                print(f"[pipeline] Step 3 done")
+                timer.print_progress()
             
-            # Step 4: Compile behavior model
-            print(f"[pipeline] Step 4: Behavior model compilation")
-            await self._compile_behavior(context)
-            print(f"[pipeline] Step 4 done")
+            with timer.timed("Behavior Compilation"):
+                # Step 4: Compile behavior model
+                print(f"[pipeline] Step 4: Behavior model compilation")
+                await self._compile_behavior(context)
+                print(f"[pipeline] Step 4 done")
+                timer.print_progress()
             
-            # Step 5: Compile operational model
-            print(f"[pipeline] Step 5: Operational model compilation")
-            await self._compile_operational(context)
-            print(f"[pipeline] Step 5 done")
+            with timer.timed("Operational Compilation"):
+                # Step 5: Compile operational model
+                print(f"[pipeline] Step 5: Operational model compilation")
+                await self._compile_operational(context)
+                print(f"[pipeline] Step 5 done")
+                timer.print_progress()
             
-            # Step 6: Compile engineering discovery model
-            print(f"[pipeline] Step 6: Engineering discovery model compilation")
-            await self._compile_discovery(context)
-            print(f"[pipeline] Step 6 done")
+            with timer.timed("Engineering Discovery Compilation"):
+                # Step 6: Compile engineering discovery model
+                print(f"[pipeline] Step 6: Engineering discovery model compilation")
+                await self._compile_discovery(context)
+                print(f"[pipeline] Step 6 done")
+                timer.print_progress()
             
-            # Step 7: Compile discovery IR (deterministic engineering discoveries)
-            print(f"[pipeline] Step 7: Discovery IR compilation")
-            await self._compile_discovery_ir(context)
-            print(f"[pipeline] Step 7 done")
+            with timer.timed("Discovery IR Compilation"):
+                # Step 7: Compile discovery IR (deterministic engineering discoveries)
+                print(f"[pipeline] Step 7: Discovery IR compilation")
+                await self._compile_discovery_ir(context)
+                print(f"[pipeline] Step 7 done")
+                timer.print_progress()
             
-            # Step 8: Compile ReviewContext
-            print(f"[pipeline] Step 8: ReviewContext compilation")
-            await self._compile_review_context(context)
-            print(f"[pipeline] Step 8 done")
+            with timer.timed("ReviewContext Compilation"):
+                # Step 8: Compile ReviewContext
+                print(f"[pipeline] Step 8: ReviewContext compilation")
+                await self._compile_review_context(context)
+                print(f"[pipeline] Step 8 done")
+                timer.print_progress()
             
-            # Step 9: Compile LLMContext (token-efficient representation)
-            print(f"[pipeline] Step 9: LLMContext compilation")
-            await self._compile_llm_context(context)
-            print(f"[pipeline] Step 9 done")
+            with timer.timed("LLMContext Compilation"):
+                # Step 9: Compile LLMContext (token-efficient representation)
+                print(f"[pipeline] Step 9: LLMContext compilation")
+                await self._compile_llm_context(context)
+                print(f"[pipeline] Step 9 done")
+                timer.print_progress()
+            
+            # Print timing summary
+            timer.print_summary()
             
             context.mark_complete()
             
@@ -211,17 +231,20 @@ class Pipeline:
         context.base_sha = base_sha
         context.head_sha = head_sha
         
-        # Compile base repository model
-        print(f"[pipeline] Compiling base repository model at {base_sha}")
-        context.base_repository_model = await self._compile_repository_model(
-            context, request, base_sha, "base"
-        )
-        
-        # Compile head repository model
-        print(f"[pipeline] Compiling head repository model at {head_sha}")
-        context.head_repository_model = await self._compile_repository_model(
-            context, request, head_sha, "head"
-        )
+        with timer.timed("Repository Compilation", metadata={"base_sha": base_sha, "head_sha": head_sha}):
+            # Compile base repository model
+            print(f"[pipeline] Compiling base repository model at {base_sha}")
+            context.base_repository_model = await self._compile_repository_model(
+                context, request, base_sha, "base"
+            )
+            timer.print_progress()
+            
+            # Compile head repository model
+            print(f"[pipeline] Compiling head repository model at {head_sha}")
+            context.head_repository_model = await self._compile_repository_model(
+                context, request, head_sha, "head"
+            )
+            timer.print_progress()
         
         context.mark_repository_compiled()
     
@@ -254,48 +277,49 @@ class Pipeline:
                     context.adapter = cached_model.metadata.get('language')
                 return cached_model
         
-        # Fetch repository snapshot at this SHA
-        print(f"[pipeline] Fetching {label} repository snapshot at {sha}")
-        snapshot = await self.repository_provider.fetch_repository_at_sha(request.repository, sha)  # type: ignore[union-attr]
-        print(f"[pipeline] {label.capitalize()} snapshot: {len(snapshot.files)} files")
-        
-        # Detect language from repository files (only once)
-        if context.language is None:
-            print(f"[pipeline] Detecting language from {len(snapshot.files)} files...")
-            language = self.language_factory.detect_language(snapshot.files)
-            context.language = language
-            context.adapter = language
-            print(f"[pipeline] Detected language: {language}")
-        else:
-            language = context.language
-        
-        # Create language adapter and compile repository model
-        adapter = self.language_factory.create_adapter(language)
-        print(f"[pipeline] Created {label} adapter: {type(adapter).__name__}")
-        
-        repository_input = {
-            "root_directory": request.repository.full_name,
-            "language": language,
-            "files": snapshot.files,
-            "commit_sha": sha,
-        }
-        print(f"[pipeline] Compiling {label} repository model with {len(snapshot.files)} files...")
-        
-        try:
-            repository_model = adapter.compile(repository_input)
-            print(f"[pipeline] {label.capitalize()} model compiled: {len(repository_model.symbols)} symbols, {len(repository_model.entry_points)} entry points")
-        except Exception as exc:
-            print(f"[pipeline] {label.capitalize()} repository compilation failed: {exc}")
-            raise RepositoryCompilationFailed(
-                f"{label.capitalize()} repository compilation failed: {exc}",
-                details={"repository": request.repository.full_name, "language": language, "sha": sha},
-            ) from exc
-        
-        # Cache the compiled model if store is available
-        if self.repository_store is not None:
-            await self.repository_store.save(request.repository.full_name, sha, repository_model)
-        
-        return repository_model
+        with timer.timed("Fetch Repository", metadata={"sha": sha, "label": label}):
+            # Fetch repository snapshot at this SHA
+            print(f"[pipeline] Fetching {label} repository snapshot at {sha}")
+            snapshot = await self.repository_provider.fetch_repository_at_sha(request.repository, sha)  # type: ignore[union-attr]
+            print(f"[pipeline] {label.capitalize()} snapshot: {len(snapshot.files)} files")
+            
+            # Detect language from repository files (only once)
+            if context.language is None:
+                print(f"[pipeline] Detecting language from {len(snapshot.files)} files...")
+                language = self.language_factory.detect_language(snapshot.files)
+                context.language = language
+                context.adapter = language
+                print(f"[pipeline] Detected language: {language}")
+            else:
+                language = context.language
+            
+            # Create language adapter and compile repository model
+            adapter = self.language_factory.create_adapter(language)
+            print(f"[pipeline] Created {label} adapter: {type(adapter).__name__}")
+            
+            repository_input = {
+                "root_directory": request.repository.full_name,
+                "language": language,
+                "files": snapshot.files,
+                "commit_sha": sha,
+            }
+            print(f"[pipeline] Compiling {label} repository model with {len(snapshot.files)} files...")
+            
+            try:
+                repository_model = adapter.compile(repository_input)
+                print(f"[pipeline] {label.capitalize()} model compiled: {len(repository_model.symbols)} symbols, {len(repository_model.entry_points)} entry points")
+            except Exception as exc:
+                print(f"[pipeline] {label.capitalize()} repository compilation failed: {exc}")
+                raise RepositoryCompilationFailed(
+                    f"{label.capitalize()} repository compilation failed: {exc}",
+                    details={"repository": request.repository.full_name, "language": language, "sha": sha},
+                ) from exc
+            
+            # Cache the compiled model if store is available
+            if self.repository_store is not None:
+                await self.repository_store.save(request.repository.full_name, sha, repository_model)
+            
+            return repository_model
     
     async def _fetch_diff(self, context: PipelineContext, request: AnalysisRequest) -> None:
         """
@@ -972,6 +996,11 @@ class Pipeline:
         """
         Serialize LLMContext to a dictionary for API response.
         
+        The compressed IR is serialized in its native compact format —
+        enum IDs, string table indices, and positional tuples are preserved
+        to minimize token count. Consumers can reconstruct the original
+        ReviewContext or decompress the IR as needed.
+        
         Args:
             context: Pipeline context with LLMContext
             
@@ -983,118 +1012,67 @@ class Pipeline:
         
         try:
             llm_ctx = context.llm_context
-            
-            # Helper to resolve string indices
-            strings = llm_ctx.strings.entries
+            strings = llm_ctx.st.entries
             
             def resolve(idx: int) -> str:
                 return strings[idx] if idx < len(strings) else ""
             
             # Serialize string table
-            result = {
-                "strings": list(strings),
+            result: dict[str, Any] = {
+                "st": list(strings),
             }
             
-            # Serialize lookup tables
-            result["files"] = [
-                [resolve(f[0]), resolve(f[1]), resolve(f[2])]
-                for f in llm_ctx.files
+            # Serialize lookup tables — keep as compact lists of ints
+            result["f"] = [list(e) for e in llm_ctx.f]
+            
+            result["sym"] = [
+                [s[0], s[1], s[2], s[3], list(s[4])]
+                for s in llm_ctx.sym
             ]
             
-            result["symbols"] = [
-                [resolve(s[0]), resolve(s[1]), resolve(s[2]), resolve(s[3]), resolve(s[4]), resolve(s[5])]
-                for s in llm_ctx.symbols
-            ]
-            
-            result["behaviors"] = [
-                [resolve(b[0]), resolve(b[1]), resolve(b[2])]
-                for b in llm_ctx.behaviors
-            ]
-            
-            result["references"] = [
-                [resolve(r[0]), resolve(r[1]), resolve(r[2]), resolve(r[3])]
-                for r in llm_ctx.references
-            ]
-            
-            result["endpoints"] = [
-                [resolve(e[0]), resolve(e[1]), resolve(e[2])]
-                for e in llm_ctx.endpoints
-            ]
+            result["bh"] = [list(e) for e in llm_ctx.bh]
+            result["ref"] = [list(e) for e in llm_ctx.ref]
+            result["ep"] = [list(e) for e in llm_ctx.ep]
             
             # Serialize change section
-            classification_idx, scope_idx, file_count, symbol_count, behavior_count = llm_ctx.change_summary
-            result["change_summary"] = {
-                "classification": resolve(classification_idx),
-                "scope": resolve(scope_idx),
-                "file_count": file_count,
-                "symbol_count": symbol_count,
-                "behavior_count": behavior_count,
-            }
+            cls_id, scope_id, file_count, symbol_count, behavior_count = llm_ctx.cs
+            result["cs"] = [cls_id, scope_id, file_count, symbol_count, behavior_count]
             
-            result["change_files"] = []
-            for file_entry in llm_ctx.change_files:
+            result["cf"] = []
+            for file_entry in llm_ctx.cf:
                 file_idx = file_entry[0]
                 changes = file_entry[1]
                 change_list = []
                 for change_entry in changes:
                     sym_idx = change_entry[0]
-                    change_type_idx = change_entry[1]
-                    behavior_change_idxs = change_entry[2]
-                    change_list.append({
-                        "symbol_idx": sym_idx,
-                        "change_type": resolve(change_type_idx),
-                        "behavior_changes": [resolve(bc) for bc in behavior_change_idxs],
-                    })
-                result["change_files"].append({
-                    "file_idx": file_idx,
-                    "changes": change_list,
-                })
+                    ct_id = change_entry[1]
+                    bh_change_ids = list(change_entry[2])
+                    change_list.append([sym_idx, ct_id, bh_change_ids])
+                result["cf"].append([file_idx, change_list])
             
             # Serialize execution section
-            result["execution_graph"] = {
-                "nodes": [],
-                "edges": list(llm_ctx.execution_graph.edges),
+            result["eg"] = {
+                "n": [list(node) for node in llm_ctx.eg.nodes],
+                "e": [list(edge) for edge in llm_ctx.eg.edges],
             }
-            for node in llm_ctx.execution_graph.nodes:
-                result["execution_graph"]["nodes"].append({
-                    "behavior_idx": node[0],
-                    "symbol_idx": node[1],
-                    "kind_idx": node[2],
-                    "depth": node[3],
-                    "changed": node[4],
-                    "shared": node[5],
-                    "reaches_service_idx": node[6],
-                    "reaches_module_idx": node[7],
-                    "reaches_package_idx": node[8],
-                    "reference_idxs": list(node[9]) if len(node) > 9 else [],
-                })
             
-            result["entry_points"] = []
-            for ep in llm_ctx.entry_points:
+            result["epts"] = []
+            for ep in llm_ctx.epts:
                 endpoint_idx, chain_node_idxs, terminal_idx, max_depth = ep
-                result["entry_points"].append({
-                    "endpoint_idx": endpoint_idx,
-                    "chain_node_idxs": list(chain_node_idxs),
-                    "terminal": resolve(terminal_idx),
-                    "max_depth": max_depth,
-                })
+                result["epts"].append([
+                    endpoint_idx,
+                    list(chain_node_idxs),
+                    terminal_idx,
+                    max_depth,
+                ])
             
-            endpoint_idx, depth = llm_ctx.deepest_execution
-            result["deepest_execution"] = {
-                "endpoint_idx": endpoint_idx,
-                "depth": depth,
-            }
+            result["de"] = list(llm_ctx.de)
             
             # Serialize discoveries
-            result["discoveries"] = []
-            for d in llm_ctx.discoveries:
-                id_idx, kind_idx, facts, ref_idxs = d
-                result["discoveries"].append({
-                    "id": resolve(id_idx),
-                    "kind": resolve(kind_idx),
-                    "facts": facts,
-                    "reference_idxs": list(ref_idxs),
-                })
+            result["disc"] = []
+            for d in llm_ctx.disc:
+                id_idx, kind_id, facts, ref_idxs = d
+                result["disc"].append([id_idx, kind_id, facts, list(ref_idxs)])
             
             return result
         except Exception as exc:
@@ -1109,60 +1087,120 @@ class Pipeline:
         language: str = "",
     ) -> dict[str, Any]:
         """
-        Generate LLM comment from ReviewContext.
+        Generate engineering briefing from LLMContext via LLM.
         
-        The LLM consumes only ReviewContext — the public ABI of Factor.
+        The compressed LLMContext is sent to the LLM alongside the
+        Presentation Compiler prompt, which instructs the model to
+        produce an engineering briefing — not a review.
         
         Args:
-            context: Pipeline context with ReviewContext
+            context: Pipeline context with LLMContext
             repository: Repository name
             pr_number: PR number
             language: Programming language
             
         Returns:
-            Dictionary with generated comment, metadata, and structured LLM response
-            
-        Raises:
-            PipelineExecutionError: If generation fails completely
+            Dictionary with generated briefing, metadata, raw LLM output
         """
         if context.review_context is None:
             raise PipelineExecutionError("No ReviewContext available for LLM comment generation")
+        if context.llm_context is None:
+            raise PipelineExecutionError("No LLMContext available for LLM comment generation")
         
         try:
+            from openai import OpenAI
             from api.settings import get_settings
             
             settings = get_settings()
             
-            # Build LLM context from ReviewContext
-            llm_context = self.build_llm_context(context)
+            # Serialize the compressed LLMContext
+            llm_context_serialized = self.serialize_llm_context(context)
+            llm_context_json = json.dumps(llm_context_serialized, indent=2)
             
-            # Build prompts from ReviewContext
+            # Build the Presentation Compiler prompt
             system_prompt = (
-                "You are a code review assistant. "
-                "Analyze the following engineering context and produce a structured review. "
-                "Only communicate deterministic discoveries. "
-                "Never invent new behaviors. "
-                "Never speculate about bugs. "
-                "Never recommend code changes. "
-                "Only summarize deterministic discoveries."
+                "You are Factor's Presentation Compiler.\n\n"
+                "The provided `llm_context` contains deterministic engineering facts. "
+                "Do not review code, speculate, recommend changes, or invent information.\n\n"
+                "Your job is to create an engineering briefing that gives the reader an immediate "
+                '\u201caha\u201d moment.\n\n'
+                "Do not answer \u201cWhat changed?\u201d\n\n"
+                "Answer:\n"
+                "\u201cWhy do I suddenly understand this PR much better than I did from GitHub alone?\u201d\n\n"
+                "Prioritize:\n"
+                "- Hidden relationships\n"
+                "- Unexpected execution paths\n"
+                "- Blast radius and scale\n"
+                "- Hidden consequences\n"
+                "- Connected context\n"
+                "- Manual investigation eliminated\n\n"
+                "Prefer consequences over implementation.\n"
+                "Prefer relationships over lists.\n"
+                "Prefer quantities over names.\n"
+                "Compress aggressively. Every sentence should reveal something an experienced engineer "
+                "is unlikely to discover quickly by reading the PR.\n\n"
+                "The briefing should make the reader think:\n"
+                '- \u201cI didn\u2019t know that.\u201d\n'
+                '- \u201cI wouldn\u2019t have found that this quickly.\u201d\n'
+                '- \u201cThat\u2019s a much larger change than I expected.\u201d\n'
+                '- \u201cThis replaced the investigation I normally do.\u201d\n\n'
+                "## Output\n\n"
+                "# Biggest Discovery\n"
+                "One sentence describing the most important architectural or operational consequence.\n\n"
+                "# Why It Matters\n"
+                "3\u20135 bullets explaining the hidden relationships or consequences introduced by the change.\n\n"
+                "# Hidden Reach\n"
+                "Show how the change propagates through the system "
+                "(services, APIs, events, databases, consumers, etc.). "
+                "Prefer connected chains over lists.\n\n"
+                "# Scale\n"
+                "Quantify the impact "
+                "(files, symbols, behaviors, services, endpoints, consumers, execution paths, etc.) "
+                "to demonstrate the true size of the change.\n\n"
+                "# Validation Context\n"
+                "Summarize deterministic validation evidence and relate it to the affected execution paths. "
+                "Do not speculate about missing tests.\n\n"
+                "# Investigation Replaced\n"
+                "List the engineering work this analysis eliminated "
+                "(dependency tracing, execution mapping, downstream impact analysis, validation discovery, etc.).\n\n"
+                "If a section doesn\u2019t increase understanding beyond what GitHub already shows, omit it."
             )
             
             user_prompt = (
                 f"Repository: {repository or context.repository}\n"
                 f"PR: {pr_number}\n"
                 f"Language: {language or context.language or 'unknown'}\n\n"
-                f"ReviewContext:\n{llm_context}"
+                f"LLMContext:\n{llm_context_json}"
             )
+            
+            # Call the LLM
+            client = OpenAI(
+                api_key=settings.AI_API_KEY,
+                base_url=settings.AI_API_BASE_URL,
+            )
+            
+            response = client.chat.completions.create(
+                model=settings.AI_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.0,
+                max_tokens=4096,
+            )
+            
+            raw_output = response.choices[0].message.content if response.choices else ""
+            model_used = response.model if hasattr(response, 'model') else settings.AI_MODEL
             
             return {
                 "generated": True,
-                "model": "review_context",
-                "comment": "## Analysis Complete\n\nReviewContext generated. LLM comment generation uses ReviewContext as input.",
-                "is_valid": True,
+                "model": model_used,
+                "comment": raw_output or "## Analysis Complete\n\nLLM returned empty response.",
+                "is_valid": bool(raw_output),
                 "validation_errors": [],
                 "truncated": False,
-                "llm_response": llm_context,
-                "llm_raw_output": None,
+                "llm_response": llm_context_serialized,
+                "llm_raw_output": raw_output,
             }
             
         except Exception as exc:
