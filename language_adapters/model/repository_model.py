@@ -162,6 +162,7 @@ class RepositoryModel:
     test_definitions: tuple[TestDefinition, ...] = field(default_factory=tuple)
     configuration_references: tuple[ConfigurationReference, ...] = field(default_factory=tuple)
     metadata: dict[str, Any] = field(default_factory=dict)
+    _symbol_map: dict[str, Symbol] = field(default_factory=dict, init=False, repr=False, compare=False)
 
     def __post_init__(self):
         """Validate repository model after initialization."""
@@ -184,12 +185,12 @@ class RepositoryModel:
         if isinstance(self.metadata, dict):
             object.__setattr__(self, 'metadata', dict(self.metadata))
 
+        # Build O(1) symbol map
+        object.__setattr__(self, '_symbol_map', {s.id: s for s in self.symbols})
+
     def get_symbol_by_id(self, symbol_id: str) -> Symbol | None:
         """Get a symbol by its identifier."""
-        for symbol in self.symbols:
-            if symbol.id == symbol_id:
-                return symbol
-        return None
+        return self._symbol_map.get(symbol_id)
 
     def get_symbols_by_kind(self, kind: str) -> tuple[Symbol, ...]:
         """Get all symbols of a specific kind."""

@@ -246,6 +246,8 @@ class CallEntry:
     call_type: str = "direct"
     file: str = ""
     line: int = 0
+    receiver: str = ""
+    caller_parent: str = ""
 
 
 @dataclass(frozen=True)

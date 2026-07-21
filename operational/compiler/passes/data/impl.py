@@ -143,27 +143,11 @@ class DataCompilationPass(OperationalCompilerPass):
         model = context.composed_model
         if model is None:
             return context
-        
-        repo = model.repository
-        behavior = model.behavior
-        change = model.change
 
-        # Collect all affected symbol IDs
-        affected_symbol_ids: set[str] = set()
-        for b in behavior.behaviors:
-            affected_symbol_ids.add(b.root_symbol_id)
-            affected_symbol_ids.update(b.changed_symbol_ids)
-        for s in change.added_symbols:
-            affected_symbol_ids.add(s.id)
-        for s in change.removed_symbols:
-            affected_symbol_ids.add(s.id)
-        for ms in change.modified_symbols:
-            affected_symbol_ids.add(ms.symbol.id)
-
-        symbol_map: dict[str, Symbol] = {s.id: s for s in repo.symbols}
-
-        # Trace all symbols reachable from affected symbols via call graph
-        reachable_ids = self._compute_reachable_ids(repo, affected_symbol_ids)
+        # Use cached values from context
+        affected_symbol_ids = context.get_affected_symbol_ids()
+        symbol_map = context.get_symbol_map()
+        reachable_ids = context.get_reachable_ids()
 
         # Combine affected + reachable for data analysis
         all_relevant_ids = affected_symbol_ids | reachable_ids
@@ -259,15 +243,16 @@ class DataCompilationPass(OperationalCompilerPass):
         Uses BFS to traverse the call graph outward from seed symbols.
         """
         # Build adjacency: caller -> list of callees
+        from collections import deque
         adj: dict[str, list[str]] = defaultdict(list)
         for edge in repo.call_graph.edges:
             adj[edge.caller_id].append(edge.callee_id)
 
         reachable: set[str] = set()
-        queue: list[str] = list(seed_ids)
+        queue: deque[str] = deque(seed_ids)
 
         while queue:
-            current = queue.pop(0)
+            current = queue.popleft()
             if current in reachable:
                 continue
             reachable.add(current)

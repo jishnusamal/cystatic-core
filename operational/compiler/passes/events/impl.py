@@ -129,31 +129,11 @@ class EventCompilationPass(OperationalCompilerPass):
         model = context.composed_model
         if model is None:
             return context
-        
-        repo = model.repository
-        behavior = model.behavior
-        change = model.change
 
-        # Collect all affected symbol IDs
-        affected_symbol_ids: set[str] = set()
-        for b in behavior.behaviors:
-            affected_symbol_ids.add(b.root_symbol_id)
-            affected_symbol_ids.update(b.changed_symbol_ids)
-        for s in change.added_symbols:
-            affected_symbol_ids.add(s.id)
-        for s in change.removed_symbols:
-            affected_symbol_ids.add(s.id)
-        for ms in change.modified_symbols:
-            affected_symbol_ids.add(ms.symbol.id)
-
-        symbol_map: dict[str, Symbol] = {s.id: s for s in repo.symbols}
-
-        # Trace reachable symbols via call graph
-        adj: dict[str, list[str]] = defaultdict(list)
-        for edge in repo.call_graph.edges:
-            adj[edge.caller_id].append(edge.callee_id)
-
-        reachable_ids = self._bfs_reachable(adj, affected_symbol_ids)
+        # Use cached values from context
+        affected_symbol_ids = context.get_affected_symbol_ids()
+        symbol_map = context.get_symbol_map()
+        reachable_ids = context.get_reachable_ids()
 
         all_relevant_ids = affected_symbol_ids | reachable_ids
 
@@ -164,6 +144,11 @@ class EventCompilationPass(OperationalCompilerPass):
         workers: list[Symbol] = []
         event_graph_edges: list[tuple[str, str, str]] = []
 
+        # Map event_name -> list of consumer symbol IDs
+        consumers_by_event: dict[str, list[str]] = defaultdict(list)
+        # Store what each symbol publishes
+        published_by_symbol: dict[str, list[str]] = {}
+
         for sid in all_relevant_ids:
             sym = symbol_map.get(sid)
             if sym is None:
@@ -171,11 +156,16 @@ class EventCompilationPass(OperationalCompilerPass):
 
             # Check for event publishing
             pub_events = self._detect_published_events(sym)
-            published_events.extend((evt, sid) for evt in pub_events)
+            if pub_events:
+                published_events.extend((evt, sid) for evt in pub_events)
+                published_by_symbol[sid] = pub_events
 
             # Check for event consumption
             con_events = self._detect_consumed_events(sym)
-            consumed_events.extend((evt, sid) for evt in con_events)
+            if con_events:
+                consumed_events.extend((evt, sid) for evt in con_events)
+                for evt in con_events:
+                    consumers_by_event[evt].append(sid)
 
             # Check for queue references
             queue_name = self._detect_queue(sym)
@@ -186,15 +176,12 @@ class EventCompilationPass(OperationalCompilerPass):
             if self._is_worker(sym):
                 workers.append(sym)
 
-            # Build event graph edges
-            for evt in pub_events:
-                # Find consumers of this event among reachable symbols
-                for other_sid in all_relevant_ids:
-                    other_sym = symbol_map.get(other_sid)
-                    if other_sym and other_sid != sid:
-                        con_evts = self._detect_consumed_events(other_sym)
-                        if evt in con_evts:
-                            event_graph_edges.append((sid, evt, other_sid))
+        # Build event graph edges using the pre-classified mappings
+        for sid, pub_evts in published_by_symbol.items():
+            for evt in pub_evts:
+                for other_sid in consumers_by_event.get(evt, []):
+                    if other_sid != sid:
+                        event_graph_edges.append((sid, evt, other_sid))
 
         # Build async chains from event graph
         async_chains = self._build_async_chains(event_graph_edges)
@@ -229,10 +216,11 @@ class EventCompilationPass(OperationalCompilerPass):
         seed_ids: set[str],
     ) -> set[str]:
         """BFS to find all reachable symbol IDs from seed IDs."""
+        from collections import deque
         reachable: set[str] = set()
-        queue: list[str] = list(seed_ids)
+        queue: deque[str] = deque(seed_ids)
         while queue:
-            current = queue.pop(0)
+            current = queue.popleft()
             if current in reachable:
                 continue
             reachable.add(current)

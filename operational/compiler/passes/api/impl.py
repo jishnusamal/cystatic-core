@@ -99,22 +99,28 @@ class APICompilationPass(OperationalCompilerPass):
             return context
         
         repo = model.repository
-        behavior = model.behavior
-        change = model.change
 
-        # Collect all affected symbol IDs
-        affected_symbol_ids: set[str] = set()
-        for b in behavior.behaviors:
-            affected_symbol_ids.add(b.root_symbol_id)
-            affected_symbol_ids.update(b.changed_symbol_ids)
-        for s in change.added_symbols:
-            affected_symbol_ids.add(s.id)
-        for s in change.removed_symbols:
-            affected_symbol_ids.add(s.id)
-        for ms in change.modified_symbols:
-            affected_symbol_ids.add(ms.symbol.id)
+        # Use cached values from context
+        affected_symbol_ids = context.get_affected_symbol_ids()
+        symbol_map = context.get_symbol_map()
+        callers_of = context.get_callers_of()
 
-        symbol_map: dict[str, Symbol] = {s.id: s for s in repo.symbols}
+        # Build reverse reachability: find all symbols that can reach an affected symbol
+        # within 50 hops in the call graph (equivalent to traversing reverse call graph)
+        from collections import deque
+        can_reach_affected: set[str] = set(affected_symbol_ids)
+        queue: deque[tuple[str, int]] = deque((sid, 0) for sid in affected_symbol_ids)
+        visited_reverse: set[str] = set(affected_symbol_ids)
+
+        while queue:
+            current, depth = queue.popleft()
+            if depth >= 50:
+                continue
+            for caller in callers_of.get(current, []):
+                if caller not in visited_reverse:
+                    visited_reverse.add(caller)
+                    can_reach_affected.add(caller)
+                    queue.append((caller, depth + 1))
 
         # Classify entry points by kind
         rest_endpoints: list[tuple[str, str, str]] = []
@@ -125,15 +131,9 @@ class APICompilationPass(OperationalCompilerPass):
         worker_entries: list[tuple[str, str]] = []
 
         for ep in repo.entry_points:
-            # Check if this entry point's handler is affected
-            handler_affected = (
-                ep.handler_id in affected_symbol_ids
-            )
-
-            # Also check if any changed symbols are reachable from this entry point
-            handler_reachable = self._is_reachable_to_affected(
-                repo, ep.handler_id, affected_symbol_ids
-            )
+            # Check if this entry point's handler is affected or can reach an affected symbol
+            handler_affected = ep.handler_id in affected_symbol_ids
+            handler_reachable = ep.handler_id in can_reach_affected
 
             if not handler_affected and not handler_reachable:
                 continue
@@ -173,6 +173,7 @@ class APICompilationPass(OperationalCompilerPass):
                 worker_entries.append((worker_name, ep.handler_id))
 
         # Also check changed endpoints from the change model
+        change = model.change
         for changed_ep in change.changed_endpoints:
             parts = []
             if changed_ep.old_endpoint:
@@ -229,12 +230,12 @@ class APICompilationPass(OperationalCompilerPass):
         """
         Check if any affected symbol is reachable from start_id via the call graph.
 
-        Uses BFS limited to a reasonable depth.
+        Deprecated: Use reverse reachability set instead.
         """
         if start_id in affected_ids:
             return True
 
-        # Build adjacency: caller -> list of callees
+        from collections import deque
         adj: dict[str, list[str]] = {}
         for edge in repo.call_graph.edges:
             if edge.caller_id not in adj:
@@ -242,14 +243,14 @@ class APICompilationPass(OperationalCompilerPass):
             adj[edge.caller_id].append(edge.callee_id)
 
         visited: set[str] = set()
-        queue: list[str] = [start_id]
+        queue: deque[str] = deque([start_id])
         depth = 0
         max_depth = 50  # Safety limit
 
         while queue and depth < max_depth:
             level_size = len(queue)
             for _ in range(level_size):
-                current = queue.pop(0)
+                current = queue.popleft()
                 if current in visited:
                     continue
                 visited.add(current)

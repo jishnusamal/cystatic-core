@@ -15,6 +15,7 @@ This stage is designed so that future lazy expansion (selective compilation
 of a symbol neighborhood) can be supported without reshaping the API.
 """
 
+from collections import deque
 import sys
 import time
 from typing import Any
@@ -226,45 +227,91 @@ class SemanticCompiler:
         call_edges: list[CallEdge] = []
         self._watchdog_last_check = start
         
-        # INSTRUMENTATION: Track all helpers for root-cause analysis
-        callee_lookup_time = 0.0
-        callee_lookup_count = 0
-        callee_iterations = 0
-        build_symbol_id_time = 0.0
-        linear_scan_count = 0
-        linear_scan_iterations = 0
-        
         # Build callee name index ONCE for O(1) lookups - CRITICAL for performance
         callee_name_to_ids: dict[str, list[str]] = {}
         for sym_id, symbol in symbol_index.items():
             callee_name_to_ids.setdefault(symbol.name, []).append(sym_id)
-        
+
+        # Build local/imported/method resolution lookup indexes once
+        resolved_imports: dict[tuple[str, str], str] = {}
+        for edge in reference_edges:
+            if "::import::" in edge.source_id:
+                parts = edge.source_id.split("::import::")
+                if len(parts) == 2:
+                    file_uri, name = parts
+                    file_path = file_uri.split("://")[-1]
+                    resolved_imports[(file_path, name)] = edge.target_id
+
+        file_symbol_map: dict[tuple[str, str], Symbol] = {}
+        class_method_map: dict[tuple[str, str, str], Symbol] = {}
+        for symbol in symbols:
+            if symbol.kind == SymbolKind.METHOD:
+                if "#" in symbol.id:
+                    parts = symbol.id.split("#")[-1].split(".")
+                    if len(parts) == 2:
+                        class_name, method_name = parts
+                        class_method_map[(symbol.file, class_name, method_name)] = symbol
+            elif symbol.kind == SymbolKind.IMPORT:
+                continue
+            else:
+                file_symbol_map[(symbol.file, symbol.name)] = symbol
+
+        class_bases_map: dict[str, list[str]] = {}
+        for file_index in index.files:
+            for rel in file_index.type_relationships:
+                if rel.relation_type == "extends":
+                    source_id = f"{language}://{file_index.path}#{rel.source}"
+                    class_bases_map.setdefault(source_id, []).append(rel.target)
+
+        def resolve_base_class_id(file_path: str, base_name: str) -> str | None:
+            local_id = f"{language}://{file_path}#{base_name}"
+            if local_id in symbol_index:
+                return local_id
+            imported_id = resolved_imports.get((file_path, base_name))
+            if imported_id:
+                return imported_id
+            for candidate in callee_name_to_ids.get(base_name, []):
+                if "#" in candidate and "." not in candidate.split("#")[-1]:
+                    return candidate
+            return None
+
+        resolved_inheritance_map: dict[str, list[str]] = {}
+        for class_id, bases in class_bases_map.items():
+            f_path = class_id.split("://")[-1].split("#")[0]
+            resolved_bases = []
+            for base in bases:
+                base_id = resolve_base_class_id(f_path, base)
+                if base_id:
+                    resolved_bases.append(base_id)
+            resolved_inheritance_map[class_id] = resolved_bases
+
         # Progress reporting for large call sets
         total_calls_to_resolve = sum(len(f.calls) for f in index.files)
         last_progress = -1
         
         for file_index in index.files:
             for call in file_index.calls:
-                # Time the callee lookup separately
-                lookup_start = time.perf_counter()
+                caller_id = _build_symbol_id(
+                    language,
+                    file_index.path,
+                    call.caller,
+                    kind="method" if call.caller_parent else "function",
+                    parent=call.caller_parent
+                )
                 
-                # Track _build_symbol_id time
-                id_start = time.perf_counter()
-                caller_id = _build_symbol_id(language, file_index.path, call.caller, "function")
-                build_symbol_id_time += time.perf_counter() - id_start
-                
-                # Track _find_callee_id with aggregate statistics
-                callee_id, iterations = self._find_callee_id(call.callee, caller_id, callee_name_to_ids, symbol_index)
-                callee_iterations += iterations
-                
-                # Track linear scans (>100k iterations)
-                if iterations > 100000:
-                    linear_scan_count += 1
-                    linear_scan_iterations += iterations
-                
-                lookup_time = time.perf_counter() - lookup_start
-                callee_lookup_time += lookup_time
-                callee_lookup_count += 1
+                callee_id = self._resolve_callee_id(
+                    call.callee,
+                    call.receiver,
+                    caller_id,
+                    file_index.path,
+                    language,
+                    symbol_index,
+                    class_method_map,
+                    file_symbol_map,
+                    resolved_imports,
+                    resolved_inheritance_map,
+                    callee_name_to_ids,
+                )
                 
                 if callee_id:
                     call_edges.append(CallEdge(
@@ -300,21 +347,9 @@ class SemanticCompiler:
         print(f"[semantic] END Call Graph ({elapsed:.2f}s) - {len(call_edges)} edges")
         
         # Print detailed analysis
-        if callee_lookup_count > 0:
-            print(f"\n  [analysis] CALL GRAPH BREAKDOWN:")
-            print(f"    Total calls processed: {callee_lookup_count}")
-            print(f"    Total time: {elapsed:.2f}s")
-            print(f"    Average per call: {elapsed/callee_lookup_count*1000:.2f}ms")
-            print(f"    ")
-            print(f"    _build_symbol_id: {build_symbol_id_time:.2f}s ({build_symbol_id_time/elapsed*100:.1f}%)")
-            print(f"    _find_callee_id: {callee_lookup_time:.2f}s ({callee_lookup_time/elapsed*100:.1f}%)")
-            print(f"    Total iterations: {callee_iterations:,}")
-            print(f"    ")
-            print(f"    Linear scans detected: {linear_scan_count}")
-            if linear_scan_count > 0:
-                print(f"    Linear scan avg iterations: {linear_scan_iterations/linear_scan_count:,.0f}")
-                print(f"    Linear scan total iterations: {linear_scan_iterations:,}")
-                print(f"    Linear scan % of total: {linear_scan_iterations/callee_iterations*100:.1f}%")
+        print(f"\n  [analysis] CALL GRAPH BREAKDOWN:")
+        print(f"    Total calls resolved: {len(call_edges)}")
+        print(f"    Total time: {elapsed:.2f}s")
         
         # Stage 4: Build type relationships
         print(f"[semantic] START Resolve Type Relationships")
@@ -614,79 +649,99 @@ class SemanticCompiler:
         if elapsed > 0.01:  # Only log if >10ms
             print(f"    [hotspot] resolve_import_references: {elapsed*1000:.2f}ms for {len(imported_names)} names")
 
-    def _resolve_call(
+    def _resolve_callee_id(
         self,
-        call: Any,
+        callee_name: str,
+        receiver: str,
+        caller_id: str,
         file_path: str,
         language: str,
         symbol_index: dict[str, Symbol],
+        class_method_map: dict[tuple[str, str, str], Symbol],
+        file_symbol_map: dict[tuple[str, str], Symbol],
+        resolved_imports: dict[tuple[str, str], str],
+        resolved_inheritance_map: dict[str, list[str]],
         callee_name_to_ids: dict[str, list[str]],
-    ) -> CallEdge | None:
-        """Resolve a call entry into a CallEdge."""
-        if not call.caller or not call.callee:
-            return None
+    ) -> str | None:
+        """Resolve a callee name to its symbol ID using pre-built lookup indexes."""
+        # Case 1: Method call on self or cls
+        if receiver in ("self", "cls"):
+            if "#" in caller_id:
+                parts = caller_id.split("#")[-1].split(".")
+                if len(parts) == 2:
+                    class_name = parts[0]
+                    class_id = f"{language}://{file_path}#{class_name}"
+                    
+                    method_sym = class_method_map.get((file_path, class_name, callee_name))
+                    if method_sym:
+                        return method_sym.id
+                    
+                    queue = deque(resolved_inheritance_map.get(class_id, []))
+                    visited = {class_id}
+                    while queue:
+                        base_id = queue.popleft()
+                        if base_id in visited:
+                            continue
+                        visited.add(base_id)
+                        
+                        if "#" in base_id:
+                            base_uri, base_class = base_id.split("#")
+                            base_file = base_uri.split("://")[-1]
+                            method_sym = class_method_map.get((base_file, base_class, callee_name))
+                            if method_sym:
+                                return method_sym.id
+                            queue.extend(resolved_inheritance_map.get(base_id, []))
 
-        # INSTRUMENTATION: Track string work
-        build_id_start = time.perf_counter()
-        caller_id = _build_symbol_id(language, file_path, call.caller, "function")
-        build_id_time = time.perf_counter() - build_id_start
-        
-        callee_id, _ = self._find_callee_id(call.callee, caller_id, callee_name_to_ids, symbol_index)
-
-        if not callee_id:
-            return None
-
-        return CallEdge(
-            caller_id=caller_id,
-            callee_id=callee_id,
-            call_type=call.call_type,
-            file=file_path,
-            line=call.line,
-            evidence=Evidence(
-                file_location=FileLocation(
-                    file=file_path,
-                    start_line=max(call.line, 1),
-                    end_line=max(call.line, 1),
-                ),
-            ),
-        )
-
-    def _find_callee_id(
-        self,
-        callee_name: str,
-        caller_id: str,
-        callee_name_to_ids: dict[str, list[str]],
-        symbol_index: dict[str, Symbol],
-    ) -> tuple[str | None, int]:
-        """Find the symbol ID for a callee name using index.
-        
-        Args:
-            callee_name: Name of the callee
-            caller_id: ID of the caller
-            callee_name_to_ids: Index mapping names to symbol IDs
-            symbol_index: Full symbol index for pattern matching
+        # Case 2: Receiver specified (e.g. object or module name)
+        if receiver:
+            imported_target = resolved_imports.get((file_path, receiver))
+            if imported_target:
+                if "#" in imported_target:
+                    base_uri, class_name = imported_target.split("#")
+                    target_file = base_uri.split("://")[-1]
+                    method_sym = class_method_map.get((target_file, class_name, callee_name))
+                    if method_sym:
+                        return method_sym.id
+                    queue = deque(resolved_inheritance_map.get(imported_target, []))
+                    visited = {imported_target}
+                    while queue:
+                        base_id = queue.popleft()
+                        if base_id in visited:
+                            continue
+                        visited.add(base_id)
+                        if "#" in base_id:
+                            base_uri, base_class = base_id.split("#")
+                            base_file = base_uri.split("://")[-1]
+                            method_sym = class_method_map.get((base_file, base_class, callee_name))
+                            if method_sym:
+                                return method_sym.id
+                            queue.extend(resolved_inheritance_map.get(base_id, []))
+                else:
+                    target_file = imported_target.split("://")[-1].split("::")[0]
+                    potential_id = f"{language}://{target_file}::{callee_name}"
+                    if potential_id in symbol_index:
+                        return potential_id
             
-        Returns:
-            Tuple of (symbol_id or None, iteration count)
-        """
-        iterations = 0
-        
-        # Try pattern match first (O(1))
-        if "::" in caller_id:
-            parts = caller_id.split("::")
-            if len(parts) == 2:
-                potential_id = f"{parts[0]}::{callee_name}"
-                if potential_id in symbol_index:
-                    return potential_id, 1
-        
-        # Try exact name match using index (O(1) instead of O(S))
+            local_class = file_symbol_map.get((file_path, receiver))
+            if local_class and local_class.kind == SymbolKind.CLASS:
+                method_sym = class_method_map.get((file_path, receiver, callee_name))
+                if method_sym:
+                    return method_sym.id
+
+        # Case 3: No receiver (simple call)
+        local_sym = file_symbol_map.get((file_path, callee_name))
+        if local_sym:
+            return local_sym.id
+            
+        imported_target = resolved_imports.get((file_path, callee_name))
+        if imported_target:
+            return imported_target
+
         candidates = callee_name_to_ids.get(callee_name, [])
-        iterations = len(candidates) + 1  # Account for pattern match attempt
-        
         if candidates:
-            return candidates[0], iterations  # Return first match
-        
-        return None, iterations
+            return candidates[0]
+
+        return None
 
     def _create_type_edge(
         self,

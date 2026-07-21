@@ -53,19 +53,30 @@ class CallGraph:
     Contains all direct call relationships between symbols in the repository.
     """
     edges: tuple[CallEdge, ...] = field(default_factory=tuple)
+    _outgoing: dict[str, tuple[CallEdge, ...]] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _incoming: dict[str, tuple[CallEdge, ...]] = field(default_factory=dict, init=False, repr=False, compare=False)
 
     def __post_init__(self):
-        """Ensure edges is a tuple."""
+        """Ensure edges is a tuple and build O(1) adjacency indexes."""
         if isinstance(self.edges, list):
             object.__setattr__(self, 'edges', tuple(self.edges))
 
+        outgoing: dict[str, list[CallEdge]] = {}
+        incoming: dict[str, list[CallEdge]] = {}
+        for edge in self.edges:
+            outgoing.setdefault(edge.caller_id, []).append(edge)
+            incoming.setdefault(edge.callee_id, []).append(edge)
+
+        object.__setattr__(self, '_outgoing', {k: tuple(v) for k, v in outgoing.items()})
+        object.__setattr__(self, '_incoming', {k: tuple(v) for k, v in incoming.items()})
+
     def get_calls_for(self, symbol_id: str) -> tuple[CallEdge, ...]:
         """Get all call edges where this symbol is the caller."""
-        return tuple(e for e in self.edges if e.caller_id == symbol_id)
+        return self._outgoing.get(symbol_id, ())
 
     def get_called_by(self, symbol_id: str) -> tuple[CallEdge, ...]:
         """Get all call edges where this symbol is the callee."""
-        return tuple(e for e in self.edges if e.callee_id == symbol_id)
+        return self._incoming.get(symbol_id, ())
 
 
 @dataclass(frozen=True)
@@ -100,19 +111,30 @@ class ReferenceGraph:
     Contains all reference relationships between symbols (imports, inheritance, etc.).
     """
     edges: tuple[ReferenceEdge, ...] = field(default_factory=tuple)
+    _outgoing: dict[str, tuple[ReferenceEdge, ...]] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _incoming: dict[str, tuple[ReferenceEdge, ...]] = field(default_factory=dict, init=False, repr=False, compare=False)
 
     def __post_init__(self):
-        """Ensure edges is a tuple."""
+        """Ensure edges is a tuple and build O(1) adjacency indexes."""
         if isinstance(self.edges, list):
             object.__setattr__(self, 'edges', tuple(self.edges))
 
+        outgoing: dict[str, list[ReferenceEdge]] = {}
+        incoming: dict[str, list[ReferenceEdge]] = {}
+        for edge in self.edges:
+            outgoing.setdefault(edge.source_id, []).append(edge)
+            incoming.setdefault(edge.target_id, []).append(edge)
+
+        object.__setattr__(self, '_outgoing', {k: tuple(v) for k, v in outgoing.items()})
+        object.__setattr__(self, '_incoming', {k: tuple(v) for k, v in incoming.items()})
+
     def get_references_for(self, symbol_id: str) -> tuple[ReferenceEdge, ...]:
         """Get all reference edges where this symbol is the source."""
-        return tuple(e for e in self.edges if e.source_id == symbol_id)
+        return self._outgoing.get(symbol_id, ())
 
     def get_referenced_by(self, symbol_id: str) -> tuple[ReferenceEdge, ...]:
         """Get all reference edges where this symbol is the target."""
-        return tuple(e for e in self.edges if e.target_id == symbol_id)
+        return self._incoming.get(symbol_id, ())
 
 
 @dataclass(frozen=True)
@@ -152,24 +174,36 @@ class TypeRelationshipGraph:
     and generic type reference relationships.
     """
     edges: tuple[TypeRelationshipEdge, ...] = field(default_factory=tuple)
+    _outgoing: dict[str, tuple[TypeRelationshipEdge, ...]] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _incoming: dict[str, tuple[TypeRelationshipEdge, ...]] = field(default_factory=dict, init=False, repr=False, compare=False)
 
     def __post_init__(self):
-        """Ensure edges is a tuple."""
+        """Ensure edges is a tuple and build O(1) adjacency indexes."""
         if isinstance(self.edges, list):
             object.__setattr__(self, 'edges', tuple(self.edges))
 
+        outgoing: dict[str, list[TypeRelationshipEdge]] = {}
+        incoming: dict[str, list[TypeRelationshipEdge]] = {}
+        for edge in self.edges:
+            outgoing.setdefault(edge.source_id, []).append(edge)
+            incoming.setdefault(edge.target_id, []).append(edge)
+
+        object.__setattr__(self, '_outgoing', {k: tuple(v) for k, v in outgoing.items()})
+        object.__setattr__(self, '_incoming', {k: tuple(v) for k, v in incoming.items()})
+
     def get_relationships_for(self, symbol_id: str) -> tuple[TypeRelationshipEdge, ...]:
         """Get all type relationships where this symbol is the source."""
-        return tuple(e for e in self.edges if e.source_id == symbol_id)
+        return self._outgoing.get(symbol_id, ())
 
     def get_relationships_to(self, symbol_id: str) -> tuple[TypeRelationshipEdge, ...]:
         """Get all type relationships where this symbol is the target."""
-        return tuple(e for e in self.edges if e.target_id == symbol_id)
+        return self._incoming.get(symbol_id, ())
 
     def get_inheritance_chain(self, symbol_id: str) -> tuple[TypeRelationshipEdge, ...]:
         """Get all inheritance relationships for a symbol."""
+        rels_from = self.get_relationships_for(symbol_id)
+        rels_to = self.get_relationships_to(symbol_id)
         return tuple(
-            e for e in self.edges
-            if (e.source_id == symbol_id or e.target_id == symbol_id)
-            and e.relation_type in ('extends', 'implements')
+            e for e in (rels_from + rels_to)
+            if e.relation_type in ('extends', 'implements')
         )

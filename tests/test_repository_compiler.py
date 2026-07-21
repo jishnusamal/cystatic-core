@@ -263,3 +263,36 @@ class TestPythonLanguageAdapter:
         assert "python://main.py::get_users" in handler_ids
         assert "python://main.py::create_item" in handler_ids
         assert "python://main.py::process_checkout" in handler_ids
+
+    def test_call_graph_method_resolution(self):
+        """Test that self, cls, base-class, and imports are correctly resolved."""
+        files = {
+            "base.py": """
+class Base:
+    def common(self):
+        pass
+""",
+            "sub.py": """
+from base import Base
+
+class Sub(Base):
+    def child(self):
+        self.common()
+        self.child()
+"""
+        }
+        adapter = PythonLanguageAdapter()
+        model = adapter.compile({"files": files})
+        
+        # Verify Sub.child has outgoing calls
+        child_id = "python://sub.py#Sub.child"
+        common_id = "python://base.py#Base.common"
+        
+        calls = model.get_calls_for(child_id)
+        assert len(calls) == 2
+        
+        callee_ids = {c.callee_id for c in calls}
+        # Correctly resolves self.common() to Base.common through inheritance
+        assert common_id in callee_ids
+        # Correctly resolves self.child() recursively to Sub.child
+        assert child_id in callee_ids

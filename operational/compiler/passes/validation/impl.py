@@ -128,19 +128,26 @@ class ValidationCompilationPass(OperationalCompilerPass):
         behavior = model.behavior
         change = model.change
 
-        # Collect all affected symbol IDs
-        affected_symbol_ids: set[str] = set()
-        for b in behavior.behaviors:
-            affected_symbol_ids.add(b.root_symbol_id)
-            affected_symbol_ids.update(b.changed_symbol_ids)
-        for s in change.added_symbols:
-            affected_symbol_ids.add(s.id)
-        for s in change.removed_symbols:
-            affected_symbol_ids.add(s.id)
-        for ms in change.modified_symbols:
-            affected_symbol_ids.add(ms.symbol.id)
+        # Use cached values from context
+        affected_symbol_ids = context.get_affected_symbol_ids()
+        symbol_map = context.get_symbol_map()
 
-        symbol_map: dict[str, Symbol] = {s.id: s for s in repo.symbols}
+        # Build index/lookup tables for references and call graph
+        from collections import defaultdict
+        ref_by_target: dict[str, set[str]] = defaultdict(set)
+        if repo.reference_graph and repo.reference_graph.edges:
+            for edge in repo.reference_graph.edges:
+                ref_by_target[edge.target_id].add(edge.source_id)
+
+        callees_of = context.get_callees_of()
+        callers_of = context.get_callers_of()
+
+        # Pre-compute all symbol IDs that reference or call/are called by any affected symbol
+        references_affected_set: set[str] = set()
+        for affected_id in affected_symbol_ids:
+            references_affected_set.update(ref_by_target.get(affected_id, ()))
+            references_affected_set.update(callers_of.get(affected_id, ()))
+            references_affected_set.update(callees_of.get(affected_id, ()))
 
         # Get affected files
         affected_files: set[str] = set()
@@ -156,41 +163,29 @@ class ValidationCompilationPass(OperationalCompilerPass):
         production_replays: list[str] = []
         coverage_links: list[str] = []
 
-        # Find test files that reference affected symbols
+        # Perform a single pass over repo.symbols for tests, replays, and coverage
         for sym in repo.symbols:
-            if sym.kind != SymbolKind.FUNCTION and sym.kind != SymbolKind.METHOD:
-                continue
+            # 1. Test classification
+            if sym.kind == SymbolKind.FUNCTION or sym.kind == SymbolKind.METHOD:
+                test_category = self._classify_test(sym)
+                if test_category is not None:
+                    # Check if this test references any affected symbols via our O(1) index check
+                    if sym.id in references_affected_set:
+                        if test_category == "unit":
+                            unit_tests.append(sym)
+                        elif test_category == "integration":
+                            integration_tests.append(sym)
+                        elif test_category == "e2e":
+                            e2e_tests.append(sym)
+                        elif test_category == "benchmark":
+                            benchmarks.append(sym)
 
-            test_category = self._classify_test(sym)
-            if test_category is None:
-                continue
-
-            # Check if this test references any affected symbols
-            # via reference graph or file proximity
-            references_affected = self._references_affected(
-                repo, sym.id, affected_symbol_ids
-            )
-
-            if not references_affected:
-                continue
-
-            if test_category == "unit":
-                unit_tests.append(sym)
-            elif test_category == "integration":
-                integration_tests.append(sym)
-            elif test_category == "e2e":
-                e2e_tests.append(sym)
-            elif test_category == "benchmark":
-                benchmarks.append(sym)
-
-        # Collect production replay references from all symbols
-        for sym in repo.symbols:
+            # 2. Production replay detection
             replay_ref = self._detect_replay(sym)
             if replay_ref:
                 production_replays.append(replay_ref)
 
-        # Collect coverage links from all symbols and files
-        for sym in repo.symbols:
+            # 3. Coverage detection
             cov_ref = self._detect_coverage(sym)
             if cov_ref:
                 coverage_links.append(cov_ref)
@@ -264,10 +259,7 @@ class ValidationCompilationPass(OperationalCompilerPass):
         """
         Check if a symbol (e.g., test) references any affected symbol.
 
-        Checks via:
-        1. Direct reference in the reference graph
-        2. Call graph edges
-        3. File proximity (same file as affected symbol)
+        Deprecated: Use index-based lookup in references_affected_set instead.
         """
         # Check reference graph
         for ref_edge in repo.reference_graph.edges:

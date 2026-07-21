@@ -124,29 +124,12 @@ class DependencyCompilationPass(OperationalCompilerPass):
             return context
         
         repo = model.repository
-        behavior = model.behavior
-        change = model.change
 
-        # Collect all affected symbol IDs
-        affected_symbol_ids: set[str] = set()
-        for b in behavior.behaviors:
-            affected_symbol_ids.add(b.root_symbol_id)
-            affected_symbol_ids.update(b.changed_symbol_ids)
-        for s in change.added_symbols:
-            affected_symbol_ids.add(s.id)
-        for s in change.removed_symbols:
-            affected_symbol_ids.add(s.id)
-        for ms in change.modified_symbols:
-            affected_symbol_ids.add(ms.symbol.id)
-
-        symbol_map: dict[str, Symbol] = {s.id: s for s in repo.symbols}
-
-        # Build adjacency from the call graph
-        callees_of: dict[str, list[str]] = defaultdict(list)
-        callers_of: dict[str, list[str]] = defaultdict(list)
-        for edge in repo.call_graph.edges:
-            callees_of[edge.caller_id].append(edge.callee_id)
-            callers_of[edge.callee_id].append(edge.caller_id)
+        # Collect all affected symbol IDs and maps using cached context methods
+        affected_symbol_ids = context.get_affected_symbol_ids()
+        symbol_map = context.get_symbol_map()
+        callees_of = context.get_callees_of()
+        callers_of = context.get_callers_of()
 
         # Callers: symbols that invoke an affected symbol
         caller_ids: set[str] = set()
@@ -222,12 +205,13 @@ class DependencyCompilationPass(OperationalCompilerPass):
         if not seed_ids:
             return 0
 
+        from collections import deque
         visited: set[str] = set()
-        queue: list[tuple[str, int]] = [(sid, 0) for sid in seed_ids]
+        queue: deque[tuple[str, int]] = deque((sid, 0) for sid in seed_ids)
         max_depth = 0
 
         while queue:
-            current, depth = queue.pop(0)
+            current, depth = queue.popleft()
             if current in visited:
                 continue
             visited.add(current)

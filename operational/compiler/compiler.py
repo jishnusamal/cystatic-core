@@ -108,7 +108,12 @@ class OperationalCompiler:
 
         # Execute each pass in sequence
         for compiler_pass in self.passes:
+            import time
+            start_time = time.perf_counter()
+            print(f"[timer] START {compiler_pass.name}")
             context = compiler_pass.run(context)
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            print(f"[timer] END {compiler_pass.name} {duration_ms:.2f}ms")
 
         # Check for consistency errors
         if context.has_consistency_errors:
@@ -163,7 +168,12 @@ class OperationalCompiler:
         )
 
         for compiler_pass in self.passes:
+            import time
+            start_time = time.perf_counter()
+            print(f"[timer] START {compiler_pass.name}")
             context = compiler_pass.run(context)
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            print(f"[timer] END {compiler_pass.name} {duration_ms:.2f}ms")
 
         if context.has_consistency_errors:
             return None, context.consistency_errors
