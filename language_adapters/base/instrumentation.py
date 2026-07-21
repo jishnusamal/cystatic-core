@@ -133,9 +133,12 @@ class PassInstrumentation:
     
     def print_pass_summary(self):
         """Print per-pass timing summary."""
-        print("\n" + "=" * 80)
-        print("VISITOR PASS SUMMARY")
-        print("=" * 80)
+        from runtime.instrumentation.logging import pipeline_logger
+        log = pipeline_logger.log_visitor
+        
+        log("\n" + "=" * 80)
+        log("VISITOR PASS SUMMARY")
+        log("=" * 80)
         
         total_time = sum(s.total_time for s in self.pass_stats.values())
         
@@ -143,29 +146,32 @@ class PassInstrumentation:
             percentage = (stats.total_time / total_time * 100) if total_time > 0 else 0
             avg_time = (stats.total_time / stats.call_count * 1000) if stats.call_count > 0 else 0
             
-            print(f"\n{pass_name}")
-            print(f"  Total: {stats.total_time:.2f}s ({percentage:.1f}%)")
-            print(f"  Calls: {stats.call_count}, Avg: {avg_time:.2f}ms, Max: {stats.max_time*1000:.2f}ms")
+            log(f"\n{pass_name}")
+            log(f"  Total: {stats.total_time:.2f}s ({percentage:.1f}%)")
+            log(f"  Calls: {stats.call_count}, Avg: {avg_time:.2f}ms, Max: {stats.max_time*1000:.2f}ms")
             
             if stats.slowest_files:
-                print(f"  Slowest files:")
+                log(f"  Slowest files:")
                 for file_path, file_time in stats.slowest_files[:5]:
-                    print(f"    {file_path:<50} {file_time:.2f}s")
+                    log(f"    {file_path:<50} {file_time:.2f}s")
             
             if stats.counters:
-                print(f"  Counters:")
+                log(f"  Counters:")
                 for counter, value in sorted(stats.counters.items()):
-                    print(f"    {counter}: {value}")
+                    log(f"    {counter}: {value}")
         
-        print("\n" + "=" * 80)
-        print(f"TOTAL VISITOR TIME: {total_time:.2f}s")
-        print("=" * 80)
+        log("\n" + "=" * 80)
+        log(f"TOTAL VISITOR TIME: {total_time:.2f}s")
+        log("=" * 80)
     
     def print_method_summary(self):
         """Print per-method timing summary."""
-        print("\n" + "=" * 80)
-        print("VISITOR METHOD SUMMARY")
-        print("=" * 80)
+        from runtime.instrumentation.logging import pipeline_logger
+        log = pipeline_logger.log_visitor
+        
+        log("\n" + "=" * 80)
+        log("VISITOR METHOD SUMMARY")
+        log("=" * 80)
         
         all_methods = []
         for pass_name, pass_stats in self.pass_stats.items():
@@ -177,17 +183,20 @@ class PassInstrumentation:
         
         for pass_name, method_name, stats in all_methods[:20]:  # Top 20
             avg_time = (stats.total_time / stats.call_count * 1000) if stats.call_count > 0 else 0
-            print(f"{pass_name}.{method_name:<30} {stats.total_time:>8.2f}s  "
+            log(f"{pass_name}.{method_name:<30} {stats.total_time:>8.2f}s  "
                   f"calls={stats.call_count:>6}  avg={avg_time:>7.2f}ms  "
                   f"max={stats.max_time*1000:>7.2f}ms")
         
-        print("=" * 80)
+        log("=" * 80)
     
     def print_internal_ops(self, threshold_pct: float = 10.0):
         """Print internal operation breakdown for methods exceeding threshold."""
-        print("\n" + "=" * 80)
-        print(f"INTERNAL OPERATIONS (>{threshold_pct}% of method time)")
-        print("=" * 80)
+        from runtime.instrumentation.logging import pipeline_logger
+        log = pipeline_logger.log_visitor
+        
+        log("\n" + "=" * 80)
+        log(f"INTERNAL OPERATIONS (>{threshold_pct}% of method time)")
+        log("=" * 80)
         
         for pass_name, pass_stats in self.pass_stats.items():
             for method_name, method_stats in pass_stats.method_stats.items():
@@ -202,17 +211,20 @@ class PassInstrumentation:
                         significant_ops.append((op_name, op_time, pct))
                 
                 if significant_ops:
-                    print(f"\n{pass_name}.{method_name} (total: {method_stats.total_time:.2f}s)")
+                    log(f"\n{pass_name}.{method_name} (total: {method_stats.total_time:.2f}s)")
                     for op_name, op_time, pct in sorted(significant_ops, key=lambda x: x[1], reverse=True):
-                        print(f"  {op_name:<40} {op_time:>8.2f}s  ({pct:>5.1f}%)")
+                        log(f"  {op_name:<40} {op_time:>8.2f}s  ({pct:>5.1f}%)")
         
-        print("=" * 80)
+        log("=" * 80)
     
     def print_top_operations(self, n: int = 50):
         """Print top N slowest operations across all passes and methods."""
-        print("\n" + "=" * 80)
-        print(f"TOP {n} SLOWEST OPERATIONS")
-        print("=" * 80)
+        from runtime.instrumentation.logging import pipeline_logger
+        log = pipeline_logger.log_visitor
+        
+        log("\n" + "=" * 80)
+        log(f"TOP {n} SLOWEST OPERATIONS")
+        log("=" * 80)
         
         operations = []
         
@@ -235,20 +247,23 @@ class PassInstrumentation:
                 name = pass_name
             
             avg = (total_time / call_count * 1000) if call_count > 0 else 0
-            print(f"{i:>3}. {name:<60} {total_time:>8.2f}s  "
+            log(f"{i:>3}. {name:<60} {total_time:>8.2f}s  "
                   f"calls={call_count:>6}  avg={avg:>7.2f}ms")
         
-        print("=" * 80)
+        log("=" * 80)
     
     def print_hotspot_analysis(self):
         """Print automatic hotspot analysis."""
-        print("\n" + "=" * 80)
-        print("HOTSPOT ANALYSIS")
-        print("=" * 80)
+        from runtime.instrumentation.logging import pipeline_logger
+        log = pipeline_logger.log_visitor
+        
+        log("\n" + "=" * 80)
+        log("HOTSPOT ANALYSIS")
+        log("=" * 80)
         
         total_time = sum(s.total_time for s in self.pass_stats.values())
         if total_time == 0:
-            print("No timing data available.")
+            log("No timing data available.")
             return
         
         # Find largest pass
@@ -274,52 +289,108 @@ class PassInstrumentation:
                     most_invoked_count = method_stats.call_count
                     most_invoked = (pass_name, method_name, method_stats)
         
-        print(f"\nVisitor Total: {total_time:.2f}s")
-        print(f"\nLargest Pass: {largest_pass_name}")
-        print(f"  Time: {largest_pass_stats.total_time:.2f}s ({largest_pass_pct:.1f}%)")
+        log(f"\nVisitor Total: {total_time:.2f}s")
+        log(f"\nLargest Pass: {largest_pass_name}")
+        log(f"  Time: {largest_pass_stats.total_time:.2f}s ({largest_pass_pct:.1f}%)")
         
         if largest_method:
             pass_name, method_name, method_stats = largest_method
-            print(f"\nLargest Method: {pass_name}.{method_name}")
-            print(f"  Time: {method_stats.total_time:.2f}s")
-            print(f"  Calls: {method_stats.call_count}")
+            log(f"\nLargest Method: {pass_name}.{method_name}")
+            log(f"  Time: {method_stats.total_time:.2f}s")
+            log(f"  Calls: {method_stats.call_count}")
             if method_stats.call_count > 0:
-                print(f"  Average: {method_stats.total_time / method_stats.call_count * 1000:.2f}ms")
+                log(f"  Average: {method_stats.total_time / method_stats.call_count * 1000:.2f}ms")
         
         if most_invoked:
             pass_name, method_name, method_stats = most_invoked
-            print(f"\nMost Invoked: {pass_name}.{method_name}")
-            print(f"  Calls: {method_stats.call_count}")
+            log(f"\nMost Invoked: {pass_name}.{method_name}")
+            log(f"  Calls: {method_stats.call_count}")
             if method_stats.call_count > 0:
-                print(f"  Average: {method_stats.total_time / method_stats.call_count * 1000:.2f}ms")
+                log(f"  Average: {method_stats.total_time / method_stats.call_count * 1000:.2f}ms")
         
         # Detect potential algorithmic issues
-        print(f"\nPotential Algorithmic Hotspots:")
+        log(f"\nPotential Algorithmic Hotspots:")
         
         # Check for repeated AST walks
         for pass_name, pass_stats in self.pass_stats.items():
             if 'ast.walk' in pass_stats.counters or 'ast.walk' in str(pass_stats.counters):
-                print(f"  - {pass_name}: repeated AST traversal detected")
+                log(f"  - {pass_name}: repeated AST traversal detected")
         
         # Check for high call counts with significant time
         for pass_name, pass_stats in self.pass_stats.items():
             for method_name, method_stats in pass_stats.method_stats.items():
                 if method_stats.call_count > 1000 and method_stats.total_time > 1.0:
-                    print(f"  - {pass_name}.{method_name}: {method_stats.call_count} calls, "
+                    log(f"  - {pass_name}.{method_name}: {method_stats.call_count} calls, "
                           f"{method_stats.total_time:.2f}s total")
         
-        print("\n" + "=" * 80)
+        log("\n" + "=" * 80)
     
     def print_counters(self):
         """Print global counters."""
-        print("\n" + "=" * 80)
-        print("COMPLEXITY COUNTERS")
-        print("=" * 80)
+        from runtime.instrumentation.logging import pipeline_logger
+        log = pipeline_logger.log_visitor
+        
+        log("\n" + "=" * 80)
+        log("COMPLEXITY COUNTERS")
+        log("=" * 80)
         
         for counter, value in sorted(self.global_counters.items()):
-            print(f"  {counter:<40} {value:>10}")
+            log(f"  {counter:<40} {value:>10}")
         
-        print("=" * 80)
+        log("=" * 80)
+
+    def print_profile_summary(self):
+        """Print a concise profile summary for the terminal when in profiling mode."""
+        import sys
+        from runtime.instrumentation.logging import pipeline_logger
+        from runtime.instrumentation.timer import timer
+        
+        visitor_timings = [t for t in timer.get_timings() if t["name"] == "Visitor"]
+        visitor_time = visitor_timings[0]["elapsed"] if visitor_timings else sum(s.total_time for s in self.pass_stats.values())
+        
+        def profile_print(msg: str):
+            pipeline_logger.log_visitor(msg)
+            if pipeline_logger.is_profile and not pipeline_logger.is_debug:
+                sys.stdout.write(msg + "\n")
+        
+        profile_print("\nVisitor")
+        profile_print("-------")
+        profile_print(f"Total: {visitor_time:.1f}s")
+        
+        profile_print("\nTop hotspots")
+        profile_print("------------")
+        
+        # Collect all methods across passes
+        all_methods = []
+        for pass_name, pass_stats in self.pass_stats.items():
+            for method_name, method_stats in pass_stats.method_stats.items():
+                all_methods.append((method_name, method_stats.total_time))
+            # Also check internal operations
+            for method_name, method_stats in pass_stats.method_stats.items():
+                for op_name, op_time in method_stats.internal_ops.items():
+                    all_methods.append((op_name, op_time))
+        
+        # Sort by total time and merge duplicates
+        merged_methods: dict[str, float] = {}
+        for name, elapsed in all_methods:
+            merged_methods[name] = merged_methods.get(name, 0.0) + elapsed
+            
+        sorted_methods = sorted(merged_methods.items(), key=lambda x: x[1], reverse=True)
+        for name, elapsed in sorted_methods[:3]:  # Top 3
+            profile_print(f"{name:<30} {elapsed:.1f}s")
+            
+        def format_count(val: int) -> str:
+            if val >= 1_000_000:
+                return f"{val / 1_000_000:.1f}M"
+            if val >= 1_000:
+                return f"{val / 1_000:.0f}k"
+            return str(val)
+            
+        ast_nodes = self.global_counters.get("ast_nodes_visited", 0)
+        calls_visited = self.global_counters.get("calls_visited", 0)
+        
+        profile_print(f"\nAST nodes: {format_count(ast_nodes)}")
+        profile_print(f"Calls visited: {format_count(calls_visited)}")
 
 
 # Global instrumentation instance

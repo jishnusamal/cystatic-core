@@ -21,6 +21,7 @@ import time
 from typing import Any
 
 from runtime.instrumentation.timer import timer
+from runtime.instrumentation.logging import pipeline_logger
 from language_adapters.model import (
     AsyncEntryPoint,
     CallEdge,
@@ -139,9 +140,10 @@ class SemanticCompiler:
     ) -> RepositoryModel:
         """Internal implementation of compile with detailed timing."""
         # Print collection sizes
-        print("\n" + "=" * 80)
-        print("SEMANTIC COMPILATION - INPUT SIZE")
-        print("=" * 80)
+        log = pipeline_logger.log_semantic
+        log("\n" + "=" * 80)
+        log("SEMANTIC COMPILATION - INPUT SIZE")
+        log("=" * 80)
         total_symbols = sum(len(f.symbols) for f in index.files)
         total_imports = sum(len(f.imports) for f in index.files)
         total_calls = sum(len(f.calls) for f in index.files)
@@ -152,20 +154,20 @@ class SemanticCompiler:
         total_configs = sum(len(f.configurations) for f in index.files)
         total_type_rels = sum(len(f.type_relationships) for f in index.files)
         
-        print(f"Files: {len(index.files)}")
-        print(f"Symbols: {total_symbols}")
-        print(f"Imports: {total_imports}")
-        print(f"Calls: {total_calls}")
-        print(f"Entrypoints: {total_entrypoints}")
-        print(f"Events: {total_events}")
-        print(f"Persistence Models: {total_persistence}")
-        print(f"Tests: {total_tests}")
-        print(f"Configurations: {total_configs}")
-        print(f"Type Relationships: {total_type_rels}")
-        print("=" * 80 + "\n")
+        log(f"Files: {len(index.files)}")
+        log(f"Symbols: {total_symbols}")
+        log(f"Imports: {total_imports}")
+        log(f"Calls: {total_calls}")
+        log(f"Entrypoints: {total_entrypoints}")
+        log(f"Events: {total_events}")
+        log(f"Persistence Models: {total_persistence}")
+        log(f"Tests: {total_tests}")
+        log(f"Configurations: {total_configs}")
+        log(f"Type Relationships: {total_type_rels}")
+        log("=" * 80 + "\n")
         
         # Stage 1: Build symbol table
-        print(f"[semantic] START Resolve Symbols")
+        log(f"[semantic] START Resolve Symbols")
         start = time.perf_counter()
         symbols: list[Symbol] = []
         symbol_index: dict[str, Symbol] = {}
@@ -185,10 +187,10 @@ class SemanticCompiler:
                     import_symbols.append(import_sym)
         
         elapsed = time.perf_counter() - start
-        print(f"[semantic] END Resolve Symbols ({elapsed:.2f}s) - {len(symbols)} symbols, {len(import_symbols)} imports")
+        log(f"[semantic] END Resolve Symbols ({elapsed:.2f}s) - {len(symbols)} symbols, {len(import_symbols)} imports")
         
         # Stage 2: Resolve imports → reference graph
-        print(f"[semantic] START Resolve Imports")
+        log(f"[semantic] START Resolve Imports")
         start = time.perf_counter()
         reference_edges: list[ReferenceEdge] = []
         self._watchdog_last_check = start
@@ -208,18 +210,19 @@ class SemanticCompiler:
             # Watchdog check
             current = time.perf_counter()
             if current - self._watchdog_last_check >= self._watchdog_interval:
-                print(f"  Still running: Resolve Imports - processed {idx} / {total_imports_to_resolve}, elapsed {current - start:.1f}s")
+                pipeline_logger.log_pipeline(f"  Still running: Resolve Imports - processed {idx} / {total_imports_to_resolve}, elapsed {current - start:.1f}s", to_terminal=False)
                 self._watchdog_last_check = current
             
-            # Report progress every 10%
+            # Report progress every 10% to pipeline.log
             if total_imports_to_resolve > 100:
                 progress_pct = int((idx / total_imports_to_resolve) * 100)
                 if progress_pct >= last_progress + 10:
-                    print(f"  Resolving Imports: {idx} / {total_imports_to_resolve}")
+                    pipeline_logger.log_pipeline(f"  Resolving Imports: {idx} / {total_imports_to_resolve}", to_terminal=False)
                     last_progress = progress_pct
         
         elapsed = time.perf_counter() - start
-        print(f"[semantic] END Resolve Imports ({elapsed:.2f}s) - {len(reference_edges)} edges")
+        log(f"[semantic] END Resolve Imports ({elapsed:.2f}s) - {len(reference_edges)} edges")
+        print(f"Resolving imports... ✓ {total_imports_to_resolve:,} imports ({elapsed * 1000:.0f}ms)")
         
         # Stage 3: Build call graph from call entries
         print(f"[semantic] START Call Graph")
@@ -313,6 +316,16 @@ class SemanticCompiler:
                     callee_name_to_ids,
                 )
                 
+                # Record to call_resolution.json (up to 10k items to avoid memory bloat)
+                if len(pipeline_logger.call_resolutions) < 10000:
+                    pipeline_logger.record_call_resolution({
+                        "caller_id": caller_id,
+                        "callee_name": call.callee,
+                        "receiver": call.receiver,
+                        "resolved_callee_id": callee_id,
+                        "success": callee_id is not None
+                    })
+                
                 if callee_id:
                     call_edges.append(CallEdge(
                         caller_id=caller_id,
@@ -332,27 +345,29 @@ class SemanticCompiler:
             # Watchdog check
             current = time.perf_counter()
             if current - self._watchdog_last_check >= self._watchdog_interval:
-                print(f"  Still running: Call Graph - processed {len(call_edges)} / {total_calls_to_resolve}, elapsed {current - start:.1f}s")
+                pipeline_logger.log_pipeline(f"  Still running: Call Graph - processed {len(call_edges)} / {total_calls_to_resolve}, elapsed {current - start:.1f}s", to_terminal=False)
                 self._watchdog_last_check = current
             
-            # Report progress every 10%
+            # Report progress every 10% to pipeline.log
             if total_calls_to_resolve > 100:
                 current_count = len(call_edges)
                 progress_pct = int((current_count / total_calls_to_resolve) * 100)
                 if progress_pct >= last_progress + 10:
-                    print(f"  Resolving Calls: {current_count} / {total_calls_to_resolve}")
+                    pipeline_logger.log_pipeline(f"  Resolving Calls: {current_count} / {total_calls_to_resolve}", to_terminal=False)
                     last_progress = progress_pct
         
         elapsed = time.perf_counter() - start
-        print(f"[semantic] END Call Graph ({elapsed:.2f}s) - {len(call_edges)} edges")
+        log = pipeline_logger.log_semantic
+        log(f"[semantic] END Call Graph ({elapsed:.2f}s) - {len(call_edges)} edges")
+        print(f"Resolving calls... ✓ {total_calls_to_resolve:,} calls ({elapsed * 1000:.0f}ms)")
         
-        # Print detailed analysis
-        print(f"\n  [analysis] CALL GRAPH BREAKDOWN:")
-        print(f"    Total calls resolved: {len(call_edges)}")
-        print(f"    Total time: {elapsed:.2f}s")
+        # Log detailed analysis
+        log(f"\n  [analysis] CALL GRAPH BREAKDOWN:")
+        log(f"    Total calls resolved: {len(call_edges)}")
+        log(f"    Total time: {elapsed:.2f}s")
         
         # Stage 4: Build type relationships
-        print(f"[semantic] START Resolve Type Relationships")
+        log(f"[semantic] START Resolve Type Relationships")
         start = time.perf_counter()
         type_edges: list[TypeRelationshipEdge] = []
         for file_index in index.files:
@@ -362,10 +377,10 @@ class SemanticCompiler:
                     type_edges.append(edge)
         
         elapsed = time.perf_counter() - start
-        print(f"[semantic] END Resolve Type Relationships ({elapsed:.2f}s) - {len(type_edges)} edges")
+        log(f"[semantic] END Resolve Type Relationships ({elapsed:.2f}s) - {len(type_edges)} edges")
         
         # Stage 5: Build entry points
-        print(f"[semantic] START Resolve Entry Points")
+        log(f"[semantic] START Resolve Entry Points")
         start = time.perf_counter()
         entry_points: list[EntryPoint] = []
         for file_index in index.files:
@@ -375,10 +390,10 @@ class SemanticCompiler:
                     entry_points.append(entry_point)
         
         elapsed = time.perf_counter() - start
-        print(f"[semantic] END Resolve Entry Points ({elapsed:.2f}s) - {len(entry_points)} entry points")
+        log(f"[semantic] END Resolve Entry Points ({elapsed:.2f}s) - {len(entry_points)} entry points")
         
         # Stage 6: Build persistence models
-        print(f"[semantic] START Resolve Persistence Models")
+        log(f"[semantic] START Resolve Persistence Models")
         start = time.perf_counter()
         persistence_models: list[PersistenceModel] = []
         for file_index in index.files:
@@ -388,10 +403,10 @@ class SemanticCompiler:
                     persistence_models.append(model)
         
         elapsed = time.perf_counter() - start
-        print(f"[semantic] END Resolve Persistence Models ({elapsed:.2f}s) - {len(persistence_models)} models")
+        log(f"[semantic] END Resolve Persistence Models ({elapsed:.2f}s) - {len(persistence_models)} models")
         
         # Stage 7: Build repository methods
-        print(f"[semantic] START Resolve Repository Methods")
+        log(f"[semantic] START Resolve Repository Methods")
         start = time.perf_counter()
         repository_methods: list[RepositoryMethod] = []
         for file_index in index.files:
@@ -401,10 +416,10 @@ class SemanticCompiler:
                     repository_methods.append(method)
         
         elapsed = time.perf_counter() - start
-        print(f"[semantic] END Resolve Repository Methods ({elapsed:.2f}s) - {len(repository_methods)} methods")
+        log(f"[semantic] END Resolve Repository Methods ({elapsed:.2f}s) - {len(repository_methods)} methods")
         
         # Stage 8: Build event constructs
-        print(f"[semantic] START Resolve Events")
+        log(f"[semantic] START Resolve Events")
         start = time.perf_counter()
         event_constructs: list[EventConstruct] = []
         for file_index in index.files:
@@ -414,10 +429,10 @@ class SemanticCompiler:
                     event_constructs.append(event)
         
         elapsed = time.perf_counter() - start
-        print(f"[semantic] END Resolve Events ({elapsed:.2f}s) - {len(event_constructs)} events")
+        log(f"[semantic] END Resolve Events ({elapsed:.2f}s) - {len(event_constructs)} events")
         
         # Stage 9: Build test definitions
-        print(f"[semantic] START Resolve Tests")
+        log(f"[semantic] START Resolve Tests")
         start = time.perf_counter()
         test_definitions: list[TestDefinition] = []
         for file_index in index.files:
@@ -427,10 +442,10 @@ class SemanticCompiler:
                     test_definitions.append(test)
         
         elapsed = time.perf_counter() - start
-        print(f"[semantic] END Resolve Tests ({elapsed:.2f}s) - {len(test_definitions)} tests")
+        log(f"[semantic] END Resolve Tests ({elapsed:.2f}s) - {len(test_definitions)} tests")
         
         # Stage 10: Build configuration references
-        print(f"[semantic] START Resolve Configurations")
+        log(f"[semantic] START Resolve Configurations")
         start = time.perf_counter()
         config_references: list[ConfigurationReference] = []
         for file_index in index.files:
@@ -440,10 +455,10 @@ class SemanticCompiler:
                     config_references.append(config)
         
         elapsed = time.perf_counter() - start
-        print(f"[semantic] END Resolve Configurations ({elapsed:.2f}s) - {len(config_references)} configs")
+        log(f"[semantic] END Resolve Configurations ({elapsed:.2f}s) - {len(config_references)} configs")
         
         # Build graphs and print statistics
-        print(f"\n[semantic] START Build Graphs")
+        log(f"\n[semantic] START Build Graphs")
         start = time.perf_counter()
         
         call_graph = CallGraph(edges=tuple(call_edges))
@@ -451,52 +466,52 @@ class SemanticCompiler:
         type_relationship_graph = TypeRelationshipGraph(edges=tuple(type_edges))
         
         elapsed = time.perf_counter() - start
-        print(f"[semantic] END Build Graphs ({elapsed:.2f}s)")
+        log(f"[semantic] END Build Graphs ({elapsed:.2f}s)")
         
-        # Print graph statistics
-        print("\n" + "=" * 80)
-        print("GRAPH STATISTICS")
-        print("=" * 80)
+        # Log graph statistics
+        log("\n" + "=" * 80)
+        log("GRAPH STATISTICS")
+        log("=" * 80)
         
         # Call graph stats
         call_nodes = len(set(e.caller_id for e in call_edges) | set(e.callee_id for e in call_edges))
-        print(f"\nCall Graph:")
-        print(f"  Nodes: {call_nodes}")
-        print(f"  Edges: {len(call_edges)}")
+        log(f"\nCall Graph:")
+        log(f"  Nodes: {call_nodes}")
+        log(f"  Edges: {len(call_edges)}")
         if call_nodes > 0:
             avg_degree = (len(call_edges) * 2) / call_nodes
-            print(f"  Average Degree: {avg_degree:.2f}")
+            log(f"  Average Degree: {avg_degree:.2f}")
             max_degree = self._calculate_max_degree(call_edges)
-            print(f"  Maximum Degree: {max_degree}")
+            log(f"  Maximum Degree: {max_degree}")
         
         # Reference graph stats
         ref_nodes = len(set(e.source_id for e in reference_edges) | set(e.target_id for e in reference_edges))
-        print(f"\nReference Graph:")
-        print(f"  Nodes: {ref_nodes}")
-        print(f"  Edges: {len(reference_edges)}")
+        log(f"\nReference Graph:")
+        log(f"  Nodes: {ref_nodes}")
+        log(f"  Edges: {len(reference_edges)}")
         if ref_nodes > 0:
             avg_degree = (len(reference_edges) * 2) / ref_nodes
-            print(f"  Average Degree: {avg_degree:.2f}")
+            log(f"  Average Degree: {avg_degree:.2f}")
             max_degree = self._calculate_max_degree(reference_edges)
-            print(f"  Maximum Degree: {max_degree}")
+            log(f"  Maximum Degree: {max_degree}")
         
         # Type relationship graph stats
         type_nodes = len(set(e.source_id for e in type_edges) | set(e.target_id for e in type_edges))
-        print(f"\nType Relationship Graph:")
-        print(f"  Nodes: {type_nodes}")
-        print(f"  Edges: {len(type_edges)}")
+        log(f"\nType Relationship Graph:")
+        log(f"  Nodes: {type_nodes}")
+        log(f"  Edges: {len(type_edges)}")
         if type_nodes > 0:
             avg_degree = (len(type_edges) * 2) / type_nodes
-            print(f"  Average Degree: {avg_degree:.2f}")
+            log(f"  Average Degree: {avg_degree:.2f}")
             max_degree = self._calculate_max_degree(type_edges)
-            print(f"  Maximum Degree: {max_degree}")
+            log(f"  Maximum Degree: {max_degree}")
         
-        print("=" * 80 + "\n")
+        log("=" * 80 + "\n")
         
         # Log statistics
-        print(f"[semantic] RepositoryModel: {len(symbols)} symbols, {len(call_edges)} call edges, {len(reference_edges)} reference edges")
-        print(f"[semantic] Entry Points: {len(entry_points)}, Persistence Models: {len(persistence_models)}")
-        print(f"[semantic] Events: {len(event_constructs)}, Tests: {len(test_definitions)}, Configs: {len(config_references)}")
+        log(f"[semantic] RepositoryModel: {len(symbols)} symbols, {len(call_edges)} call edges, {len(reference_edges)} reference edges")
+        log(f"[semantic] Entry Points: {len(entry_points)}, Persistence Models: {len(persistence_models)}")
+        log(f"[semantic] Events: {len(event_constructs)}, Tests: {len(test_definitions)}, Configs: {len(config_references)}")
         
         # Print top operations summary
         self._print_top_operations()
@@ -529,9 +544,10 @@ class SemanticCompiler:
     
     def _print_top_operations(self):
         """Print top 25 slowest semantic operations."""
-        print("\n" + "=" * 80)
-        print("TOP 25 SLOWEST SEMANTIC OPERATIONS")
-        print("=" * 80)
+        log = pipeline_logger.log_semantic
+        log("\n" + "=" * 80)
+        log("TOP 25 SLOWEST SEMANTIC OPERATIONS")
+        log("=" * 80)
         
         # Collect all operations with timing
         operations = []
@@ -539,9 +555,9 @@ class SemanticCompiler:
         # We'll track key operations manually since we're not using decorators
         # This is a simplified version - in production you'd use the instrumentation framework
         
-        print("\nNote: Detailed per-operation timing requires decorator-based instrumentation.")
-        print("Phase-level timing is shown above in START/END messages.")
-        print("=" * 80 + "\n")
+        log("\nNote: Detailed per-operation timing requires decorator-based instrumentation.")
+        log("Phase-level timing is shown above in START/END messages.")
+        log("=" * 80 + "\n")
 
     def _create_symbol(
         self,

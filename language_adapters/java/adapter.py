@@ -157,3 +157,23 @@ class JavaLanguageAdapter(BaseLanguageAdapter):
             file_contexts.append(context)
 
         return self._index_compiler.compile(file_contexts, language)
+
+    def _index_single_file(self, file_path: str, content: str, language: str) -> Any:
+        """Parse and run indexing passes on a single source file."""
+        if not file_path.endswith('.java'):
+            from language_adapters.model.repository_index import FileIndex
+            return FileIndex(path=file_path, language=language)
+            
+        try:
+            lines = self._parser.parse(content, file_path)
+            context = FileContext(
+                path=file_path,
+                source=content,
+                ast=lines,
+                language=language,
+            )
+            repo_index = self._index_compiler.compile([context], language)
+            return repo_index.files[0]
+        except Exception:
+            from language_adapters.model.repository_index import FileIndex
+            return FileIndex(path=file_path, language=language)

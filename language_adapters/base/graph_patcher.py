@@ -58,6 +58,11 @@ class GraphPatcher:
         changed_paths = set(changed_files.keys())
         affected_files = set(changed_paths)
 
+        # Capture old symbols group by file for affected files before removing them
+        old_symbols_by_file = {}
+        for file_path in affected_files:
+            old_symbols_by_file[file_path] = [s for s in graph.symbols.values() if s.file == file_path]
+
         # 1. Identify deleted symbol IDs to find downstream files that depend on them.
         deleted_symbol_ids: set[str] = set()
         for file_path in changed_paths:
@@ -148,6 +153,10 @@ class GraphPatcher:
             e for e in graph.type_relationship_graph.edges
             if self._get_file_from_evidence(e) not in affected_files
         ]
+
+        initial_call_edges_count = len(call_edges)
+        initial_type_edges_count = len(type_edges)
+        initial_ref_edges_count = len(reference_edges)
 
         # Filter out other constructs.
         entry_points = [ep for ep in graph.entry_points if self._get_file_from_evidence(ep) not in affected_files]
@@ -339,6 +348,44 @@ class GraphPatcher:
 
         # Validate graph integrity after patching
         self.validate(graph, language)
+
+        # Calculate symbol metrics
+        symbols_replaced = 0
+        symbols_inserted = 0
+        symbols_removed = 0
+
+        for file_path in affected_files:
+            old_syms = old_symbols_by_file.get(file_path, [])
+            old_sym_names = {s.name for s in old_syms}
+            
+            if file_path not in graph.files:
+                # File was deleted
+                symbols_removed += len(old_syms)
+            else:
+                # File was modified or added
+                new_syms = [s for s in graph.symbols.values() if s.file == file_path]
+                new_sym_names = {s.name for s in new_syms}
+                
+                for ns in new_syms:
+                    if ns.name in old_sym_names:
+                        symbols_replaced += 1
+                    else:
+                        symbols_inserted += 1
+                
+                for os in old_syms:
+                    if os.name not in new_sym_names:
+                        symbols_removed += 1
+
+        edges_updated = (len(call_edges) - initial_call_edges_count) + \
+                        (len(type_edges) - initial_type_edges_count) + \
+                        (len(reference_edges) - initial_ref_edges_count)
+
+        self.metrics = {
+            "symbols_replaced": symbols_replaced,
+            "symbols_inserted": symbols_inserted,
+            "symbols_removed": symbols_removed,
+            "edges_updated": edges_updated,
+        }
 
     def validate(self, graph: RepositoryGraph, language: str) -> None:
         """

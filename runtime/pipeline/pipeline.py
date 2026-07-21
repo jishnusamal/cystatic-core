@@ -37,6 +37,13 @@ from runtime.renderers.github_renderer import GitHubRenderer
 from runtime.renderers.json_renderer import JSONRenderer
 from runtime.storage.repository_store import RepositoryStore
 
+# Custom print wrapper to avoid polluting stdout
+def print(*args, **kwargs):
+    sep = kwargs.get('sep', ' ')
+    msg = sep.join(str(arg) for arg in args)
+    from runtime.instrumentation.logging import pipeline_logger
+    pipeline_logger.log_pipeline(msg, to_terminal=False)
+
 if TYPE_CHECKING:
     from integrations.base import (
         EventProvider,
@@ -110,6 +117,10 @@ class Pipeline:
         Returns:
             PipelineContext with all results
         """
+        from runtime.instrumentation.logging import pipeline_logger
+        pipeline_logger.start_run()
+        pipeline_start_time = time.perf_counter()
+        
         context = PipelineContext(
             repository=request.repository.full_name,
             base_sha=request.pull_request.base_sha if request.pull_request else None,
@@ -139,56 +150,92 @@ class Pipeline:
                 await self._fetch_diff(context, request)
                 print(f"[pipeline] Step 2 done: {len(context.diff_data.get('files', []))} files in diff" if context.diff_data else "[pipeline] Step 2 done: no diff")
             
+            # Step 3: Change Compilation
+            change_start = time.perf_counter()
             with timer.timed("Change Compilation"):
-                # Step 3: Compile change model
                 print(f"[pipeline] Step 3: Change model compilation")
                 await self._compile_change(context)
                 print(f"[pipeline] Step 3 done")
                 timer.print_progress()
+            change_time = time.perf_counter() - change_start
             
+            # Step 4: Behavior Compilation
+            behavior_start = time.perf_counter()
             with timer.timed("Behavior Compilation"):
-                # Step 4: Compile behavior model
                 print(f"[pipeline] Step 4: Behavior model compilation")
                 await self._compile_behavior(context)
                 print(f"[pipeline] Step 4 done")
                 timer.print_progress()
+            behavior_time = time.perf_counter() - behavior_start
             
+            # Step 5: Operational Compilation
+            operational_start = time.perf_counter()
             with timer.timed("Operational Compilation"):
-                # Step 5: Compile operational model
                 print(f"[pipeline] Step 5: Operational model compilation")
                 await self._compile_operational(context)
                 print(f"[pipeline] Step 5 done")
                 timer.print_progress()
+            operational_time = time.perf_counter() - operational_start
             
+            # Step 6: Engineering Discovery Compilation
+            discovery_start = time.perf_counter()
             with timer.timed("Engineering Discovery Compilation"):
-                # Step 6: Compile engineering discovery model
                 print(f"[pipeline] Step 6: Engineering discovery model compilation")
                 await self._compile_discovery(context)
                 print(f"[pipeline] Step 6 done")
                 timer.print_progress()
+            discovery_time = time.perf_counter() - discovery_start
             
+            # Step 7: Discovery IR Compilation
+            discovery_ir_start = time.perf_counter()
             with timer.timed("Discovery IR Compilation"):
-                # Step 7: Compile discovery IR (deterministic engineering discoveries)
                 print(f"[pipeline] Step 7: Discovery IR compilation")
                 await self._compile_discovery_ir(context)
                 print(f"[pipeline] Step 7 done")
                 timer.print_progress()
+            discovery_ir_time = time.perf_counter() - discovery_ir_start
             
+            # Step 8: ReviewContext Compilation
+            review_start = time.perf_counter()
             with timer.timed("ReviewContext Compilation"):
-                # Step 8: Compile ReviewContext
                 print(f"[pipeline] Step 8: ReviewContext compilation")
                 await self._compile_review_context(context)
                 print(f"[pipeline] Step 8 done")
                 timer.print_progress()
+            review_time = time.perf_counter() - review_start
             
+            # Step 9: LLMContext Compilation
+            llm_start = time.perf_counter()
             with timer.timed("LLMContext Compilation"):
-                # Step 9: Compile LLMContext (token-efficient representation)
                 print(f"[pipeline] Step 9: LLMContext compilation")
                 await self._compile_llm_context(context)
                 print(f"[pipeline] Step 9 done")
                 timer.print_progress()
+            llm_time = time.perf_counter() - llm_start
             
-            # Print timing summary
+            # Print timings to terminal in aligned format
+            def format_time(seconds: float) -> str:
+                if seconds < 1.0:
+                    return f"{seconds * 1000:.0f}ms"
+                return f"{seconds:.1f}s"
+                
+            def log_stage_time(stage_name: str, elapsed: float):
+                time_str = format_time(elapsed)
+                stage_text = f"[Pipeline] {stage_name}"
+                pipeline_logger.log_pipeline(f"{stage_text:<38}{time_str}", to_terminal=True)
+                
+            pipeline_logger.log_pipeline("", to_terminal=True)
+            log_stage_time("Change compilation", change_time)
+            log_stage_time("Behavior compilation", behavior_time)
+            log_stage_time("Operational compilation", operational_time)
+            log_stage_time("ReviewContext", review_time)
+            log_stage_time("LLMContext", llm_time)
+            
+            pipeline_logger.log_pipeline("", to_terminal=True)
+            total_time = time.perf_counter() - pipeline_start_time
+            pipeline_logger.log_pipeline(f"Total: {total_time:.1f}s", to_terminal=True)
+            
+            # Print timing summary to log file
             timer.print_summary()
             
             context.mark_complete()
@@ -196,7 +243,10 @@ class Pipeline:
         except Exception as exc:
             context.error = exc
             context.mark_complete()
+            pipeline_logger.log_pipeline(f"✗ {exc}", to_terminal=True)
             raise
+        finally:
+            pipeline_logger.write_to_disk()
         
         return context
     
@@ -231,95 +281,208 @@ class Pipeline:
         context.base_sha = base_sha
         context.head_sha = head_sha
         
+        from runtime.instrumentation.logging import pipeline_logger
+        from language_adapters.model import RepositoryGraph
+        import time
+        import pickle
+        import asyncio
+        
         with timer.timed("Repository Compilation", metadata={"base_sha": base_sha, "head_sha": head_sha}):
-            # Compile base repository model
-            print(f"[pipeline] Compiling base repository model at {base_sha}")
-            context.base_repository_model = await self._compile_repository_model(
-                context, request, base_sha, "base"
-            )
-            timer.print_progress()
+            # --- Base Repository Graph Stage ---
+            print(f"[pipeline] Compiling base repository graph at {base_sha}")
+            base_fetch_start = time.perf_counter()
+            base_cached = False
+            base_graph = None
             
-            # Compile head repository model
-            print(f"[pipeline] Compiling head repository model at {head_sha}")
-            context.head_repository_model = await self._compile_repository_model(
-                context, request, head_sha, "head"
-            )
-            timer.print_progress()
-        
-        context.mark_repository_compiled()
-    
-    async def _compile_repository_model(
-        self, context: PipelineContext, request: AnalysisRequest, sha: str, label: str
-    ) -> RepositoryModel | None:
-        """
-        Compile a single repository model for a specific SHA.
-        
-        Args:
-            context: Pipeline context
-            request: Analysis request
-            sha: Commit SHA to compile
-            label: Label for logging ("base" or "head")
-            
-        Returns:
-            Compiled RepositoryModel
-            
-        Raises:
-            RepositoryCompilationFailed: If compilation fails
-        """
-        # Try to load from cache first
-        if self.repository_store is not None:
-            cached_model = await self.repository_store.load(request.repository.full_name, sha)
-            if cached_model is not None:
-                print(f"[pipeline] Loaded {label} model from cache")
-                # Set language on first load (base or head)
-                if context.language is None:
-                    context.language = cached_model.metadata.get('language')
-                    context.adapter = cached_model.metadata.get('language')
-                return cached_model
-        
-        with timer.timed("Fetch Repository", metadata={"sha": sha, "label": label}):
-            # Fetch repository snapshot at this SHA
-            print(f"[pipeline] Fetching {label} repository snapshot at {sha}")
-            snapshot = await self.repository_provider.fetch_repository_at_sha(request.repository, sha)  # type: ignore[union-attr]
-            print(f"[pipeline] {label.capitalize()} snapshot: {len(snapshot.files)} files")
-            
-            # Detect language from repository files (only once)
-            if context.language is None:
-                print(f"[pipeline] Detecting language from {len(snapshot.files)} files...")
-                language = self.language_factory.detect_language(snapshot.files)
-                context.language = language
-                context.adapter = language
-                print(f"[pipeline] Detected language: {language}")
-            else:
-                language = context.language
-            
-            # Create language adapter and compile repository model
-            adapter = self.language_factory.create_adapter(language)
-            print(f"[pipeline] Created {label} adapter: {type(adapter).__name__}")
-            
-            repository_input = {
-                "root_directory": request.repository.full_name,
-                "language": language,
-                "files": snapshot.files,
-                "commit_sha": sha,
-            }
-            print(f"[pipeline] Compiling {label} repository model with {len(snapshot.files)} files...")
-            
-            try:
-                repository_model = adapter.compile(repository_input)
-                print(f"[pipeline] {label.capitalize()} model compiled: {len(repository_model.symbols)} symbols, {len(repository_model.entry_points)} entry points")
-            except Exception as exc:
-                print(f"[pipeline] {label.capitalize()} repository compilation failed: {exc}")
-                raise RepositoryCompilationFailed(
-                    f"{label.capitalize()} repository compilation failed: {exc}",
-                    details={"repository": request.repository.full_name, "language": language, "sha": sha},
-                ) from exc
-            
-            # Cache the compiled model if store is available
             if self.repository_store is not None:
-                await self.repository_store.save(request.repository.full_name, sha, repository_model)
+                try:
+                    cached_obj = await self.repository_store.load(request.repository.full_name, base_sha)
+                    if isinstance(cached_obj, RepositoryGraph):
+                        base_graph = cached_obj
+                        base_cached = True
+                        print(f"[pipeline] Loaded base RepositoryGraph from cache")
+                except Exception as exc:
+                    print(f"[pipeline] Failed to load base from cache: {exc}")
             
-            return repository_model
+            if base_graph is None:
+                # Fetch base repository snapshot
+                print(f"[pipeline] Fetching base repository snapshot at {base_sha}")
+                try:
+                    snapshot = await self.repository_provider.fetch_repository_at_sha(request.repository, base_sha)
+                except Exception as exc:
+                    raise RepositoryCompilationFailed(
+                        f"Failed to fetch base repository at {base_sha}: {exc}",
+                        details={"repository": request.repository.full_name, "sha": base_sha},
+                    ) from exc
+                base_fetch_time = time.perf_counter() - base_fetch_start
+                print(f"[pipeline] Base snapshot fetched: {len(snapshot.files)} files")
+                
+                # Detect language
+                if context.language is None:
+                    print(f"[pipeline] Detecting language from {len(snapshot.files)} files...")
+                    language = self.language_factory.detect_language(snapshot.files)
+                    context.language = language
+                    context.adapter = language
+                    print(f"[pipeline] Detected language: {language}")
+                else:
+                    language = context.language
+                
+                # Create adapter
+                adapter = self.language_factory.create_adapter(language)
+                
+                base_compile_start = time.perf_counter()
+                repository_input = {
+                    "root_directory": request.repository.full_name,
+                    "language": language,
+                    "files": snapshot.files,
+                    "commit_sha": base_sha,
+                }
+                print(f"[pipeline] Compiling base RepositoryGraph...")
+                try:
+                    base_graph = adapter.compile_graph(repository_input)
+                except Exception as exc:
+                    raise RepositoryCompilationFailed(
+                        f"Base repository compilation failed: {exc}",
+                        details={"repository": request.repository.full_name, "language": language, "sha": base_sha},
+                    ) from exc
+                base_compile_time = time.perf_counter() - base_compile_start
+                
+                # Save base graph to cache
+                if self.repository_store is not None:
+                    try:
+                        await self.repository_store.save(request.repository.full_name, base_sha, base_graph)
+                    except Exception as exc:
+                        print(f"[pipeline] Failed to save base graph to cache: {exc}")
+            else:
+                base_fetch_time = time.perf_counter() - base_fetch_start
+                base_compile_time = 0.0
+                if context.language is None:
+                    language = base_graph.metadata.get("language", "python")
+                    context.language = language
+                    context.adapter = language
+                else:
+                    language = context.language
+            
+            # Export base RepositoryModel
+            base_export_start = time.perf_counter()
+            context.base_repository_model = base_graph.to_model()
+            base_export_duration = time.perf_counter() - base_export_start
+            
+            base_files_compiled = 0 if base_cached else len(base_graph.files)
+            timer.print_progress()
+            
+            # --- Head Repository Incremental Stage ---
+            print(f"[pipeline] Compiling head repository incrementally at {head_sha}")
+            changed_fetch_start = time.perf_counter()
+            changed_files_dict = {}
+            
+            if request.pull_request:
+                # Get the diff
+                if context.diff_data is None:
+                    if request.has_diff:
+                        context.diff_data = self._diff_snapshot_to_dict(request.diff)
+                    else:
+                        try:
+                            await self._fetch_diff(context, request)
+                        except Exception as exc:
+                            raise DiffFetchFailed(
+                                f"Failed to fetch diff: {exc}",
+                                details={"repository": request.repository.full_name},
+                            ) from exc
+                
+                # Fetch only changed files concurrently
+                if context.diff_data and "files" in context.diff_data:
+                    async def fetch_one(file_path: str):
+                        try:
+                            content = await self.repository_provider.fetch_file(
+                                request.repository, file_path, head_sha
+                            )
+                            return file_path, content
+                        except Exception as exc:
+                            print(f"[pipeline] File {file_path} not found at head (assumed deleted): {exc}")
+                            return file_path, None
+                    
+                    tasks = [fetch_one(file_info["file_path"]) for file_info in context.diff_data["files"]]
+                    results = await asyncio.gather(*tasks)
+                    changed_files_dict = dict(results)
+            
+            changed_fetch_time = time.perf_counter() - changed_fetch_start
+            
+            # Clone base_graph using pickle to avoid mutating cache
+            patched_graph = pickle.loads(pickle.dumps(base_graph))
+            
+            # Compile changes incrementally on patched_graph
+            metrics = {}
+            incremental_start = time.perf_counter()
+            
+            adapter = self.language_factory.create_adapter(language)
+            repository_input = {
+                "files": changed_files_dict,
+                "changed_only": True,
+                "metrics": metrics,
+                "language": language,
+            }
+            
+            print(f"[pipeline] Running incremental compilation for {len(changed_files_dict)} changed files...")
+            try:
+                patched_graph = adapter.compile_incremental(patched_graph, repository_input)
+            except Exception as exc:
+                raise RepositoryCompilationFailed(
+                    f"Incremental compilation failed: {exc}",
+                    details={"repository": request.repository.full_name, "language": language, "sha": head_sha},
+                ) from exc
+                
+            changed_compile_time = metrics.get("compile_duration", time.perf_counter() - incremental_start)
+            patch_duration = metrics.get("patch_duration", 0.0)
+            
+            # Export head RepositoryModel
+            head_export_start = time.perf_counter()
+            context.head_repository_model = patched_graph.to_model()
+            head_export_duration = time.perf_counter() - head_export_start
+            
+            timer.print_progress()
+            
+        context.mark_repository_compiled()
+        
+        # Overview log output to terminal
+        pipeline_logger.log_pipeline("[Pipeline] Repository compilation", to_terminal=True)
+        
+        base_fetch_str = "cached" if base_cached else f"{base_fetch_time:.1f}s"
+        pipeline_logger.log_pipeline(f"  ✓ Fetch base repository ({base_fetch_str})", to_terminal=True)
+        
+        base_compile_str = "cached" if base_cached else f"{base_compile_time:.1f}s"
+        pipeline_logger.log_pipeline(f"  ✓ Compile base graph ({base_compile_str})", to_terminal=True)
+        
+        changed_fetch_str = f"{changed_fetch_time:.1f}s"
+        pipeline_logger.log_pipeline(f"  ✓ Fetch changed files ({changed_fetch_str})", to_terminal=True)
+        
+        changed_compile_str = f"{changed_compile_time:.1f}s"
+        pipeline_logger.log_pipeline(f"  ✓ Compile changed files ({changed_compile_str})", to_terminal=True)
+        
+        patch_duration_str = f"{patch_duration:.1f}s"
+        pipeline_logger.log_pipeline(f"  ✓ Patch repository graph ({patch_duration_str})", to_terminal=True)
+        
+        export_duration_str = f"{head_export_duration:.1f}s"
+        pipeline_logger.log_pipeline(f"  ✓ Export RepositoryModel ({export_duration_str})", to_terminal=True)
+        
+        # Telemetry detail logging
+        changed_files_compiled = metrics.get("changed_files_compiled", 0)
+        files_skipped = metrics.get("files_skipped", len(base_graph.files))
+        symbols_replaced = metrics.get("symbols_replaced", 0)
+        symbols_inserted = metrics.get("symbols_inserted", 0)
+        symbols_removed = metrics.get("symbols_removed", 0)
+        edges_updated = metrics.get("edges_updated", 0)
+        
+        pipeline_logger.log_pipeline("", to_terminal=True)
+        pipeline_logger.log_pipeline(f"  Base files compiled: {base_files_compiled}", to_terminal=True)
+        pipeline_logger.log_pipeline(f"  Changed files compiled: {changed_files_compiled}", to_terminal=True)
+        pipeline_logger.log_pipeline(f"  Files skipped: {files_skipped}", to_terminal=True)
+        pipeline_logger.log_pipeline(f"  Symbols replaced: {symbols_replaced}", to_terminal=True)
+        pipeline_logger.log_pipeline(f"  Symbols inserted: {symbols_inserted}", to_terminal=True)
+        pipeline_logger.log_pipeline(f"  Symbols removed: {symbols_removed}", to_terminal=True)
+        pipeline_logger.log_pipeline(f"  Edges updated: {edges_updated}", to_terminal=True)
+        pipeline_logger.log_pipeline(f"  Patch duration: {patch_duration:.3f}s", to_terminal=True)
+        pipeline_logger.log_pipeline(f"  Export duration: {head_export_duration:.3f}s", to_terminal=True)
     
     async def _fetch_diff(self, context: PipelineContext, request: AnalysisRequest) -> None:
         """

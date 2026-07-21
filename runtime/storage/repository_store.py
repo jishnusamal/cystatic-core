@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
-from language_adapters.model import RepositoryModel
+from language_adapters.model import RepositoryModel, RepositoryGraph
 
 
 class RepositoryStore(ABC):
@@ -27,28 +27,28 @@ class RepositoryStore(ABC):
     """
     
     @abstractmethod
-    async def load(self, repository: str, ref: str) -> RepositoryModel | None:
+    async def load(self, repository: str, ref: str) -> RepositoryModel | RepositoryGraph | None:
         """
-        Load a cached repository model.
+        Load a cached repository model or graph.
         
         Args:
             repository: Repository identifier (e.g., "owner/repo")
             ref: Git reference (branch, tag, or commit SHA)
             
         Returns:
-            RepositoryModel if cached, None otherwise
+            RepositoryModel or RepositoryGraph if cached, None otherwise
         """
         pass
     
     @abstractmethod
-    async def save(self, repository: str, ref: str, model: RepositoryModel) -> None:
+    async def save(self, repository: str, ref: str, model: RepositoryModel | RepositoryGraph) -> None:
         """
-        Save a repository model to cache.
+        Save a repository model or graph to cache.
         
         Args:
             repository: Repository identifier
             ref: Git reference
-            model: Compiled RepositoryModel to cache
+            model: Compiled RepositoryModel or RepositoryGraph to cache
         """
         pass
     
@@ -120,16 +120,16 @@ class FilesystemRepositoryStore(RepositoryStore):
         key = self._make_key(repository, ref)
         return self.cache_dir / f"{key}.pkl"
     
-    async def load(self, repository: str, ref: str) -> RepositoryModel | None:
+    async def load(self, repository: str, ref: str) -> RepositoryModel | RepositoryGraph | None:
         """
-        Load a cached repository model from filesystem.
+        Load a cached repository model or graph from filesystem.
         
         Args:
             repository: Repository identifier
             ref: Git reference
             
         Returns:
-            RepositoryModel if cached and valid, None otherwise
+            RepositoryModel or RepositoryGraph if cached and valid, None otherwise
         """
         cache_path = self._get_cache_path(repository, ref)
         
@@ -140,8 +140,8 @@ class FilesystemRepositoryStore(RepositoryStore):
             with open(cache_path, "rb") as f:
                 model = pickle.load(f)
             
-            # Validate that we got a RepositoryModel
-            if not isinstance(model, RepositoryModel):
+            # Validate that we got a RepositoryModel or RepositoryGraph
+            if not isinstance(model, (RepositoryModel, RepositoryGraph)):
                 return None
             
             return model
@@ -149,14 +149,14 @@ class FilesystemRepositoryStore(RepositoryStore):
             # If we can't load the cache, treat it as a miss
             return None
     
-    async def save(self, repository: str, ref: str, model: RepositoryModel) -> None:
+    async def save(self, repository: str, ref: str, model: RepositoryModel | RepositoryGraph) -> None:
         """
-        Save a repository model to filesystem cache.
+        Save a repository model or graph to filesystem cache.
         
         Args:
             repository: Repository identifier
             ref: Git reference
-            model: RepositoryModel to cache
+            model: RepositoryModel or RepositoryGraph to cache
         """
         cache_path = self._get_cache_path(repository, ref)
         
@@ -249,18 +249,18 @@ class MemoryRepositoryStore(RepositoryStore):
     
     def __init__(self) -> None:
         """Initialize the memory store."""
-        self._cache: dict[str, RepositoryModel] = {}
+        self._cache: dict[str, RepositoryModel | RepositoryGraph] = {}
     
     def _make_key(self, repository: str, ref: str) -> str:
         """Generate a cache key."""
         return f"{repository}:{ref}"
     
-    async def load(self, repository: str, ref: str) -> RepositoryModel | None:
+    async def load(self, repository: str, ref: str) -> RepositoryModel | RepositoryGraph | None:
         """Load from memory cache."""
         key = self._make_key(repository, ref)
         return self._cache.get(key)
     
-    async def save(self, repository: str, ref: str, model: RepositoryModel) -> None:
+    async def save(self, repository: str, ref: str, model: RepositoryModel | RepositoryGraph) -> None:
         """Save to memory cache."""
         key = self._make_key(repository, ref)
         self._cache[key] = model

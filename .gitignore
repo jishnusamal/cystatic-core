@@ -8,3 +8,4 @@ __pycache__
 migrations/
 .infisical.json
 *_cache/
+logs/

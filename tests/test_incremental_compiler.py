@@ -292,3 +292,106 @@ def new_helper():
         # Note: on extremely small synthetic examples it might be close, but still faster.
         # We assert it is at least as fast or faster.
         assert duration_inc <= duration_full
+
+    def test_changed_only_mode(self, base_source_files):
+        """Test compiling incrementally with changed_only=True."""
+        adapter = PythonLanguageAdapter()
+        base_graph = adapter.compile_graph({"files": base_source_files})
+
+        # service.py is modified, processor.py is deleted, and a new utils.py is added.
+        # We represent deleted processor.py as None, modified service.py with new content,
+        # and new utils.py with new content.
+        head_service_py = '''
+from utils import helper
+def confirm_checkout():
+    helper()
+'''
+        utils_py = '''
+def helper():
+    pass
+'''
+        # We pass ONLY changed files to compile_incremental
+        changed_files = {
+            "service.py": head_service_py,
+            "processor.py": None,
+            "utils.py": utils_py,
+        }
+        
+        metrics = {}
+        inc_graph = adapter.compile_incremental(
+            base_graph, 
+            {"files": changed_files, "changed_only": True, "metrics": metrics}
+        )
+        
+        assert "service.py" in inc_graph.files
+        assert "utils.py" in inc_graph.files
+        assert "processor.py" not in inc_graph.files
+        
+        # Verify metrics
+        assert metrics.get("changed_files_compiled") == 2
+        assert metrics.get("files_skipped") == 0
+        assert metrics.get("symbols_removed") > 0
+        assert metrics.get("symbols_inserted") > 0
+
+    @pytest.mark.asyncio
+    async def test_pipeline_incremental_orchestration(self, base_source_files):
+        """Test end-to-end pipeline run utilizing incremental compilation."""
+        from runtime.pipeline.pipeline import Pipeline
+        from runtime.storage.repository_store import MemoryRepositoryStore
+        from runtime.models import AnalysisRequest, RepositoryReference, PullRequestReference, DiffSnapshot, DiffFile
+        from unittest.mock import AsyncMock, MagicMock
+        
+        # Setup mocks
+        repo_ref = RepositoryReference(provider="github", owner="owner", repository="repo", default_branch="main")
+        pr_ref = PullRequestReference(number=123, base_sha="base", head_sha="head", title="Test PR")
+        
+        diff = DiffSnapshot(
+            files=(
+                DiffFile(file_path="service.py", added_lines=(10,), removed_lines=(), hunks=()),
+            ),
+            base_sha="base",
+            head_sha="head"
+        )
+        
+        request = AnalysisRequest(
+            repository=repo_ref,
+            pull_request=pr_ref,
+            diff=diff
+        )
+        
+        # Base files (mocked snapshot)
+        base_snapshot = MagicMock()
+        base_snapshot.files = base_source_files
+        
+        provider = AsyncMock()
+        provider.fetch_repository_at_sha.return_value = base_snapshot
+        
+        # Fetch file at head for changed files
+        head_service_py = '''
+from processor import charge_card
+def confirm_checkout():
+    charge_card()
+'''
+        provider.fetch_file.return_value = head_service_py
+        
+        store = MemoryRepositoryStore()
+        pipeline = Pipeline(repository_store=store, repository_provider=provider)
+        
+        context = await pipeline.run(request)
+        
+        # Verify base and head models compiled
+        assert context.base_repository_model is not None
+        assert context.head_repository_model is not None
+        
+        # Verify base graph cached
+        assert await store.exists("owner/repo", "base")
+        
+        # Verify repository compilation metrics in logs
+        from runtime.instrumentation.logging import pipeline_logger
+        log_text = "\n".join(pipeline_logger.pipeline_logs)
+        assert "Repository compilation" in log_text
+        assert "Fetch base repository" in log_text
+        assert "Compile base graph" in log_text
+        assert "Fetch changed files" in log_text
+        assert "Compile changed files" in log_text
+        assert "Patch repository graph" in log_text

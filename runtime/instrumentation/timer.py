@@ -63,9 +63,10 @@ class Timer:
         
         active_name, start_time, metadata = self._stack.pop()
         
+        from runtime.instrumentation.logging import pipeline_logger
         if active_name != name:
             # Mismatch, but don't crash - just log it
-            print(f"[timer] WARNING: Timer mismatch - expected {active_name}, got {name}")
+            pipeline_logger.log_pipeline(f"[timer] WARNING: Timer mismatch - expected {active_name}, got {name}", to_terminal=False)
         
         elapsed = time.perf_counter() - start_time
         
@@ -84,14 +85,16 @@ class Timer:
             meta_parts = [f"{k}={v}" for k, v in metadata.items()]
             log_msg += f" ({', '.join(meta_parts)})"
         
-        print(log_msg)
+        pipeline_logger.log_pipeline(log_msg, to_terminal=False)
         
         # Record timing
-        self._timings.append({
+        record = {
             "name": name,
             "elapsed": elapsed,
             "metadata": dict(metadata),
-        })
+        }
+        self._timings.append(record)
+        pipeline_logger.record_timing(record)
         
         return elapsed
 
@@ -165,9 +168,10 @@ class Timer:
 
     def print_summary(self) -> None:
         """Print a formatted summary of all timings."""
-        print("\n" + "=" * 70)
-        print("Compiler Timing Summary")
-        print("=" * 70)
+        from runtime.instrumentation.logging import pipeline_logger
+        pipeline_logger.log_pipeline("\n" + "=" * 70, to_terminal=False)
+        pipeline_logger.log_pipeline("Compiler Timing Summary", to_terminal=False)
+        pipeline_logger.log_pipeline("=" * 70, to_terminal=False)
         
         # Group by top-level stage
         totals = self.get_timings()
@@ -181,7 +185,7 @@ class Timer:
                 elapsed_str = f"{elapsed:.2f}s"
             
             name = timing["name"]
-            print(f"{name:<50} {elapsed_str}")
+            pipeline_logger.log_pipeline(f"{name:<50} {elapsed_str}", to_terminal=False)
         
         # Print total
         total = sum(t["elapsed"] for t in totals)
@@ -190,18 +194,19 @@ class Timer:
         else:
             total_str = f"{total:.2f}s"
         
-        print("=" * 70)
-        print(f"{'TOTAL':<50} {total_str}")
-        print("=" * 70 + "\n")
+        pipeline_logger.log_pipeline("=" * 70, to_terminal=False)
+        pipeline_logger.log_pipeline(f"{'TOTAL':<50} {total_str}", to_terminal=False)
+        pipeline_logger.log_pipeline("=" * 70 + "\n", to_terminal=False)
 
     def print_progress(self) -> None:
         """Print intermediate timing progress."""
         if not self._timings:
             return
         
-        print("\n" + "-" * 70)
-        print("Timing Progress")
-        print("-" * 70)
+        from runtime.instrumentation.logging import pipeline_logger
+        pipeline_logger.log_pipeline("\n" + "-" * 70, to_terminal=False)
+        pipeline_logger.log_pipeline("Timing Progress", to_terminal=False)
+        pipeline_logger.log_pipeline("-" * 70, to_terminal=False)
         
         # Print last few timings
         recent = self._timings[-5:] if len(self._timings) > 5 else self._timings
@@ -213,7 +218,7 @@ class Timer:
                 elapsed_str = f"{elapsed:.2f}s"
             
             name = timing["name"]
-            print(f"{name:<50} {elapsed_str}")
+            pipeline_logger.log_pipeline(f"{name:<50} {elapsed_str}", to_terminal=False)
         
         # Print running total
         total = sum(t["elapsed"] for t in self._timings)
@@ -222,8 +227,8 @@ class Timer:
         else:
             total_str = f"{total:.2f}s"
         
-        print(f"{'Running Total':<50} {total_str}")
-        print("-" * 70)
+        pipeline_logger.log_pipeline(f"{'Running Total':<50} {total_str}", to_terminal=False)
+        pipeline_logger.log_pipeline("-" * 70, to_terminal=False)
 
     def reset(self) -> None:
         """Clear all recorded timings."""

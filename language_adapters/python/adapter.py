@@ -181,28 +181,31 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
         total_parse_time = sum(parse_times)
         avg_parse_time = total_parse_time / len(parse_times) if parse_times else 0
         
-        print(f"[adapter] Python Files: {len(files)} total, {len(file_contexts)} parsed, {files_skipped} skipped, {files_failed} failed")
-        print(f"[adapter] Total AST Parse Time: {total_parse_time:.3f}s")
-        print(f"[adapter] Average Parse Time: {avg_parse_time * 1000:.2f}ms/file")
+        from runtime.instrumentation.logging import pipeline_logger
+        log = lambda msg: pipeline_logger.log_pipeline(msg, to_terminal=False)
+        
+        log(f"[adapter] Python Files: {len(files)} total, {len(file_contexts)} parsed, {files_skipped} skipped, {files_failed} failed")
+        log(f"[adapter] Total AST Parse Time: {total_parse_time:.3f}s")
+        log(f"[adapter] Average Parse Time: {avg_parse_time * 1000:.2f}ms/file")
         
         if slow_files:
-            print(f"[adapter] Slow Parses (>100ms):")
+            log(f"[adapter] Slow Parses (>100ms):")
             for file_path, parse_time in sorted(slow_files, key=lambda x: x[1], reverse=True)[:10]:
-                print(f"[adapter]   {file_path}: {parse_time * 1000:.2f}ms")
+                log(f"[adapter]   {file_path}: {parse_time * 1000:.2f}ms")
 
         # Use composite visitor for single AST traversal per file
         with timer.timed("Visitor", metadata={"files": len(file_contexts)}):
             index = self._index_compiler.compile_with_visitor(file_contexts, language, self._visitor)
         
         # Log indexing statistics
-        print(f"[adapter] Symbols Indexed: {len(index.all_symbols)}")
-        print(f"[adapter] Imports Indexed: {len(index.all_imports)}")
-        print(f"[adapter] Calls Indexed: {len(index.all_calls)}")
-        print(f"[adapter] Entrypoints Indexed: {len(index.all_entrypoints)}")
-        print(f"[adapter] Persistence Models: {len(index.all_persistence_models)}")
-        print(f"[adapter] Events: {len(index.all_events)}")
-        print(f"[adapter] Tests: {len(index.all_tests)}")
-        print(f"[adapter] Configurations: {len(index.all_configurations)}")
+        log(f"[adapter] Symbols Indexed: {len(index.all_symbols)}")
+        log(f"[adapter] Imports Indexed: {len(index.all_imports)}")
+        log(f"[adapter] Calls Indexed: {len(index.all_calls)}")
+        log(f"[adapter] Entrypoints Indexed: {len(index.all_entrypoints)}")
+        log(f"[adapter] Persistence Models: {len(index.all_persistence_models)}")
+        log(f"[adapter] Events: {len(index.all_events)}")
+        log(f"[adapter] Tests: {len(index.all_tests)}")
+        log(f"[adapter] Configurations: {len(index.all_configurations)}")
         
         # Print visitor instrumentation
         from language_adapters.base.instrumentation import get_instrumentation
@@ -212,102 +215,13 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
         inst.print_top_operations(n=50)
         inst.print_hotspot_analysis()
         
+        # Print concise profile summary for terminal output in profile mode
+        inst.print_profile_summary()
+        
         # Return RepositoryIndex (semantic compilation happens in compile())
         return index
 
-    def compile_graph(self, repository_input: dict[str, Any]) -> RepositoryGraph:
-        """Compile a Python repository into a patchable RepositoryGraph.
 
-        Args:
-            repository_input: Repository snapshot containing 'files' key.
-
-        Returns:
-            RepositoryGraph representing the compiled repository state.
-        """
-        files = repository_input.get('files', {})
-        language = repository_input.get('language', self.get_language())
-        
-        index = self._build_index(files, language)
-        model = self._semantic_compiler.compile(index, language)
-        
-        file_contributions = {}
-        for file_index in index.files:
-            content = files.get(file_index.path, "")
-            h = hashlib.sha256(content.encode('utf-8')).hexdigest()
-            file_contributions[file_index.path] = FileContribution.from_file_index(file_index, source_hash=h)
-            
-        symbols_dict = {}
-        imports_dict = {}
-        for symbol in model.symbols:
-            if symbol.kind == SymbolKind.IMPORT:
-                imports_dict[symbol.id] = symbol
-            else:
-                symbols_dict[symbol.id] = symbol
-
-        graph = RepositoryGraph(
-            files=file_contributions,
-            symbols=symbols_dict,
-            imports=imports_dict,
-            call_graph=model.call_graph,
-            reference_graph=model.reference_graph,
-            type_relationship_graph=model.type_relationship_graph,
-            entry_points=model.entry_points,
-            async_entry_points=model.async_entry_points,
-            persistence_models=model.persistence_models,
-            repository_methods=model.repository_methods,
-            event_constructs=model.event_constructs,
-            test_definitions=model.test_definitions,
-            configuration_references=model.configuration_references,
-            metadata=model.metadata,
-        )
-        return graph
-
-    def compile_incremental(self, base_graph: RepositoryGraph, repository_input: dict[str, Any]) -> RepositoryGraph:
-        """Compile changed files and patch the base_graph.
-
-        Args:
-            base_graph: The RepositoryGraph from the base revision.
-            repository_input: Head repository snapshot containing 'files' key.
-
-        Returns:
-            RepositoryGraph: The patched, updated RepositoryGraph.
-        """
-        base_files = set(base_graph.files.keys())
-        head_files_content = repository_input.get('files', {})
-        head_files = set(head_files_content.keys())
-        language = repository_input.get('language', self.get_language())
-        
-        added_files = head_files - base_files
-        deleted_files = base_files - head_files
-        
-        changed_files = {}
-        
-        # Added files
-        for f in added_files:
-            content = head_files_content[f]
-            file_index = self._index_single_file(f, content, language)
-            h = hashlib.sha256(content.encode('utf-8')).hexdigest()
-            changed_files[f] = FileContribution.from_file_index(file_index, source_hash=h)
-            
-        # Deleted files
-        for f in deleted_files:
-            changed_files[f] = None
-            
-        # Modified files
-        for f in base_files & head_files:
-            new_content = head_files_content[f]
-            new_hash = hashlib.sha256(new_content.encode('utf-8')).hexdigest()
-            old_contrib = base_graph.files[f]
-            if old_contrib.source_hash != new_hash:
-                file_index = self._index_single_file(f, new_content, language)
-                changed_files[f] = FileContribution.from_file_index(file_index, source_hash=new_hash)
-
-        # Patch the graph if any changes
-        if changed_files:
-            patcher = GraphPatcher()
-            patcher.patch(base_graph, changed_files, language)
-            
-        return base_graph
 
     def _index_single_file(self, file_path: str, content: str, language: str) -> FileIndex:
         """Parse and run indexing passes on a single source file."""
