@@ -32,6 +32,8 @@ from .persistence import (
 from .events import EventConstruct, EventOperationKind
 from .tests import TestDefinition, TestFramework, TestFixture
 from .configuration import ConfigurationReference, ConfigReferenceKind
+from .file_contribution import FileContribution
+from .repository_graph import RepositoryGraph
 from .repository_index import (
     RepositoryIndex,
     FileIndex,
@@ -101,4 +103,7 @@ __all__ = [
     "EventEntry",
     "TestEntry",
     "ConfigEntry",
+    # Incremental Compilation Graph
+    "FileContribution",
+    "RepositoryGraph",
 ]

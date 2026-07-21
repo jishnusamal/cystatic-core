@@ -9,6 +9,7 @@ Architecture:
 """
 
 import ast
+import hashlib
 import time
 from typing import Any
 
@@ -16,8 +17,9 @@ from language_adapters.base import BaseLanguageAdapter
 from language_adapters.base.file_context import FileContext
 from language_adapters.base.index_compiler import IndexCompiler
 from language_adapters.base.semantic_compiler import SemanticCompiler
-from language_adapters.model import RepositoryModel
-from language_adapters.model.repository_index import RepositoryIndex
+from language_adapters.base.graph_patcher import GraphPatcher
+from language_adapters.model import RepositoryModel, FileContribution, RepositoryGraph, SymbolKind
+from language_adapters.model.repository_index import RepositoryIndex, FileIndex
 from language_adapters.python.passes import (
     PythonCallIndexPass,
     PythonConfigurationIndexPass,
@@ -212,3 +214,118 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
         
         # Return RepositoryIndex (semantic compilation happens in compile())
         return index
+
+    def compile_graph(self, repository_input: dict[str, Any]) -> RepositoryGraph:
+        """Compile a Python repository into a patchable RepositoryGraph.
+
+        Args:
+            repository_input: Repository snapshot containing 'files' key.
+
+        Returns:
+            RepositoryGraph representing the compiled repository state.
+        """
+        files = repository_input.get('files', {})
+        language = repository_input.get('language', self.get_language())
+        
+        index = self._build_index(files, language)
+        model = self._semantic_compiler.compile(index, language)
+        
+        file_contributions = {}
+        for file_index in index.files:
+            content = files.get(file_index.path, "")
+            h = hashlib.sha256(content.encode('utf-8')).hexdigest()
+            file_contributions[file_index.path] = FileContribution.from_file_index(file_index, source_hash=h)
+            
+        symbols_dict = {}
+        imports_dict = {}
+        for symbol in model.symbols:
+            if symbol.kind == SymbolKind.IMPORT:
+                imports_dict[symbol.id] = symbol
+            else:
+                symbols_dict[symbol.id] = symbol
+
+        graph = RepositoryGraph(
+            files=file_contributions,
+            symbols=symbols_dict,
+            imports=imports_dict,
+            call_graph=model.call_graph,
+            reference_graph=model.reference_graph,
+            type_relationship_graph=model.type_relationship_graph,
+            entry_points=model.entry_points,
+            async_entry_points=model.async_entry_points,
+            persistence_models=model.persistence_models,
+            repository_methods=model.repository_methods,
+            event_constructs=model.event_constructs,
+            test_definitions=model.test_definitions,
+            configuration_references=model.configuration_references,
+            metadata=model.metadata,
+        )
+        return graph
+
+    def compile_incremental(self, base_graph: RepositoryGraph, repository_input: dict[str, Any]) -> RepositoryGraph:
+        """Compile changed files and patch the base_graph.
+
+        Args:
+            base_graph: The RepositoryGraph from the base revision.
+            repository_input: Head repository snapshot containing 'files' key.
+
+        Returns:
+            RepositoryGraph: The patched, updated RepositoryGraph.
+        """
+        base_files = set(base_graph.files.keys())
+        head_files_content = repository_input.get('files', {})
+        head_files = set(head_files_content.keys())
+        language = repository_input.get('language', self.get_language())
+        
+        added_files = head_files - base_files
+        deleted_files = base_files - head_files
+        
+        changed_files = {}
+        
+        # Added files
+        for f in added_files:
+            content = head_files_content[f]
+            file_index = self._index_single_file(f, content, language)
+            h = hashlib.sha256(content.encode('utf-8')).hexdigest()
+            changed_files[f] = FileContribution.from_file_index(file_index, source_hash=h)
+            
+        # Deleted files
+        for f in deleted_files:
+            changed_files[f] = None
+            
+        # Modified files
+        for f in base_files & head_files:
+            new_content = head_files_content[f]
+            new_hash = hashlib.sha256(new_content.encode('utf-8')).hexdigest()
+            old_contrib = base_graph.files[f]
+            if old_contrib.source_hash != new_hash:
+                file_index = self._index_single_file(f, new_content, language)
+                changed_files[f] = FileContribution.from_file_index(file_index, source_hash=new_hash)
+
+        # Patch the graph if any changes
+        if changed_files:
+            patcher = GraphPatcher()
+            patcher.patch(base_graph, changed_files, language)
+            
+        return base_graph
+
+    def _index_single_file(self, file_path: str, content: str, language: str) -> FileIndex:
+        """Parse and run indexing passes on a single source file."""
+        if not file_path.endswith('.py'):
+            from language_adapters.model.repository_index import FileIndex
+            return FileIndex(path=file_path, language=language)
+            
+        try:
+            tree = ast.parse(content, filename=file_path)
+            context = FileContext(
+                path=file_path,
+                source=content,
+                ast=tree,
+                language=language,
+            )
+            repo_index = self._index_compiler.compile_with_visitor([context], language, self._visitor)
+            return repo_index.files[0]
+        except SyntaxError:
+            from language_adapters.model.repository_index import FileIndex
+            return FileIndex(path=file_path, language=language)
+
