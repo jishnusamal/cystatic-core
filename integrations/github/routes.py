@@ -189,8 +189,8 @@ async def analyze_repository(
     """
     Public API endpoint to analyze a repository.
     
-    Accepts repository references, PR URLs, or raw diffs and returns comprehensive analysis
-    results including change summary, behavior summary, and operational summary.
+    Accepts repository references, PR URLs, or raw diffs and returns analysis
+    results containing review_context and llm_context.
     
     Input:
         Request body (JSON) with the following fields (Option 1 - PR URL):
@@ -209,24 +209,9 @@ async def analyze_repository(
                     - hunks (list, optional): Diff hunks with detailed changes
     
     Returns:
-        JSONResponse: Comprehensive analysis results:
-            - repository (str): Analyzed repository name
-            - language (str): Detected programming language
-            - change_summary (dict): Summary of code changes
-            - behavior_summary (dict): Summary of behavior changes
-            - operational_summary (dict): Summary of operational impacts:
-                - dependency (dict): Dependency changes
-                - data (dict): Data model changes
-                - event (dict): Event changes
-                - api (dict): API changes
-                - validation (dict): Validation changes
-                - metrics (dict): Metrics changes
-            - timing (dict): Compilation and execution timing:
-                - repository (float): Repository compilation time in seconds
-                - change (float): Change compilation time in seconds
-                - behavior (float): Behavior compilation time in seconds
-                - operational (float): Operational compilation time in seconds
-                - total (float): Total execution time in seconds
+        JSONResponse: Analysis results containing:
+            - review_context (dict, optional): Review and engineering context
+            - llm_context (dict, optional): Compact serialized LLM context
     
     Example Request (PR URL):
         {
@@ -243,21 +228,8 @@ async def analyze_repository(
     
     Example Response:
         {
-            "repository": "owner/repo-name",
-            "language": "python",
-            "change_summary": {...},
-            "behavior_summary": {...},
-            "operational_summary": {
-                "dependency": {...},
-                "data": {...}
-            },
-            "timing": {
-                "repository": 0.15,
-                "change": 0.08,
-                "behavior": 0.12,
-                "operational": 0.05,
-                "total": 0.40
-            }
+            "review_context": {...},
+            "llm_context": {...}
         }
     
     Status Codes:
@@ -370,64 +342,13 @@ async def analyze_repository(
             print(f"[routes] Pipeline error: {context.error}")
             raise HTTPException(status_code=500, detail=str(context.error))
         
-        # Render results (prefers EDM over OCM)
-        result = pipeline.render_json(context)
-        
-        # Extract the discovery data from the rendered JSON
-        # EDM renders include an "execution" key; OCM renders do not
-        discovery_summary = result.get("execution")
-        if discovery_summary is not None:
-            # EDM path: include enrichment models projected into discovery
-            discovery_summary = dict(discovery_summary)
-            for model_name in ["dependency", "data", "event", "api", "validation", "metrics"]:
-                if model_name in result:
-                    discovery_summary[model_name] = result[model_name]
-        elif context.ocm is not None:
-            # Fallback: project execution data from OCM behavior model
-            discovery_summary = {
-                "behaviors_count": len(context.ocm.behavior.behaviors),
-                "execution_chains_count": len(context.ocm.behavior.execution_chains),
-                "entry_points_count": len(context.ocm.behavior.entry_points),
-                "terminal_points_count": len(context.ocm.behavior.terminal_points),
-                "execution_depth": context.ocm.behavior.execution_depth,
-            }
-            # Include available enrichment models
-            for model_name in ["dependency", "data", "event", "api", "validation", "metrics"]:
-                if result.get(model_name) is not None:
-                    discovery_summary[model_name] = result[model_name]
-        
         # Render ReviewContext
         review_context = pipeline.render_review_context(context)
         
         # Serialize LLMContext
         llm_context = pipeline.serialize_llm_context(context)
         
-        response_content = {
-            "repository": RepositoryResponse(
-                provider="github",
-                owner=repo_ref.owner,
-                repository=repo_ref.repository,
-                full_name=repo_ref.full_name,
-                default_branch=repo_ref.default_branch,
-            ).model_dump(),
-            "language": context.language or "unknown",
-            "change_summary": result.get("change", {}),
-            "behavior_summary": result.get("behavior", {}),
-            "operational_summary": {
-                k: v for k, v in result.items()
-                if k in ["dependency", "data", "event", "api", "validation", "metrics"]
-            },
-            "discovery_summary": discovery_summary,
-            "timing": {
-                "repository": context.repository_compile_time or 0.0,
-                "change": context.change_compile_time or 0.0,
-                "behavior": context.behavior_compile_time or 0.0,
-                "operational": context.operational_compile_time or 0.0,
-                "review_context": context.presentation_compile_time or 0.0,
-                "llm_context": context.llm_compile_time or 0.0,
-                "total": context.total_time or 0.0,
-            },
-        }
+        response_content = {}
         
         # Include LLM context if available
         if llm_context is not None:
