@@ -55,7 +55,7 @@ class PythonTypeIndexPass(BaseIndexPass):
             return node.id
         elif isinstance(node, ast.Attribute):
             parts = []
-            current = node
+            current: ast.AST = node
             while isinstance(current, ast.Attribute):
                 parts.append(current.attr)
                 current = current.value

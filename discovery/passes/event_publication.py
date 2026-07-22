@@ -33,6 +33,8 @@ class EventPublicationPass(DiscoveryCompilerPass):
             return context
         
         operational_model = context.operational_model
+        if operational_model is None:
+            return context
         
         # Check if event model is present
         if not hasattr(operational_model, 'event') or operational_model.event is None:

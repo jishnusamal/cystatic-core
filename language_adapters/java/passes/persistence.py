@@ -123,7 +123,7 @@ class JavaPersistenceIndexPass(BaseIndexPass):
                     })
 
         # Determine line from class match
-        line = content[:class_start].count('\n') + 1
+        line_num = content[:class_start].count('\n') + 1
 
         return PersistenceEntry(
             name=class_name,
@@ -131,7 +131,7 @@ class JavaPersistenceIndexPass(BaseIndexPass):
             table_name=table_name or class_name.lower(),
             framework="jpa",
             file=file_path,
-            line=line,
+            line=line_num,
             fields=tuple(fields),
             relationships=tuple(relationships),
         )

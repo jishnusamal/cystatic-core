@@ -372,9 +372,9 @@ class SemanticCompiler:
         type_edges: list[TypeRelationshipEdge] = []
         for file_index in index.files:
             for rel in file_index.type_relationships:
-                edge = self._create_type_edge(rel, file_index.path)
-                if edge:
-                    type_edges.append(edge)
+                type_edge = self._create_type_edge(rel, file_index.path)
+                if type_edge:
+                    type_edges.append(type_edge)
         
         elapsed = time.perf_counter() - start
         log(f"[semantic] END Resolve Type Relationships ({elapsed:.2f}s) - {len(type_edges)} edges")

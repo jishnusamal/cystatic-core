@@ -59,7 +59,7 @@ class PythonEntrypointIndexPass(BaseIndexPass):
     def _get_arg_value(self, node: ast.AST) -> str | None:
         """Get string value from an AST node."""
         if isinstance(node, ast.Constant):
-            return str(node.value)
+            return str(node.value) if node.value is not None else None
         elif isinstance(node, ast.Str):
-            return node.s
+            return str(node.s)
         return None

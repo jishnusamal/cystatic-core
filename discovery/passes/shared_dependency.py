@@ -34,6 +34,8 @@ class SharedDependencyPass(DiscoveryCompilerPass):
             return context
         
         operational_model = context.operational_model
+        if operational_model is None:
+            return context
         
         # Check if dependency model is present
         if not hasattr(operational_model, 'dependency') or operational_model.dependency is None:

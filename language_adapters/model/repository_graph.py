@@ -62,7 +62,8 @@ class RepositoryGraph:
     @classmethod
     def from_bytes(cls, data: bytes) -> "RepositoryGraph":
         """Deserialize the RepositoryGraph using pickle."""
-        return pickle.loads(data)
+        from typing import cast
+        return cast("RepositoryGraph", pickle.loads(data))
 
     def save_to_file(self, file_path: str) -> None:
         """Save the RepositoryGraph to a file on disk."""

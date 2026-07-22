@@ -7,15 +7,16 @@ No compiler logic - pure orchestration state.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
-from language_adapters.model import RepositoryModel
-from change.model import ChangeModel, RepositoryDelta
-from behavior.model import BehaviorModel
-from operational.model import OperationalChangeModel, EngineeringDiscoveryModel
-from operational.discovery.model import DiscoveryIR
-from review_context.model import ReviewContext
-from llm_context.model import LLMContext
+if TYPE_CHECKING:
+    from language_adapters.model import RepositoryModel
+    from change.model import ChangeModel, RepositoryDelta
+    from behavior.model import BehaviorModel
+    from operational.model import OperationalChangeModel, EngineeringDiscoveryModel
+    from operational.discovery.model import DiscoveryIR
+    from review_context.model import ReviewContext
+    from llm_context.model import LLMContext
 
 
 @dataclass

@@ -331,7 +331,7 @@ class Pipeline:
                 adapter = self.language_factory.create_adapter(language)
                 
                 base_compile_start = time.perf_counter()
-                repository_input = {
+                repository_input: dict[str, Any] = {
                     "root_directory": request.repository.full_name,
                     "language": language,
                     "files": snapshot.files,
@@ -394,6 +394,8 @@ class Pipeline:
                 if context.diff_data and "files" in context.diff_data:
                     async def fetch_one(file_path: str):
                         try:
+                            if self.repository_provider is None:
+                                return file_path, None
                             content = await self.repository_provider.fetch_file(
                                 request.repository, file_path, head_sha
                             )
@@ -412,7 +414,7 @@ class Pipeline:
             patched_graph = pickle.loads(pickle.dumps(base_graph))
             
             # Compile changes incrementally on patched_graph
-            metrics = {}
+            metrics: dict[str, Any] = {}
             incremental_start = time.perf_counter()
             
             adapter = self.language_factory.create_adapter(language)
@@ -1187,14 +1189,7 @@ class Pipeline:
             
             # Serialize lookup tables — keep as compact lists of ints
             result["f"] = [list(e) for e in llm_ctx.f]
-            
-            result["sym"] = [
-                [s[0], s[1], s[2], s[3], list(s[4])]
-                for s in llm_ctx.sym
-            ]
-            
-            result["bh"] = [list(e) for e in llm_ctx.bh]
-            result["ref"] = [list(e) for e in llm_ctx.ref]
+            result["sym"] = [list(s) for s in llm_ctx.sym]
             result["ep"] = [list(e) for e in llm_ctx.ep]
             
             # Serialize change section
@@ -1229,13 +1224,11 @@ class Pipeline:
                     max_depth,
                 ])
             
-            result["de"] = list(llm_ctx.de)
-            
             # Serialize discoveries
             result["disc"] = []
             for d in llm_ctx.disc:
-                id_idx, kind_id, facts, ref_idxs = d
-                result["disc"].append([id_idx, kind_id, facts, list(ref_idxs)])
+                kind_id, facts = d
+                result["disc"].append([kind_id, facts])
             
             return result
         except Exception as exc:

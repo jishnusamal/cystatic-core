@@ -34,6 +34,8 @@ class ValidationGapPass(DiscoveryCompilerPass):
             return context
         
         operational_model = context.operational_model
+        if operational_model is None:
+            return context
         
         # Check if validation model is present
         if not hasattr(operational_model, 'validation') or operational_model.validation is None:

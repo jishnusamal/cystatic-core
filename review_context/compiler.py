@@ -63,7 +63,7 @@ class ReviewContextCompiler:
         change_model: ChangeModel | None = None,
         behavior_model: BehaviorModel | None = None,
         operational_model: OperationalChangeModel | None = None,
-        discovery_model: DiscoveryModel | None = None,
+        discovery_model: DiscoveryModel | DiscoveryIR | None = None,
     ) -> ReviewContext:
         """Compile compiler outputs into a ReviewContext.
 
@@ -509,10 +509,10 @@ class ReviewContextCompiler:
                 discoveries.append(discovery)
         else:
             # New DiscoveryModel from discovery.model
-            for d in discovery_model.discoveries:
+            for d_new in discovery_model.discoveries:
                 # Build references from discovery references
-                all_references: list[Reference] = []
-                for ref in d.references:
+                refs_new: list[Reference] = []
+                for ref in d_new.references:
                     reference = Reference(
                         id=ref.artifact_id,
                         kind=ref.artifact_type,
@@ -520,41 +520,41 @@ class ReviewContextCompiler:
                         compiler_artifact=ref.artifact_type,
                         supporting_nodes=(),
                     )
-                    all_references.append(reference)
+                    refs_new.append(reference)
 
                 # Convert DiscoveryFact to dict for stable ABI
-                facts_dict: dict[str, Any] = {}
-                if d.facts:
-                    facts_dict = {
-                        "shared_symbol_ids": d.facts.shared_symbol_ids,
-                        "behavior_count": d.facts.behavior_count,
-                        "untested_symbol_ids": d.facts.untested_symbol_ids,
-                        "validation_coverage_ratio": d.facts.validation_coverage_ratio,
-                        "crossed_boundaries": d.facts.crossed_boundaries,
-                        "service_transitions": d.facts.service_transitions,
-                        "related_symbol_pairs": d.facts.related_symbol_pairs,
-                        "relationship_type": d.facts.relationship_type,
-                        "max_depth": d.facts.max_depth,
-                        "deep_paths": d.facts.deep_paths,
-                        "shared_dependencies": d.facts.shared_dependencies,
-                        "dependency_count": d.facts.dependency_count,
-                        "published_events": d.facts.published_events,
-                        "event_handlers": d.facts.event_handlers,
-                        "mutated_state": d.facts.mutated_state,
-                        "mutation_sources": d.facts.mutation_sources,
-                        "changed_interfaces": d.facts.changed_interfaces,
-                        "interface_types": d.facts.interface_types,
+                facts_dict_new: dict[str, Any] = {}
+                if d_new.facts:
+                    facts_dict_new = {
+                        "shared_symbol_ids": d_new.facts.shared_symbol_ids,
+                        "behavior_count": d_new.facts.behavior_count,
+                        "untested_symbol_ids": d_new.facts.untested_symbol_ids,
+                        "validation_coverage_ratio": d_new.facts.validation_coverage_ratio,
+                        "crossed_boundaries": d_new.facts.crossed_boundaries,
+                        "service_transitions": d_new.facts.service_transitions,
+                        "related_symbol_pairs": d_new.facts.related_symbol_pairs,
+                        "relationship_type": d_new.facts.relationship_type,
+                        "max_depth": d_new.facts.max_depth,
+                        "deep_paths": d_new.facts.deep_paths,
+                        "shared_dependencies": d_new.facts.shared_dependencies,
+                        "dependency_count": d_new.facts.dependency_count,
+                        "published_events": d_new.facts.published_events,
+                        "event_handlers": d_new.facts.event_handlers,
+                        "mutated_state": d_new.facts.mutated_state,
+                        "mutation_sources": d_new.facts.mutation_sources,
+                        "changed_interfaces": d_new.facts.changed_interfaces,
+                        "interface_types": d_new.facts.interface_types,
                     }
                 
                 # Deduplicate, rank, and truncate references
-                total_count = len(all_references)
-                selected = self._select_representative_references(all_references)
+                total_count = len(refs_new)
+                selected = self._select_representative_references(refs_new)
 
                 discovery = Discovery(
-                    id=d.id,
-                    kind=d.kind.value if hasattr(d.kind, 'value') else str(d.kind),
+                    id=d_new.id,
+                    kind=d_new.kind.value if hasattr(d_new.kind, 'value') else str(d_new.kind),
                     statement="",  # No statements in new model
-                    facts=facts_dict,
+                    facts=facts_dict_new,
                     reference_count=total_count,
                     references=tuple(selected),
                 )

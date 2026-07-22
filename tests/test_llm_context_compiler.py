@@ -481,14 +481,11 @@ class TestLLMContextCompilerInit:
         assert isinstance(result.st, StringTable)
         assert result.f == ()
         assert result.sym == ()
-        assert result.bh == ()
-        assert result.ref == ()
         assert result.ep == ()
         assert result.cs == (0, 0, 0, 0, 0)
         assert result.cf == ()
         assert isinstance(result.eg, ExecutionGraph)
         assert result.epts == ()
-        assert result.de == (0, 0)
         assert result.disc == ()
 
 
@@ -512,14 +509,6 @@ class TestStringTable:
         strings = list(result.st.entries)
         assert any("POST" in s for s in strings)
         assert any("/test" in s for s in strings)
-
-    def test_strings_collected_from_discoveries(self, simple_review_context):
-        """Test that strings from discoveries section are collected."""
-        compiler = LLMContextCompiler()
-        result = compiler.compile(simple_review_context)
-        strings = list(result.st.entries)
-        assert any("discovery://" in s for s in strings)
-        assert any("ref://" in s for s in strings)
 
     def test_strings_deduplicated(self, simple_review_context):
         """Test that repeated strings are stored only once."""
@@ -553,20 +542,17 @@ class TestLookupTables:
         compiler = LLMContextCompiler()
         result = compiler.compile(simple_review_context)
         for entry in result.f:
-            assert len(entry) == 3  # (path_idx, lang_id, ct_id)
-            path, lang, ctype = entry
+            assert len(entry) == 2  # (path_idx, ct_id)
+            path, ctype = entry
             assert isinstance(path, int)
-            assert isinstance(lang, int)
             assert isinstance(ctype, int)
 
     def test_file_table_enum_encoding(self, simple_review_context):
-        """Test that file table uses enum encoding for language and change_type."""
+        """Test that file table uses enum encoding for change_type."""
         compiler = LLMContextCompiler()
         result = compiler.compile(simple_review_context)
         for entry in result.f:
-            _, lang_id, ct_id = entry
-            # Language "python" should be enum id 1
-            assert _enum_val("lang", lang_id) == "python"
+            _, ct_id = entry
             # Change type "modified" should be enum id 1
             assert _enum_val("ct", ct_id) == "modified"
 
@@ -588,34 +574,20 @@ class TestLookupTables:
         compiler = LLMContextCompiler()
         result = compiler.compile(simple_review_context)
         for entry in result.sym:
-            # (file_id, name_idx, kind_id, vis_id, (start_line, end_line))
-            assert len(entry) == 5
-            file_id, name_idx, kind_id, vis_id, location = entry
+            # (file_id, name_idx, kind_id)
+            assert len(entry) == 3
+            file_id, name_idx, kind_id = entry
             assert isinstance(file_id, int)
             assert isinstance(name_idx, int)
             assert isinstance(kind_id, int)
-            assert isinstance(vis_id, int)
-            assert isinstance(location, tuple) and len(location) == 2
 
     def test_symbol_table_enum_encoding(self, simple_review_context):
-        """Test that symbol table uses enum encoding for kind and visibility."""
+        """Test that symbol table uses enum encoding for kind."""
         compiler = LLMContextCompiler()
         result = compiler.compile(simple_review_context)
         for entry in result.sym:
-            _, _, kind_id, vis_id, _ = entry
+            _, _, kind_id = entry
             assert _enum_val("kind", kind_id) == "function"
-            assert _enum_val("vis", vis_id) == "public"
-
-    def test_symbol_table_location_normalized(self, simple_review_context):
-        """Test that symbol location is normalized to (start, end) tuple."""
-        compiler = LLMContextCompiler()
-        result = compiler.compile(simple_review_context)
-        for entry in result.sym:
-            _, _, _, _, location = entry
-            start, end = location
-            # "test.py:1-10" normalized to (1, 10)
-            assert start >= 0
-            assert end >= 0
 
     def test_symbol_table_deduplicates(self, multi_file_change_context):
         """Test that symbol table deduplicates by symbol id."""
@@ -623,62 +595,6 @@ class TestLookupTables:
         compiler = LLMContextCompiler()
         result = compiler.compile(rc)
         assert len(result.sym) == 3
-
-    def test_behavior_table_populated(self, simple_review_context):
-        """Test that behavior table is populated from execution context."""
-        compiler = LLMContextCompiler()
-        result = compiler.compile(simple_review_context)
-        assert len(result.bh) > 0
-
-    def test_behavior_table_entries(self, simple_review_context):
-        """Test that behavior table entries have correct compact structure."""
-        compiler = LLMContextCompiler()
-        result = compiler.compile(simple_review_context)
-        for entry in result.bh:
-            # (sym_id, kind_id) — compact form
-            assert len(entry) == 2
-            sym_id, kind_id = entry
-            assert isinstance(sym_id, int)
-            assert isinstance(kind_id, int)
-
-    def test_behavior_table_uses_symbol_reference(self, simple_review_context):
-        """Test that behavior table references symbols by index."""
-        compiler = LLMContextCompiler()
-        result = compiler.compile(simple_review_context)
-        for entry in result.bh:
-            sym_idx, _ = entry
-            # Should reference a valid symbol index
-            assert 0 <= sym_idx < len(result.sym)
-
-    def test_reference_table_populated(self, simple_review_context):
-        """Test that reference table is populated from discoveries."""
-        compiler = LLMContextCompiler()
-        result = compiler.compile(simple_review_context)
-        assert len(result.ref) > 0
-
-    def test_reference_table_entries(self, simple_review_context):
-        """Test that reference table entries have correct structure."""
-        compiler = LLMContextCompiler()
-        result = compiler.compile(simple_review_context)
-        for entry in result.ref:
-            assert len(entry) == 4  # (id_idx, kind_id, location_idx, artifact_idx)
-            for field in entry:
-                assert isinstance(field, int)
-
-    def test_reference_table_enum_encoding(self, simple_review_context):
-        """Test that reference table uses enum encoding for kind."""
-        compiler = LLMContextCompiler()
-        result = compiler.compile(simple_review_context)
-        for entry in result.ref:
-            _, kind_id, _, _ = entry
-            assert _enum_val("ref_kind", kind_id) == "behavior"
-
-    def test_reference_table_deduplicates(self, multi_discovery_context):
-        """Test that reference table deduplicates by reference id."""
-        rc = ReviewContext(discoveries=multi_discovery_context)
-        compiler = LLMContextCompiler()
-        result = compiler.compile(rc)
-        assert len(result.ref) == 2
 
     def test_endpoint_table_populated(self, simple_review_context):
         """Test that endpoint table is populated from execution context."""
@@ -691,17 +607,9 @@ class TestLookupTables:
         compiler = LLMContextCompiler()
         result = compiler.compile(simple_review_context)
         for entry in result.ep:
-            assert len(entry) == 3  # (endpoint_idx, method_id, path_idx)
+            assert len(entry) == 2  # (endpoint_idx, path_idx)
             for field in entry:
                 assert isinstance(field, int)
-
-    def test_endpoint_table_enum_encoding(self, simple_review_context):
-        """Test that endpoint table uses enum encoding for method."""
-        compiler = LLMContextCompiler()
-        result = compiler.compile(simple_review_context)
-        for entry in result.ep:
-            _, method_id, _ = entry
-            assert _enum_val("method", method_id) == "POST"
 
 
 # ---------------------------------------------------------------------------
@@ -779,23 +687,20 @@ class TestExecutionSection:
         compiler = LLMContextCompiler()
         result = compiler.compile(simple_review_context)
         for node in result.eg.nodes:
-            # (bh_idx, sym_idx, kind_id, depth, changed, shared,
-            #  reaches_svc_idx, reaches_mod_idx, reaches_pkg_idx, (ref_idxs...))
-            assert len(node) == 10
-            bh_idx, sym_idx, kind_id, depth, changed, shared = node[:6]
-            assert isinstance(bh_idx, int)
+            # (sym_idx, kind_id, depth, reaches_svc_idx)
+            assert len(node) == 4
+            sym_idx, kind_id, depth, reaches_svc_idx = node
             assert isinstance(sym_idx, int)
             assert isinstance(kind_id, int)
             assert isinstance(depth, int)
-            assert isinstance(changed, bool)
-            assert isinstance(shared, bool)
+            assert isinstance(reaches_svc_idx, int)
 
     def test_execution_graph_node_enum_encoding(self, simple_review_context):
         """Test that execution graph nodes use enum encoding for kind."""
         compiler = LLMContextCompiler()
         result = compiler.compile(simple_review_context)
         for node in result.eg.nodes:
-            kind_id = node[2]
+            kind_id = node[1]
             assert _enum_val("kind", kind_id) == "function"
 
     def test_execution_graph_edges(self, multi_ep_execution_context):
@@ -826,14 +731,6 @@ class TestExecutionSection:
             for node_idx in chain_node_idxs:
                 assert 0 <= node_idx < len(result.eg.nodes)
 
-    def test_deepest_execution_preserved(self, simple_review_context):
-        """Test that deepest execution is preserved."""
-        compiler = LLMContextCompiler()
-        result = compiler.compile(simple_review_context)
-        endpoint_idx, depth = result.de
-        assert result.st[result.ep[endpoint_idx][0]] == "POST /test"
-        assert depth == 0
-
 
 # ---------------------------------------------------------------------------
 # Tests: LLMContextCompiler — Discoveries Section
@@ -848,20 +745,12 @@ class TestDiscoveriesSection:
         result = compiler.compile(simple_review_context)
         assert len(result.disc) > 0
 
-    def test_discovery_id_preserved(self, simple_review_context):
-        """Test that discovery id is preserved."""
-        compiler = LLMContextCompiler()
-        result = compiler.compile(simple_review_context)
-        for d in result.disc:
-            id_idx = d[0]
-            assert result.st[id_idx] == "discovery://test/1"
-
     def test_discovery_kind_enum_encoded(self, simple_review_context):
         """Test that discovery kind uses enum encoding."""
         compiler = LLMContextCompiler()
         result = compiler.compile(simple_review_context)
         for d in result.disc:
-            kind_id = d[1]
+            kind_id = d[0]
             assert _enum_val("bh_kind", kind_id) == "deep_execution"
 
     def test_discovery_facts_preserved(self, simple_review_context):
@@ -869,26 +758,9 @@ class TestDiscoveriesSection:
         compiler = LLMContextCompiler()
         result = compiler.compile(simple_review_context)
         for d in result.disc:
-            facts = d[2]
+            facts = d[1]
             assert isinstance(facts, dict)
             assert "max_depth" in facts
-
-    def test_discovery_references_preserved(self, simple_review_context):
-        """Test that discovery references are preserved."""
-        compiler = LLMContextCompiler()
-        result = compiler.compile(simple_review_context)
-        for d in result.disc:
-            ref_idxs = d[3]
-            assert len(ref_idxs) > 0
-            for ref_idx in ref_idxs:
-                assert 0 <= ref_idx < len(result.ref)
-
-    def test_discovery_references_deduplicated(self, multi_discovery_context):
-        """Test that shared references are deduplicated in the table."""
-        rc = ReviewContext(discoveries=multi_discovery_context)
-        compiler = LLMContextCompiler()
-        result = compiler.compile(rc)
-        assert len(result.ref) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -931,70 +803,35 @@ class TestDeterminism:
 
 
 # ---------------------------------------------------------------------------
-# Tests: LLMContextCompiler — No Information Loss
+# Tests: LLMContextCompiler — Token Compression
 # ---------------------------------------------------------------------------
 
-class TestNoInformationLoss:
-    """Tests that no information is lost during compilation."""
+class TestTokenCompression:
+    """Tests that information is concisely compressed in LLMContext."""
 
     def test_all_change_strings_present(self, simple_review_context):
-        """Test that all non-enum change section strings are present in the string table."""
+        """Test that key change section strings are present in the string table."""
         compiler = LLMContextCompiler()
         result = compiler.compile(simple_review_context)
         strings = list(result.st.entries)
         assert "test.py" in strings
-        # Symbol IDs (URIs) are not stored directly — they're reconstructable
-        # "sym://test/func1" is derivable from the symbol table + file reference
-        assert "func1" in strings
-        # Locations are normalized to (start_line, end_line) in the symbol table
-        # so "test.py:1-10" may not appear as-is in the string table
-        # (the file path is stored, but the full location string is parsed)
 
     def test_all_execution_strings_present(self, simple_review_context):
-        """Test that all execution section strings are present in the string table."""
+        """Test that execution section strings are present in the string table."""
         compiler = LLMContextCompiler()
         result = compiler.compile(simple_review_context)
         strings = list(result.st.entries)
         assert "POST /test" in strings
         assert "/test" in strings
-        assert "behavior://test" in strings
         assert "return" in strings
-        assert "api" in strings
-        assert "test_module" in strings
-
-    def test_all_discovery_strings_present(self, simple_review_context):
-        """Test that all discovery section strings are present in the string table."""
-        compiler = LLMContextCompiler()
-        result = compiler.compile(simple_review_context)
-        strings = list(result.st.entries)
-        assert "discovery://test/1" in strings
-        assert "ref://test/1" in strings
 
     def test_enum_values_not_in_string_table(self, simple_review_context):
         """Test that enum-encoded values are NOT stored in the string table (saving tokens)."""
         compiler = LLMContextCompiler()
         result = compiler.compile(simple_review_context)
         strings = list(result.st.entries)
-        # These should be enum-encoded, not in the string table
         assert "function" not in strings
-        assert "public" not in strings
-        assert "python" not in strings  # from file table
-        assert "modified" not in strings  # from file table
-        assert "POST" not in strings  # from endpoint table
-
-    def test_func1_not_in_string_table_if_derivable(self, simple_review_context):
-        """Test that 'func1' is NOT in string table if derivable from symbol id.
-
-        The symbol id is "sym://test/func1" and the hash part is "func1",
-        so the name is derivable and should not be stored.
-        """
-        compiler = LLMContextCompiler()
-        result = compiler.compile(simple_review_context)
-        strings = list(result.st.entries)
-        # "func1" is derivable from "sym://test/func1#func1" pattern
-        # Our current URI pattern: "sym://test/func1" has no #, so func1 is NOT derivable
-        # but it gets stored in string table. This is fine.
-        assert "func1" in strings  # Our URI format doesn't use #, so name is stored
+        assert "modified" not in strings
 
 
 # ---------------------------------------------------------------------------
@@ -1037,74 +874,6 @@ class TestEdgeCases:
         result = compiler.compile(rc)
         assert result.disc == ()
 
-    def test_repeated_strings_across_sections(self):
-        """Test that strings repeated across sections are deduplicated."""
-        change = TestHelper.create_change(
-            symbol_id="sym://test/func1",
-            symbol_name="func1",
-            symbol_kind="function",
-            change_type="modified",
-        )
-        file_change = TestHelper.create_file_change(
-            path="test.py",
-            language="python",
-            change_type="modified",
-            changes=(change,),
-        )
-        change_ctx = TestHelper.create_change_context(
-            files=(file_change,),
-        )
-        step = TestHelper.create_execution_step(
-            behavior="behavior://test",
-            symbol_id="sym://test/func1",
-            symbol_name="func1",
-            kind="function",
-        )
-        ep = TestHelper.create_entry_point(
-            execution_chain=(step,),
-        )
-        exec_ctx = TestHelper.create_execution_context(
-            entry_points=(ep,),
-        )
-        rc = ReviewContext(change=change_ctx, execution=exec_ctx)
-        compiler = LLMContextCompiler()
-        result = compiler.compile(rc)
-        strings = list(result.st.entries)
-        # Symbol IDs (URIs) are not stored in the string table since they're
-        # reconstructable from file + symbol references. "sym://test/func1" is
-        # NOT in the string table.
-        assert "sym://test/func1" not in strings
-        # "func1" is a repeated string and should appear only once
-        assert strings.count("func1") == 1
-        # "function" is enum-encoded and NOT in string table
-        assert "function" not in strings
-
-    def test_large_reference_count(self):
-        """Test that many references are handled correctly."""
-        refs = tuple(
-            TestHelper.create_reference(
-                id=f"ref://test/{i}",
-                kind="symbol",
-                location=f"file{i}.py",
-                compiler_artifact="symbol",
-            )
-            for i in range(50)
-        )
-        discovery = TestHelper.create_discovery(
-            id="discovery://many_refs/1",
-            kind="deep_execution",
-            facts={"max_depth": 2},
-            reference_count=50,
-            references=refs,
-        )
-        rc = ReviewContext(discoveries=(discovery,))
-        compiler = LLMContextCompiler()
-        result = compiler.compile(rc)
-        assert len(result.ref) == 50
-        assert len(result.disc) == 1
-        d = result.disc[0]
-        assert len(d[3]) == 50
-
     def test_unknown_enum_value_defaults_to_zero(self):
         """Test that unrecognized enum values default to 0 (empty)."""
         change = TestHelper.create_change(
@@ -1120,9 +889,8 @@ class TestEdgeCases:
         compiler = LLMContextCompiler()
         result = compiler.compile(rc)
         for entry in result.sym:
-            _, _, kind_id, vis_id, _ = entry
+            _, _, kind_id = entry
             assert kind_id == 0  # Unknown kind defaults to 0
-            assert vis_id == 0  # Unknown visibility defaults to 0
 
     def test_location_parsing_various_formats(self):
         """Test that various location formats are parsed correctly."""
@@ -1138,3 +906,222 @@ class TestEdgeCases:
         assert _parse_location("") == ("", 0, 0)
         # Just path, no line numbers
         assert _parse_location("file.py") == ("file.py", 0, 0)
+
+
+class TestHighDensityFiltering:
+    """Tests validating the semantic classification and high-density filtering logic."""
+
+    def test_execution_graph_connection_preservation(self):
+        """Test that collapsing infrastructure nodes preserves caller-callee connectivity."""
+        step1 = TestHelper.create_execution_step(
+            behavior="behavior://api1",
+            symbol_id="sym://api/controller",
+            symbol_name="CheckoutController",
+            symbol_kind="class",
+            depth=0,
+            changed=False
+        )
+        step2 = TestHelper.create_execution_step(
+            behavior="behavior://api1",
+            symbol_id="sym://api/depends",
+            symbol_name="Depends",
+            symbol_kind="function",
+            depth=1,
+            changed=False
+        )
+        step3 = TestHelper.create_execution_step(
+            behavior="behavior://api1",
+            symbol_id="sym://api/middleware",
+            symbol_name="CORSMiddleware",
+            symbol_kind="class",
+            depth=2,
+            changed=False
+        )
+        step4 = TestHelper.create_execution_step(
+            behavior="behavior://api1",
+            symbol_id="sym://domain/checkout",
+            symbol_name="CheckoutService",
+            symbol_kind="class",
+            depth=3,
+            changed=False
+        )
+
+        ep = TestHelper.create_entry_point(
+            endpoint="POST /checkout",
+            method="POST",
+            path="/checkout",
+            execution_chain=(step1, step2, step3, step4)
+        )
+        rc = TestHelper.create_review_context(
+            execution=TestHelper.create_execution_context(entry_points=(ep,))
+        )
+
+        from llm_context.compiler import prune_review_context
+        pruned = prune_review_context(rc)
+        chain = pruned.execution.entry_points[0].execution_chain
+        
+        assert len(chain) == 2
+        assert chain[0].symbol.name == "CheckoutController"
+        assert chain[1].symbol.name == "CheckoutService"
+
+        compiler = LLMContextCompiler()
+        result = compiler.compile(rc)
+        
+        nodes = result.eg.nodes
+        assert len(nodes) == 2
+
+        assert len(result.eg.edges) == 1
+        edge = result.eg.edges[0]
+        assert edge[0] == 0
+        assert edge[1] == 1
+
+    def test_changed_symbol_preservation(self):
+        """Test that changed symbols in noise categories are still preserved (never removed)."""
+        step = TestHelper.create_execution_step(
+            behavior="behavior://test",
+            symbol_id="sym://stdlib/json",
+            symbol_name="json",
+            symbol_kind="module",
+            depth=0,
+            changed=True
+        )
+        ep = TestHelper.create_entry_point(execution_chain=(step,))
+        
+        change = TestHelper.create_change(
+            symbol_id="sym://stdlib/json",
+            symbol_name="json",
+            symbol_kind="module",
+            change_type="modified"
+        )
+        file_change = TestHelper.create_file_change(changes=(change,))
+        change_ctx = TestHelper.create_change_context(files=(file_change,))
+        
+        rc = TestHelper.create_review_context(
+            change=change_ctx,
+            execution=TestHelper.create_execution_context(entry_points=(ep,))
+        )
+
+        compiler = LLMContextCompiler()
+        result = compiler.compile(rc)
+
+        assert len(result.eg.nodes) == 1
+        sym = result.sym[result.eg.nodes[0][0]]
+        assert result.st[sym[1]] == "json"
+
+    def test_conditional_framework_removal(self):
+        """Test that framework nodes are removed when unchanged, but preserved when changed."""
+        step_unchanged = TestHelper.create_execution_step(
+            behavior="behavior://test",
+            symbol_id="sym://api/depends",
+            symbol_name="Depends",
+            symbol_kind="function",
+            depth=0,
+            changed=False
+        )
+        step_changed = TestHelper.create_execution_step(
+            behavior="behavior://test",
+            symbol_id="sym://api/router",
+            symbol_name="APIRouter",
+            symbol_kind="class",
+            depth=1,
+            changed=True
+        )
+        
+        ep = TestHelper.create_entry_point(execution_chain=(step_unchanged, step_changed))
+        change = TestHelper.create_change(
+            symbol_id="sym://api/router",
+            symbol_name="APIRouter",
+            symbol_kind="class",
+            change_type="modified"
+        )
+        file_change = TestHelper.create_file_change(changes=(change,))
+        change_ctx = TestHelper.create_change_context(files=(file_change,))
+        
+        rc = TestHelper.create_review_context(
+            change=change_ctx,
+            execution=TestHelper.create_execution_context(entry_points=(ep,))
+        )
+
+        compiler = LLMContextCompiler()
+        result = compiler.compile(rc)
+
+        assert len(result.eg.nodes) == 1
+        sym = result.sym[result.eg.nodes[0][0]]
+        assert result.st[sym[1]] == "APIRouter"
+
+    def test_business_node_preservation(self):
+        """Test that business/domain nodes are never removed even when unchanged."""
+        step_business = TestHelper.create_execution_step(
+            behavior="behavior://test",
+            symbol_id="sym://domain/checkout",
+            symbol_name="CheckoutService",
+            symbol_kind="class",
+            depth=0,
+            changed=False
+        )
+        step_schema = TestHelper.create_execution_step(
+            behavior="behavior://test",
+            symbol_id="sym://db/order",
+            symbol_name="OrderEntity",
+            symbol_kind="class",
+            depth=1,
+            changed=False
+        )
+        
+        ep = TestHelper.create_entry_point(execution_chain=(step_business, step_schema))
+        rc = TestHelper.create_review_context(
+            execution=TestHelper.create_execution_context(entry_points=(ep,))
+        )
+
+        from llm_context.compiler import prune_review_context
+        pruned = prune_review_context(rc)
+        chain = pruned.execution.entry_points[0].execution_chain
+        
+        assert len(chain) == 2
+        assert chain[0].symbol.name == "CheckoutService"
+        assert chain[1].symbol.name == "OrderEntity"
+
+        compiler = LLMContextCompiler()
+        result = compiler.compile(rc)
+        assert len(result.eg.nodes) == 2
+
+    def test_discovery_signal_identity(self):
+        """Test that discoveries are preserved identically, filtering out only compiler metadata."""
+        ref_good = TestHelper.create_reference(
+            id="ref://good/1",
+            kind="behavior",
+            location="file.py:10",
+            compiler_artifact="actual_source_code"
+        )
+        ref_noise = TestHelper.create_reference(
+            id="unit://noise/1",
+            kind="dependency",
+            location="unit://noise/1",
+            compiler_artifact="graph_node"
+        )
+        
+        discovery = Discovery(
+            id="ref://discovery/1",
+            kind="deep_execution",
+            statement="Found critical transaction path changes.",
+            facts={
+                "path": "CheckoutController -> CheckoutService",
+                "internal_compiler_hash": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+                "weight": "high"
+            },
+            reference_count=2,
+            references=(ref_good, ref_noise)
+        )
+        
+        rc = TestHelper.create_review_context(discoveries=(discovery,))
+        
+        compiler = LLMContextCompiler()
+        result = compiler.compile(rc)
+        
+        assert len(result.disc) == 1
+        d_compiled = result.disc[0]
+        
+        facts_compiled = d_compiled[1]
+        assert "path" in facts_compiled
+        assert "weight" in facts_compiled
+        assert "internal_compiler_hash" not in facts_compiled

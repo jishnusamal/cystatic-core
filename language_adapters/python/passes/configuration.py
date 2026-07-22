@@ -89,7 +89,7 @@ class PythonConfigurationIndexPass(BaseIndexPass):
         """Convert a call node to a string representation for pattern matching."""
         if isinstance(node, ast.Attribute):
             parts = []
-            current = node
+            current: ast.AST = node
             while isinstance(current, ast.Attribute):
                 parts.append(current.attr)
                 current = current.value

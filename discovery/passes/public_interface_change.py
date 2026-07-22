@@ -34,6 +34,8 @@ class PublicInterfaceChangePass(DiscoveryCompilerPass):
             return context
         
         operational_model = context.operational_model
+        if operational_model is None or operational_model.change is None:
+            return context
         change_model = operational_model.change
         
         # Track changed public interfaces

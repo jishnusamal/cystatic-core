@@ -242,9 +242,7 @@ class ExecutionGraph:
     into a single DAG structure.
     """
     nodes: tuple[tuple, ...] = field(default_factory=tuple)
-    # Each node: (bh_idx, sym_idx, kind_id, depth, changed, shared,
-    #             reaches_svc_idx, reaches_mod_idx, reaches_pkg_idx,
-    #             (ref_idxs...))
+    # Each node: (sym_idx, kind_id, depth, reaches_svc_idx)
 
     edges: tuple[tuple[int, int], ...] = field(default_factory=tuple)
     # Each edge: (parent_node_idx, child_node_idx)
@@ -256,21 +254,15 @@ class ExecutionGraph:
 
 @dataclass(frozen=True)
 class LLMContext:
-    """Lossless compressed IR optimized for LLM consumption.
+    """Compact IR optimized for LLM consumption.
 
-    Contains every fact from ReviewContext but eliminates representational
-    redundancy through:
+    Contains key reasoning facts from ReviewContext while eliminating redundancy:
         - Enum encoding for repeated categorical values
-        - Global string dictionary (StringTable) for other repeated strings
+        - Global string dictionary (StringTable) for repeated strings
         - URI decomposition into file+symbol references
-        - Source location normalization: (file_id, [start, end])
-        - Removal of duplicate human labels derivable from IDs
         - Compact positional arrays instead of verbose objects
         - DAG representation for execution chains
         - Short (1-3 char) field names
-
-    This is fully reversible back to an equivalent ReviewContext.
-    No semantic interpretation, no information loss.
     """
 
     # -----------------------------------------------------------------------
@@ -282,23 +274,14 @@ class LLMContext:
     # Normalized Lookup Tables
     # -----------------------------------------------------------------------
 
-    # Files: (path_idx, lang_id, ct_id)
-    f: tuple[tuple[int, int, int], ...] = field(default_factory=tuple)
+    # Files: (path_idx, ct_id)
+    f: tuple[tuple[int, int], ...] = field(default_factory=tuple)
 
-    # Symbols: (file_id, name_idx, kind_id, vis_id, (start_line, end_line))
-    # name_idx can be 0 if name is derivable from the symbol id
-    # location is normalized to (start_line, end_line) instead of "file.py:1-10"
-    sym: tuple[tuple[int, int, int, int, tuple[int, int]], ...] = field(default_factory=tuple)
+    # Symbols: (file_id, name_idx, kind_id)
+    sym: tuple[tuple[int, int, int], ...] = field(default_factory=tuple)
 
-    # Behaviors: (sym_id, kind_id)
-    # References existing symbol instead of duplicating name/URI
-    bh: tuple[tuple[int, int], ...] = field(default_factory=tuple)
-
-    # References: (id_idx, kind_id, location_idx, artifact_idx)
-    ref: tuple[tuple[int, int, int, int], ...] = field(default_factory=tuple)
-
-    # Endpoints: (endpoint_idx, method_id, path_idx)
-    ep: tuple[tuple[int, int, int], ...] = field(default_factory=tuple)
+    # Endpoints: (endpoint_idx, path_idx)
+    ep: tuple[tuple[int, int], ...] = field(default_factory=tuple)
 
     # -----------------------------------------------------------------------
     # Change Section
@@ -320,12 +303,9 @@ class LLMContext:
     # Entry points: (ep_idx, (node_idxs...), terminal_idx, max_depth)
     epts: tuple[tuple, ...] = field(default_factory=tuple)
 
-    # Deepest execution: (ep_idx, depth)
-    de: tuple[int, int] = (0, 0)
-
     # -----------------------------------------------------------------------
     # Discoveries Section
     # -----------------------------------------------------------------------
 
-    # Discoveries: (id_idx, kind_id, facts, (ref_idxs...))
-    disc: tuple[tuple, ...] = field(default_factory=tuple)
+    # Discoveries: (kind_id, facts)
+    disc: tuple[tuple[int, dict[str, Any]], ...] = field(default_factory=tuple)

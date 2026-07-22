@@ -64,7 +64,8 @@ class ValidationGapPass(DiscoveryCompilerPass):
         # --- Discovery 1: Execution paths without end-to-end validation ---
         # For each behavior with an execution chain, check if there's e2e coverage
         for chain in execution_chains:
-            units = getattr(chain, 'units', ())
+            from typing import Any, Sequence
+            units: Sequence[Any] = getattr(chain, 'units', [])
             if len(units) < 2:
                 continue
             bid = getattr(chain, 'behavior_id', '')

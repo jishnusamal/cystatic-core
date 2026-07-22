@@ -102,7 +102,7 @@ class LLMContextRenderer:
         
         Each discovery represents a deterministic finding from the compiler.
         """
-        discoveries = []
+        discoveries: list[dict[str, Any]] = []
         
         # Discovery 1: Reachable Units (if present)
         if artifact.reachable_units:
@@ -113,7 +113,7 @@ class LLMContextRenderer:
             # Get representative examples from entry points
             examples = self._get_representative_examples(artifact.entry_points)
             
-            discovery = {
+            discovery: dict[str, Any] = {
                 "id": "reachable_units",
                 "title": "Reachable Production Behaviors",
                 "summary": f"{reachable_count} production behaviors depend on the modified symbols.",
@@ -247,14 +247,15 @@ class LLMContextRenderer:
         """Extract representative execution paths."""
         paths = []
         for chain in artifact.execution_chains[:3]:  # Limit to 3
-            path = {
+            units_list: list[str] = []
+            path: dict[str, Any] = {
                 "behavior_id": chain.behavior_id if hasattr(chain, 'behavior_id') else "unknown",
-                "units": []
+                "units": units_list
             }
             if hasattr(chain, 'units'):
                 for unit in chain.units[:4]:  # Limit to 4 units per path
                     unit_name = unit.name if hasattr(unit, 'name') else str(unit)
-                    path["units"].append(unit_name)
+                    units_list.append(unit_name)
             paths.append(path)
         return paths
     

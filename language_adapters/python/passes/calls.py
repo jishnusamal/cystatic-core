@@ -103,7 +103,7 @@ class PythonCallIndexPass(BaseIndexPass):
         start = time.perf_counter()
         try:
             parent_map = self._get_parent_map(tree)
-            current = call_node
+            current: ast.AST | None = call_node
             caller_name: str | None = None
             caller_parent = ""
 
@@ -166,16 +166,15 @@ class PythonCallIndexPass(BaseIndexPass):
             Dictionary mapping node id to parent node
         """
         # Cache parent map on tree object to avoid rebuilding
-        if not hasattr(tree, '_parent_map'):
-            parent_map: dict[int, ast.AST] = {}
-            
+        pm: dict[int, ast.AST] | None = getattr(tree, '_parent_map', None)
+        if pm is None:
+            pm = {}
             for node in ast.walk(tree):
                 for child in ast.iter_child_nodes(node):
-                    parent_map[id(child)] = node
-            
-            tree._parent_map = parent_map
+                    pm[id(child)] = node
+            setattr(tree, '_parent_map', pm)
         
-        return tree._parent_map
+        return pm
 
     def _node_contains(self, inner: ast.AST, outer: ast.AST) -> bool:
         """Check if inner node is contained within outer node (legacy implementation)."""

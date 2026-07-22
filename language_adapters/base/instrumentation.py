@@ -226,7 +226,7 @@ class PassInstrumentation:
         log(f"TOP {n} SLOWEST OPERATIONS")
         log("=" * 80)
         
-        operations = []
+        operations: list[tuple[str, str | None, float, int]] = []
         
         # Add pass-level operations
         for pass_name, stats in self.pass_stats.items():
@@ -240,11 +240,11 @@ class PassInstrumentation:
         # Sort by total time
         operations.sort(key=lambda x: x[2], reverse=True)
         
-        for i, (pass_name, method_name, total_time, call_count) in enumerate(operations[:n], 1):
-            if method_name:
-                name = f"{pass_name}.{method_name}"
+        for i, (pass_name_op, method_name_op, total_time, call_count) in enumerate(operations[:n], 1):
+            if method_name_op:
+                name = f"{pass_name_op}.{method_name_op}"
             else:
-                name = pass_name
+                name = pass_name_op
             
             avg = (total_time / call_count * 1000) if call_count > 0 else 0
             log(f"{i:>3}. {name:<60} {total_time:>8.2f}s  "
@@ -273,7 +273,7 @@ class PassInstrumentation:
         
         # Find largest method
         largest_method = None
-        largest_method_time = 0
+        largest_method_time: float = 0.0
         for pass_name, pass_stats in self.pass_stats.items():
             for method_name, method_stats in pass_stats.method_stats.items():
                 if method_stats.total_time > largest_method_time:

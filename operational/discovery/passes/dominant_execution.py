@@ -129,7 +129,7 @@ class DominantExecutionPass(DiscoveryCompilerPass):
 
             # Find the behavior with the most reachable units
             if behavior_unit_counts:
-                top_bid = max(behavior_unit_counts, key=behavior_unit_counts.get)
+                top_bid = max(behavior_unit_counts, key=lambda k: behavior_unit_counts[k])
                 top_count = behavior_unit_counts[top_bid]
 
                 # Find the behavior name

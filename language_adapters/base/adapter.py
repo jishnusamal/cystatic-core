@@ -6,6 +6,7 @@ from typing import Any
 
 from language_adapters.model import RepositoryModel, RepositoryGraph, FileContribution, SymbolKind
 from language_adapters.base.graph_patcher import GraphPatcher
+from language_adapters.base.semantic_compiler import SemanticCompiler
 
 
 class BaseLanguageAdapter(ABC):
@@ -52,10 +53,16 @@ class BaseLanguageAdapter(ABC):
         """
         pass
 
+    _semantic_compiler: Any
+
     @abstractmethod
     def _index_single_file(self, file_path: str, content: str, language: str) -> Any:
         """Parse and run indexing passes on a single source file."""
         pass
+
+    def _build_index(self, files: dict[str, str], language: str) -> Any:
+        """Build repository index from files."""
+        raise NotImplementedError
 
     def compile_graph(self, repository_input: dict[str, Any]) -> RepositoryGraph:
         """Compile a repository into a patchable RepositoryGraph.
@@ -117,8 +124,34 @@ class BaseLanguageAdapter(ABC):
         import time
         start_compile = time.perf_counter()
         
+        import os
+        repo_prefix = ""
+        head_files_raw = repository_input.get('files', {})
+        for cf in head_files_raw.keys():
+            if cf is not None and os.path.isabs(cf):
+                for gf in base_graph.files.keys():
+                    cf_norm = cf.replace('\\', '/')
+                    gf_norm = gf.replace('\\', '/')
+                    if cf_norm.lower().endswith('/' + gf_norm.lower()) or cf_norm.lower() == gf_norm.lower():
+                        if cf_norm.lower() == gf_norm.lower():
+                            repo_prefix = ""
+                        else:
+                            repo_prefix = cf[:-len(gf)]
+                        break
+                if repo_prefix:
+                    break
+
+        head_files_content = {}
+        for k, v in head_files_raw.items():
+            norm_k = k
+            if repo_prefix and k.startswith(repo_prefix):
+                norm_k = k[len(repo_prefix):]
+            norm_k = norm_k.replace('\\', '/')
+            if norm_k.startswith('/'):
+                norm_k = norm_k[1:]
+            head_files_content[norm_k] = v
+
         base_files = set(base_graph.files.keys())
-        head_files_content = repository_input.get('files', {})
         language = repository_input.get('language', self.get_language())
         
         is_changed_only = repository_input.get('changed_only', False)
@@ -133,7 +166,7 @@ class BaseLanguageAdapter(ABC):
             deleted_files = base_files - head_files
             modified_files = base_files & head_files
         
-        changed_files = {}
+        changed_files: dict[str, FileContribution | None] = {}
         
         # Added files
         for f in added_files:
@@ -161,7 +194,7 @@ class BaseLanguageAdapter(ABC):
         
         start_patch = time.perf_counter()
         # Patch the graph if any changes
-        patcher_metrics = {}
+        patcher_metrics: dict[str, Any] = {}
         if changed_files:
             patcher = GraphPatcher()
             patcher.patch(base_graph, changed_files, language)

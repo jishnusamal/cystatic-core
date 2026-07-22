@@ -113,7 +113,8 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
         index = self._build_index(files, language)
 
         # Step 2: Compile RepositoryIndex into RepositoryModel (semantic)
-        return self._semantic_compiler.compile(index, language)
+        from typing import cast
+        return cast(RepositoryModel, self._semantic_compiler.compile(index, language))
 
     def build_index(self, repository_input: dict[str, Any]) -> RepositoryIndex:
         """Build a RepositoryIndex from repository data.
@@ -144,7 +145,7 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
         Returns:
             RepositoryIndex containing structural facts
         """
-        file_contexts: list[FileContext[ast.AST]] = []
+        file_contexts: list[FileContext[Any]] = []
         files_skipped = 0
         files_failed = 0
         parse_times: list[float] = []

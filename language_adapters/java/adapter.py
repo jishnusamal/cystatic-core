@@ -106,7 +106,8 @@ class JavaLanguageAdapter(BaseLanguageAdapter):
         index = self._build_index(files, language)
 
         # Step 2: Compile RepositoryIndex into RepositoryModel (semantic)
-        return self._semantic_compiler.compile(index, language)
+        from typing import cast
+        return cast(RepositoryModel, self._semantic_compiler.compile(index, language))
 
     def build_index(self, repository_input: dict[str, Any]) -> RepositoryIndex:
         """Build a RepositoryIndex from repository data.

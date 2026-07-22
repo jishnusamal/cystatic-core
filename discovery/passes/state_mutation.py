@@ -33,6 +33,8 @@ class StateMutationPass(DiscoveryCompilerPass):
             return context
         
         operational_model = context.operational_model
+        if operational_model is None:
+            return context
         
         # Check if data model is present
         if not hasattr(operational_model, 'data') or operational_model.data is None:

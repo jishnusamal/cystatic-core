@@ -18,8 +18,16 @@ from runtime.errors import (
     RepositoryNotInstalled,
     RepositoryNotSupported,
 )
-from runtime.pipeline.context import PipelineContext
-from runtime.pipeline.pipeline import Pipeline
+from typing import Any
+
+def __getattr__(name: str) -> Any:
+    if name == "PipelineContext":
+        from runtime.pipeline.context import PipelineContext
+        return PipelineContext
+    if name == "Pipeline":
+        from runtime.pipeline.pipeline import Pipeline
+        return Pipeline
+    raise AttributeError(f"module {__name__} has no attribute {name}")
 
 __all__ = [
     # Errors

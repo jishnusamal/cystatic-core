@@ -34,6 +34,8 @@ class DeepExecutionPass(DiscoveryCompilerPass):
             return context
         
         operational_model = context.operational_model
+        if operational_model is None or operational_model.behavior is None:
+            return context
         behavior_model = operational_model.behavior
         
         # Find maximum execution depth

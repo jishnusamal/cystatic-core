@@ -8,15 +8,17 @@ import sys
 import json
 from datetime import datetime
 from contextvars import ContextVar
-from typing import Any, Optional
+from typing import Any, Optional, TypeVar
+
+T = TypeVar('T')
 
 class PipelineLogger:
     def __init__(self):
-        self._pipeline_logs_var = ContextVar("pipeline_logs", default=None)
-        self._visitor_logs_var = ContextVar("visitor_logs", default=None)
-        self._semantic_logs_var = ContextVar("semantic_logs", default=None)
-        self._timings_var = ContextVar("timings", default=None)
-        self._call_resolutions_var = ContextVar("call_resolutions", default=None)
+        self._pipeline_logs_var: ContextVar[Optional[list[str]]] = ContextVar("pipeline_logs", default=None)
+        self._visitor_logs_var: ContextVar[Optional[list[str]]] = ContextVar("visitor_logs", default=None)
+        self._semantic_logs_var: ContextVar[Optional[list[str]]] = ContextVar("semantic_logs", default=None)
+        self._timings_var: ContextVar[Optional[list[dict[str, Any]]]] = ContextVar("timings", default=None)
+        self._call_resolutions_var: ContextVar[Optional[list[dict[str, Any]]]] = ContextVar("call_resolutions", default=None)
         
         # Globals for fallback (e.g. if run outside a pipeline execution context, like unit tests)
         self._global_pipeline_logs: list[str] = []
@@ -25,7 +27,7 @@ class PipelineLogger:
         self._global_timings: list[dict[str, Any]] = []
         self._global_call_resolutions: list[dict[str, Any]] = []
 
-    def _get_list(self, var: ContextVar, fallback: list) -> list:
+    def _get_list(self, var: ContextVar[Optional[list[T]]], fallback: list[T]) -> list[T]:
         val = var.get()
         if val is None:
             return fallback
