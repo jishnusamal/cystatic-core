@@ -124,7 +124,7 @@ class LLMContextCompiler:
         # Phase 1: Build enum-encoded lookup tables
         file_table = self._build_file_table(pruned_context.change, sb)
         symbol_table, symbol_id_map = self._build_symbol_table(
-            pruned_context.change, file_table, sb
+            pruned_context.change, pruned_context.execution, file_table, sb
         )
         endpoint_table = self._build_endpoint_table(pruned_context.execution, sb)
 
@@ -190,6 +190,7 @@ class LLMContextCompiler:
     def _build_symbol_table(
         self,
         change_ctx: ChangeContext,
+        exec_ctx: ExecutionContext,
         file_table: list[tuple[int, int]],
         sb: _StringBuilder,
     ) -> tuple[
@@ -210,6 +211,7 @@ class LLMContextCompiler:
         table: list[tuple[int, int, int]] = []
         seen: dict[str, int] = {}  # symbol id -> index
 
+        # Pass 1: Changed symbols
         for f in change_ctx.files:
             for c in f.changes:
                 sym = c.symbol
@@ -228,6 +230,29 @@ class LLMContextCompiler:
                     )
                     seen[sym.id] = len(table)
                     table.append(sym_entry)
+
+        # Pass 2: Execution symbols
+        if exec_ctx and exec_ctx.entry_points:
+            for ep in exec_ctx.entry_points:
+                for step in ep.execution_chain:
+                    sym = step.symbol
+                    if sym and sym.id and sym.id not in seen:
+                        file_path, _, _ = _parse_location(sym.location)
+                        file_id = file_idx_map.get(file_path, 0)
+
+                        derivable_name = _resolve_symbol_name_from_uri(sym.id)
+                        if sym.name == derivable_name or _is_noise_string(sym.name):
+                            name_idx = 0
+                        else:
+                            name_idx = sb.add(sym.name)
+
+                        sym_entry = (
+                            file_id,
+                            name_idx,
+                            _enum_id("kind", sym.kind),
+                        )
+                        seen[sym.id] = len(table)
+                        table.append(sym_entry)
 
         return table, seen
 
@@ -432,3 +457,19 @@ def _enum_id(table_name: str, value: str) -> int:
         return 0
     reverse = ENUM_REVERSE.get(table_name, {})
     return reverse.get(value, 0)
+
+
+def _is_noise_string(name: str) -> bool:
+    """Check if a symbol name is framework/runtime noise that should not enter the string table."""
+    if not name:
+        return False
+    parts = name.split(".")
+    first = parts[0]
+    return (
+        name in LANGUAGE_PRIMITIVES or
+        first in STD_LIBS or
+        first in FRAMEWORK_MODULES or
+        name in FRAMEWORK_NAMES or
+        first in ORM_MODULES or
+        name in ORM_NAMES
+    )

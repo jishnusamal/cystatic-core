@@ -20,6 +20,9 @@ from typing import Any
 
 from review_context.model import (
     ReviewContext,
+    ChangeContext,
+    FileChange,
+    Change,
     ExecutionContext,
     EntryPointExecution,
     ExecutionStep,
@@ -56,7 +59,7 @@ FRAMEWORK_MODULES = {
 FRAMEWORK_NAMES = {
     "FastAPI", "APIRouter", "Depends", "Request", "Response", "RedirectResponse",
     "HTTPException", "BackgroundTasks", "CORSMiddleware", "cors", "middleware",
-    "router", "route", "app", "lifecycle", "handler",
+    "router", "route", "lifecycle", "handler",
 }
 
 ORM_MODULES = {"sqlalchemy", "tortoise", "asyncpg", "databases"}
@@ -146,6 +149,8 @@ def classify_symbol(name: str, symbol_id: str, file_path: str, kind: str) -> str
         "/test/" in path_lower or
         path_lower.startswith("tests/") or
         path_lower.startswith("test/") or
+        path_lower.startswith("tests\\") or
+        path_lower.startswith("test\\") or
         "test_" in path_lower or
         "_test.py" in path_lower
     ):
@@ -179,7 +184,7 @@ def classify_symbol(name: str, symbol_id: str, file_path: str, kind: str) -> str
         "middleware" in name_lower or
         "router" in name_lower or
         "route" in name_lower or
-        "app" == name_lower
+        ("app" == name_lower and kind_lower in {"module", "package", "application"})
     ):
         return "Framework"
 
@@ -352,10 +357,21 @@ def prune_review_context(review_context: ReviewContext) -> ReviewContext:
                     is_compiler_metadata(ref.compiler_artifact)
                 ):
                     ref_key = (ref.id, ref.kind, ref.location, ref.compiler_artifact)
+                    pruned_supporting_nodes = tuple(
+                        n for n in ref.supporting_nodes
+                        if not is_compiler_metadata(n)
+                    )
                     canonical = seen_refs.get(ref_key)
                     if canonical is None:
-                        seen_refs[ref_key] = ref
-                        canonical = ref
+                        canonical_ref = Reference(
+                            id=ref.id,
+                            kind=ref.kind,
+                            location=ref.location,
+                            compiler_artifact=ref.compiler_artifact,
+                            supporting_nodes=pruned_supporting_nodes,
+                        )
+                        seen_refs[ref_key] = canonical_ref
+                        canonical = canonical_ref
                     pruned_refs_list.append(canonical)
 
             pruned_facts: dict[str, Any] = {}
@@ -373,8 +389,72 @@ def prune_review_context(review_context: ReviewContext) -> ReviewContext:
             )
             pruned_discoveries.append(pruned_disc)
 
+    # 4. Collect execution symbol IDs & paths to justify inclusion in ChangeContext
+    execution_symbol_ids: set[str] = set()
+    execution_file_paths: set[str] = set()
+    for ep in pruned_entry_points:
+        for step in ep.execution_chain:
+            if step.symbol:
+                if step.symbol.id:
+                    execution_symbol_ids.add(step.symbol.id)
+                if step.symbol.location:
+                    from llm_context.compiler import _parse_location
+                    file_p, _, _ = _parse_location(step.symbol.location)
+                    if file_p:
+                        execution_file_paths.add(file_p)
+
+    discovery_symbol_ids: set[str] = set()
+    for d in pruned_discoveries:
+        for ref in d.references:
+            if ref.id:
+                discovery_symbol_ids.add(ref.id)
+
+    # 5. Prune Change Context (File & Symbol Noise Filtering)
+    pruned_files: list[FileChange] = []
+    if review_context.change and review_context.change.files:
+        for f in review_context.change.files:
+            file_category = classify_symbol("", "", f.path, "")
+            is_file_reached_in_exec = f.path in execution_file_paths
+
+            # Prune entire noise file UNLESS reachable via execution path
+            if file_category in NOISE_CATEGORIES and not is_file_reached_in_exec:
+                # If the entire file is noise (like a test file) and not reached in exec, skip it.
+                continue
+
+            pruned_changes: list[Change] = []
+            for c in f.changes:
+                sym_id = c.symbol.id if c.symbol else ""
+                sym_name = c.symbol.name if c.symbol else ""
+                sym_loc = c.symbol.location if c.symbol else ""
+                sym_kind = c.symbol.kind if c.symbol else ""
+
+                loc_file = sym_loc.split(":")[0] if sym_loc else f.path
+                sym_cat = classify_symbol(sym_name, sym_id, loc_file, sym_kind)
+
+                is_symbol_in_exec = sym_id in execution_symbol_ids
+                is_symbol_in_disc = sym_id in discovery_symbol_ids
+
+                # Invariant: reachable_from_change (not noise) OR supports_execution OR supports_discovery
+                if sym_cat not in NOISE_CATEGORIES or is_symbol_in_exec or is_symbol_in_disc:
+                    pruned_changes.append(c)
+
+            # Only retain file if it has remaining symbol changes or is reached by execution
+            if pruned_changes or is_file_reached_in_exec:
+                pruned_file = FileChange(
+                    path=f.path,
+                    language=f.language,
+                    change_type=f.change_type,
+                    changes=tuple(pruned_changes),
+                )
+                pruned_files.append(pruned_file)
+
+    pruned_change = ChangeContext(
+        summary=review_context.change.summary if review_context.change else ChangeContext().summary,
+        files=tuple(pruned_files),
+    )
+
     return ReviewContext(
-        change=review_context.change,
+        change=pruned_change,
         execution=pruned_execution,
         discoveries=tuple(pruned_discoveries)
     )

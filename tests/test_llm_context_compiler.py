@@ -1710,4 +1710,112 @@ class TestReviewScopeMetrics:
         full_result = self._compile_without_pruning(noisy_rc)
         pruned_result = LLMContextCompiler().compile(noisy_rc)
         assert len(pruned_result.f) == len(full_result.f)
-        assert len(pruned_result.sym) == len(full_result.sym)
+        # Changed symbols in cf (ChangeFiles section) remain identical
+        assert len(pruned_result.cf[0][1]) == len(full_result.cf[0][1])
+
+
+# ---------------------------------------------------------------------------
+# Tests: Review Scope Wave 2 Optimizations
+# ---------------------------------------------------------------------------
+
+class TestWave2CompilerOptimizations:
+    """Wave 2 tests for Change Context Pruning, Symbol Table Expansion, and Invariant Preservation."""
+
+    def test_test_files_removed_from_change_context(self):
+        """Test files in ChangeContext are pruned unless reached by execution."""
+        from llm_context.review_scope_builder import prune_review_context
+
+        change_prod = TestHelper.create_change(
+            symbol_id="sym://src/app",
+            symbol_name="app",
+            symbol_kind="function",
+            symbol_location="src/app.py:1-10",
+        )
+        file_prod = TestHelper.create_file_change(path="src/app.py", changes=(change_prod,))
+
+        change_test = TestHelper.create_change(
+            symbol_id="sym://tests/test_app",
+            symbol_name="test_app",
+            symbol_kind="function",
+            symbol_location="tests/test_app.py:1-10",
+        )
+        file_test = TestHelper.create_file_change(path="tests/test_app.py", changes=(change_test,))
+
+        rc = TestHelper.create_review_context(
+            change=TestHelper.create_change_context(files=(file_prod, file_test))
+        )
+
+        pruned = prune_review_context(rc)
+        retained_paths = [f.path for f in pruned.change.files]
+
+        assert "src/app.py" in retained_paths
+        assert "tests/test_app.py" not in retained_paths
+
+    def test_execution_symbols_registered_in_symbol_table(self):
+        """Non-changed execution symbols are registered in the symbol table with non-zero indices."""
+        step_biz = TestHelper.create_execution_step(
+            symbol_id="sym://domain/CheckoutService",
+            symbol_name="CheckoutService",
+            symbol_kind="class",
+            symbol_location="domain/checkout.py:10-50",
+            depth=0,
+            changed=False,
+        )
+        ep = TestHelper.create_entry_point(execution_chain=(step_biz,))
+        rc = TestHelper.create_review_context(
+            execution=TestHelper.create_execution_context(entry_points=(ep,))
+        )
+
+        compiler = LLMContextCompiler()
+        result = compiler.compile(rc)
+
+        # Execution symbol should be registered in symbol table
+        assert len(result.sym) == 1
+        node = result.eg.nodes[0]
+        sym_idx = node[0]
+        assert sym_idx == 0
+
+    def test_noise_execution_symbol_name_not_in_string_table(self):
+        """Noise symbol names (e.g., Depends, APIRouter) for execution symbols do not enter StringTable."""
+        step_fw = TestHelper.create_execution_step(
+            symbol_id="sym://fastapi/Depends",
+            symbol_name="Depends",
+            symbol_kind="function",
+            depth=0,
+            changed=True,  # preserve node
+        )
+        ep = TestHelper.create_entry_point(execution_chain=(step_fw,))
+        rc = TestHelper.create_review_context(
+            execution=TestHelper.create_execution_context(entry_points=(ep,))
+        )
+
+        compiler = LLMContextCompiler()
+        result = compiler.compile(rc)
+
+        # 'Depends' is a noise string, so its name index should be 0 in sym table
+        sym_entry = result.sym[0]
+        name_idx = sym_entry[1]
+        assert name_idx == 0
+        assert "Depends" not in list(result.st.entries)
+
+    def test_supporting_nodes_pruned_in_discovery_references(self):
+        """Supporting nodes containing metadata IDs are pruned from discovery references."""
+        from llm_context.review_scope_builder import prune_review_context
+
+        ref = Reference(
+            id="behavior://domain/checkout",
+            kind="behavior",
+            location="checkout.py:10",
+            compiler_artifact="checkout",
+            supporting_nodes=("node://graph/1", "unit://noise/1", "valid_node_id"),
+        )
+        disc = TestHelper.create_discovery(references=(ref,), reference_count=1)
+        rc = TestHelper.create_review_context(discoveries=(disc,))
+
+        pruned = prune_review_context(rc)
+        supp_nodes = pruned.discoveries[0].references[0].supporting_nodes
+
+        assert "node://graph/1" not in supp_nodes
+        assert "unit://noise/1" not in supp_nodes
+        assert "valid_node_id" in supp_nodes
+
