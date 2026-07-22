@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING
 
+from core.runtime.run_context import RunContext
+
 if TYPE_CHECKING:
     from language_adapters.model import RepositoryModel
     from change.model import ChangeModel, RepositoryDelta
@@ -30,6 +32,7 @@ class PipelineContext:
 
     # Input
     repository: str
+    run_context: RunContext | None = None
     base_sha: str | None = None
     head_sha: str | None = None
     diff_data: dict[str, Any] | None = None
@@ -137,6 +140,8 @@ class PipelineContext:
     def to_dict(self) -> dict[str, Any]:
         """Convert context to dictionary for logging/serialization."""
         return {
+            "run_id": self.run_context.run_id if self.run_context else None,
+            "log_dir": str(self.run_context.log_dir) if self.run_context else None,
             "repository": self.repository,
             "base_sha": self.base_sha,
             "head_sha": self.head_sha,

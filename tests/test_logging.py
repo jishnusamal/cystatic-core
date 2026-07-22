@@ -1,4 +1,4 @@
-"""Integration tests for three-level logging and profiling."""
+"""Integration tests for run-scoped live-streaming logging architecture v2."""
 
 import os
 import shutil
@@ -10,6 +10,7 @@ from runtime.pipeline.pipeline import Pipeline
 from runtime.models import AnalysisRequest, RepositoryReference, PullRequestReference, AnalysisTrigger
 from runtime.storage.repository_store import MemoryRepositoryStore
 from integrations.base import RepositoryProvider
+
 
 class MockRepositoryProvider(RepositoryProvider):
     async def fetch_repository(self, repo_ref):
@@ -35,17 +36,9 @@ class MockRepositoryProvider(RepositoryProvider):
     async def fetch_commit(self, repo_ref, sha):
         return {}
 
+
 @pytest.mark.asyncio
 async def test_pipeline_logging():
-    # Clean up logs directory if any
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    log_dir = os.path.join("logs", f"run-{date_str}")
-    if os.path.exists(log_dir):
-        try:
-            shutil.rmtree(log_dir)
-        except Exception:
-            pass
-        
     pipeline = Pipeline(
         repository_provider=MockRepositoryProvider(),
         repository_store=MemoryRepositoryStore(),
@@ -69,23 +62,36 @@ async def test_pipeline_logging():
     
     context = await pipeline.run(request)
     
+    assert context.run_context is not None
+    log_dir = context.run_context.log_dir
+    
+    # Verify run ID format (run-YYYYMMDD-HHMMSS-******)
+    assert context.run_context.run_id.startswith("run-")
+    assert len(context.run_context.run_id.split("-")) == 4
+    
     # Verify directory and files
     assert os.path.exists(log_dir)
     assert os.path.exists(os.path.join(log_dir, "pipeline.log"))
-    assert os.path.exists(os.path.join(log_dir, "visitor_profile.txt"))
-    assert os.path.exists(os.path.join(log_dir, "semantic_graph_stats.txt"))
+    assert os.path.exists(os.path.join(log_dir, "visitor.log"))
+    assert os.path.exists(os.path.join(log_dir, "semantic.log"))
+    assert os.path.exists(os.path.join(log_dir, "resolver.log"))
+    assert os.path.exists(os.path.join(log_dir, "performance.log"))
     assert os.path.exists(os.path.join(log_dir, "timings.json"))
+    assert os.path.exists(os.path.join(log_dir, "summary.json"))
+    assert os.path.exists(os.path.join(log_dir, "profile.json"))
     assert os.path.exists(os.path.join(log_dir, "call_resolution.json"))
     
     # Verify contents
     with open(os.path.join(log_dir, "pipeline.log"), "r") as f:
         pipeline_log = f.read()
         assert "[pipeline]" in pipeline_log
+        assert "Factor Analysis" in pipeline_log
+        assert context.run_context.run_id in pipeline_log
         
-    with open(os.path.join(log_dir, "visitor_profile.txt"), "r") as f:
+    with open(os.path.join(log_dir, "visitor.log"), "r") as f:
         visitor_log = f.read()
         assert "VISITOR PASS SUMMARY" in visitor_log
         
-    with open(os.path.join(log_dir, "semantic_graph_stats.txt"), "r") as f:
+    with open(os.path.join(log_dir, "semantic.log"), "r") as f:
         semantic_log = f.read()
         assert "SEMANTIC COMPILATION - INPUT SIZE" in semantic_log

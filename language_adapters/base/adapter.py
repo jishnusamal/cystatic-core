@@ -109,6 +109,7 @@ class BaseLanguageAdapter(ABC):
             configuration_references=model.configuration_references,
             metadata=model.metadata,
         )
+        graph.rebuild_reverse_indexes()
         return graph
 
     def compile_incremental(self, base_graph: RepositoryGraph, repository_input: dict[str, Any]) -> RepositoryGraph:
@@ -122,9 +123,16 @@ class BaseLanguageAdapter(ABC):
             RepositoryGraph: The patched, updated RepositoryGraph.
         """
         import time
-        start_compile = time.perf_counter()
-        
         import os
+        from runtime.instrumentation.logging import pipeline_logger
+        from runtime.instrumentation.timer import timer
+
+        start_compile = time.perf_counter()
+        pipeline_logger.log_pipeline(
+            f"[incremental] Loading base RepositoryGraph ({len(base_graph.files)} base files, {len(base_graph.symbols)} symbols)",
+            to_terminal=True,
+        )
+
         repo_prefix = ""
         head_files_raw = repository_input.get('files', {})
         for cf in head_files_raw.keys():
@@ -166,42 +174,64 @@ class BaseLanguageAdapter(ABC):
             deleted_files = base_files - head_files
             modified_files = base_files & head_files
         
+        pipeline_logger.log_pipeline(
+            f"[incremental] Identified {len(added_files)} added files, {len(modified_files)} modified files, {len(deleted_files)} deleted files",
+            to_terminal=True,
+        )
+        
         changed_files: dict[str, FileContribution | None] = {}
         
-        # Added files
-        for f in added_files:
-            content = head_files_content[f]
-            file_index = self._index_single_file(f, content, language)
-            h = hashlib.sha256(content.encode('utf-8')).hexdigest()
-            changed_files[f] = FileContribution.from_file_index(file_index, source_hash=h)
-            
-        # Deleted files
-        for f in deleted_files:
-            changed_files[f] = None
-            
-        # Modified files
-        for f in modified_files:
+        # Added and modified files parsing with progress logs
+        to_parse = sorted(list(added_files | modified_files))
+        pipeline_logger.log_pipeline(
+            f"[incremental] Parsing changed files (0/{len(to_parse)})...",
+            to_terminal=True,
+        )
+
+        for idx, f in enumerate(to_parse, 1):
             new_content = head_files_content[f]
             new_hash = hashlib.sha256(new_content.encode('utf-8')).hexdigest()
-            if not is_changed_only:
+            if f in modified_files and not is_changed_only:
                 old_contrib = base_graph.files[f]
                 if old_contrib.source_hash == new_hash:
                     continue
             file_index = self._index_single_file(f, new_content, language)
             changed_files[f] = FileContribution.from_file_index(file_index, source_hash=new_hash)
 
+            if idx % 10 == 0 or idx == len(to_parse):
+                pipeline_logger.log_pipeline(
+                    f"[incremental] Parsing changed files ({idx}/{len(to_parse)} complete)",
+                    to_terminal=True,
+                )
+            
+        # Deleted files
+        for f in deleted_files:
+            changed_files[f] = None
+
         compile_duration = time.perf_counter() - start_compile
+        pipeline_logger.log_pipeline(
+            f"[incremental] Parsing changed files complete ({compile_duration:.2f}s)",
+            to_terminal=True,
+        )
         
         start_patch = time.perf_counter()
-        # Patch the graph if any changes
         patcher_metrics: dict[str, Any] = {}
         if changed_files:
-            patcher = GraphPatcher()
-            patcher.patch(base_graph, changed_files, language)
-            patcher_metrics = getattr(patcher, "metrics", {})
+            pipeline_logger.log_pipeline(
+                f"[incremental] Computing ChangedGraph and patching RepositoryGraph for {len(changed_files)} file contributions...",
+                to_terminal=True,
+            )
+            with timer.timed("GraphPatcher.patch"):
+                patcher = GraphPatcher()
+                patcher.patch(base_graph, changed_files, language)
+                patcher_metrics = getattr(patcher, "metrics", {})
             
         patch_duration = time.perf_counter() - start_patch
-        
+        pipeline_logger.log_pipeline(
+            f"[incremental] Incremental patch complete ({patch_duration:.2f}s)",
+            to_terminal=True,
+        )
+
         # Populate metrics if requested
         if "metrics" in repository_input:
             metrics = repository_input["metrics"]
@@ -211,4 +241,8 @@ class BaseLanguageAdapter(ABC):
             metrics["patch_duration"] = patch_duration
             metrics.update(patcher_metrics)
             
+        pipeline_logger.log_pipeline(
+            f"[incremental] Done ({time.perf_counter() - start_compile:.2f}s total)",
+            to_terminal=True,
+        )
         return base_graph

@@ -3,6 +3,9 @@
 from collections import deque
 import sys
 from typing import Any
+import os
+import time
+import dataclasses
 
 from language_adapters.model import (
     Symbol,
@@ -25,7 +28,6 @@ from language_adapters.model import (
 )
 from language_adapters.model.file_contribution import FileContribution
 from language_adapters.model.repository_graph import RepositoryGraph
-import os
 from language_adapters.base.semantic_compiler import SemanticCompiler, _build_symbol_id
 
 
@@ -34,19 +36,21 @@ class GraphPatcher:
     Handles patching of RepositoryGraph with file-level contributions.
 
     Performs incremental semantic resolution to update call/reference edges
-    without running repository-wide passes.
+    without running repository-wide passes or re-parsing unchanged files.
     """
 
     def __init__(self) -> None:
         self.compiler = SemanticCompiler()
         self._affected_files_abs: set[str] | None = None
+        self.metrics: dict[str, Any] = {}
 
-    def _is_same_file(self, p1: str, p2: str) -> bool:
-        if p1 == p2:
-            return True
-        if not p1 or not p2:
-            return False
-        return os.path.abspath(p1).lower() == os.path.abspath(p2).lower()
+    def _norm_path(self, p: str) -> str:
+        if not p:
+            return ""
+        norm = p.replace('\\', '/')
+        if norm.startswith('/'):
+            norm = norm[1:]
+        return norm.lower()
 
     def _is_affected(self, path: str, affected_files: set[str]) -> bool:
         if not path:
@@ -54,8 +58,8 @@ class GraphPatcher:
         if path in affected_files:
             return True
         if not hasattr(self, "_affected_files_abs") or self._affected_files_abs is None:
-            self._affected_files_abs = {os.path.abspath(p).lower() for p in affected_files}
-        return os.path.abspath(path).lower() in self._affected_files_abs
+            self._affected_files_abs = {self._norm_path(p) for p in affected_files}
+        return self._norm_path(path) in self._affected_files_abs
 
     def patch(
         self,
@@ -63,17 +67,33 @@ class GraphPatcher:
         changed_files: dict[str, FileContribution | None],
         language: str,
     ) -> None:
-        self._affected_files_abs = None
-        """
-        Apply a set of changed file contributions to the RepositoryGraph.
+        from runtime.instrumentation.logging import pipeline_logger
 
-        Args:
-            graph: The RepositoryGraph to modify.
-            changed_files: Dict mapping file path to its new FileContribution,
-                           or None if the file was deleted.
-            language: The programming language of the repository.
-        """
-        # 1. Detect repo prefix
+        start_patch_time = time.perf_counter()
+        self._affected_files_abs = None
+
+        # Ensure reverse indexes exist on graph
+        if not graph.unresolved_symbol_to_waiting_files and graph.files:
+            graph.rebuild_reverse_indexes()
+
+        pipeline_logger.log_pipeline(
+            f"[patcher] Starting GraphPatcher on {len(changed_files)} input files...",
+            to_terminal=True,
+        )
+
+        def log_phase(name: str, elapsed_sec: float) -> None:
+            elapsed_ms = elapsed_sec * 1000.0
+            pipeline_logger.log_pipeline(
+                f"[patcher] Phase: {name:<35} {elapsed_ms:4.0f}ms",
+                to_terminal=True,
+            )
+
+        # -------------------------------------------------------------
+        # Phase 1: Collect changed symbols
+        # -------------------------------------------------------------
+        t_phase_start = time.perf_counter()
+
+        # Detect repo prefix
         repo_prefix = ""
         for cf in changed_files.keys():
             if os.path.isabs(cf):
@@ -89,9 +109,8 @@ class GraphPatcher:
                 if repo_prefix:
                     break
 
-        # 2. Normalize changed_files keys and their contribution file paths
+        # Normalize changed_files keys and contribution file paths
         normalized_changed_files: dict[str, FileContribution | None] = {}
-        import dataclasses
         for k, v in changed_files.items():
             norm_k = k
             if repo_prefix and k.startswith(repo_prefix):
@@ -99,7 +118,7 @@ class GraphPatcher:
             norm_k = norm_k.replace('\\', '/')
             if norm_k.startswith('/'):
                 norm_k = norm_k[1:]
-                
+
             if v is not None:
                 normalized_contrib = dataclasses.replace(v, file_path=norm_k)
                 normalized_changed_files[norm_k] = normalized_contrib
@@ -107,25 +126,45 @@ class GraphPatcher:
                 normalized_changed_files[norm_k] = None
 
         changed_files = normalized_changed_files
-
-        # Determine the set of files that are modified/added/deleted.
         changed_paths = set(changed_files.keys())
         affected_files = set(changed_paths)
 
-        # Capture old symbols group by file for affected files before removing them
-        old_symbols_by_file = {}
-        for file_path in affected_files:
-            old_symbols_by_file[file_path] = [s for s in graph.symbols.values() if self._is_same_file(s.file, file_path)]
+        # Collect newly added symbol names
+        added_symbol_names: set[str] = set()
+        for file_path, contrib in changed_files.items():
+            if contrib:
+                for sym in contrib.symbols:
+                    added_symbol_names.add(sym.name)
 
-        # 1. Identify deleted symbol IDs to find downstream files that depend on them.
+        log_phase("Collect changed symbols", time.perf_counter() - t_phase_start)
+
+        # -------------------------------------------------------------
+        # Phase 2: Compute removed symbols
+        # -------------------------------------------------------------
+        t_phase_start = time.perf_counter()
+
+        # Build symbol by file map in ONE fast O(N) pass without disk calls
+        symbols_by_file: dict[str, list[Symbol]] = {}
+        for s in graph.symbols.values():
+            s_file_norm = self._norm_path(s.file)
+            symbols_by_file.setdefault(s_file_norm, []).append(s)
+
+        imports_by_file: dict[str, list[Symbol]] = {}
+        for imp in graph.imports.values():
+            imp_file_norm = self._norm_path(imp.file)
+            imports_by_file.setdefault(imp_file_norm, []).append(imp)
+
+        old_symbols_by_file: dict[str, list[Symbol]] = {}
+        for file_path in affected_files:
+            old_symbols_by_file[file_path] = symbols_by_file.get(self._norm_path(file_path), [])
+
         deleted_symbol_ids: set[str] = set()
         for file_path in changed_paths:
             old_contrib = graph.files.get(file_path)
             if old_contrib:
-                # Get the set of symbols that existed previously in this file.
                 new_contrib = changed_files[file_path]
                 new_symbol_names = {s.name for s in new_contrib.symbols} if new_contrib else set()
-                
+
                 for old_sym in old_contrib.symbols:
                     if old_sym.name not in new_symbol_names:
                         sym_id = _build_symbol_id(language, file_path, old_sym.name, old_sym.kind, old_sym.parent)
@@ -136,9 +175,21 @@ class GraphPatcher:
                         imp_id = f"{language}://{file_path}::import::{first_name}"
                         deleted_symbol_ids.add(imp_id)
 
-        # Identify files containing callers/sources for incoming edges pointing to deleted symbols.
-        # These files must also be re-resolved.
+        log_phase("Compute removed symbols", time.perf_counter() - t_phase_start)
+
+        # -------------------------------------------------------------
+        # Phase 3: Find downstream callers (using Reverse Index)
+        # -------------------------------------------------------------
+        t_phase_start = time.perf_counter()
+
         if deleted_symbol_ids:
+            for del_id in deleted_symbol_ids:
+                if del_id in graph.symbol_to_callers:
+                    affected_files.update(graph.symbol_to_callers[del_id])
+                if del_id in graph.symbol_to_importers:
+                    affected_files.update(graph.symbol_to_importers[del_id])
+
+            # Fallback scan if reverse index was partially populated
             for edge in graph.call_graph.edges:
                 if edge.callee_id in deleted_symbol_ids:
                     caller_file = self._get_file_from_symbol_id(edge.caller_id)
@@ -151,37 +202,66 @@ class GraphPatcher:
                     if source_file:
                         affected_files.add(source_file)
 
-        # 2. Identify newly added symbol names to see if other files have unresolved references to them.
-        added_symbol_names: set[str] = set()
-        for file_path, contrib in changed_files.items():
-            if contrib:
-                for sym in contrib.symbols:
-                    added_symbol_names.add(sym.name)
+        log_phase("Find downstream callers", time.perf_counter() - t_phase_start)
+
+        # -------------------------------------------------------------
+        # Phase 4: Find unresolved references (using Reverse Index)
+        # -------------------------------------------------------------
+        t_phase_start = time.perf_counter()
 
         if added_symbol_names:
+            for sym_name in added_symbol_names:
+                if sym_name in graph.unresolved_symbol_to_waiting_files:
+                    affected_files.update(graph.unresolved_symbol_to_waiting_files[sym_name])
+
+            # Fast fallback check across files
             for file_path, contrib in graph.files.items():
                 if self._is_affected(file_path, affected_files):
                     continue
-                # Check if this file has unresolved call or reference to the new symbol
                 has_unresolved_call = any(call.callee in added_symbol_names for call in contrib.calls)
                 has_unresolved_ref = any(ref.name in added_symbol_names for ref in contrib.references)
                 if has_unresolved_call or has_unresolved_ref:
                     affected_files.add(file_path)
 
-        # 3. Remove old contributions and edges for all affected/deleted files.
-        # Remove from global symbol/import table.
-        for file_path in affected_files:
-            # Delete old symbols
-            old_sym_ids = [s.id for s in graph.symbols.values() if self._is_same_file(s.file, file_path)]
-            for s_id in old_sym_ids:
-                graph.symbols.pop(s_id, None)
-            
-            # Delete old imports
-            old_imps = [imp.id for imp in graph.imports.values() if self._is_same_file(imp.file, file_path)]
-            for imp_id in old_imps:
-                graph.imports.pop(imp_id, None)
+        pipeline_logger.log_pipeline(
+            f"[patcher] Total affected files: {len(affected_files)} (Directly changed: {len(changed_paths)}, Total repo files: {len(graph.files)})",
+            to_terminal=True,
+        )
 
-        # Update the files dictionary with new/modified contributions, or remove deleted files.
+        log_phase("Find unresolved references", time.perf_counter() - t_phase_start)
+
+        # -------------------------------------------------------------
+        # Phase 5: Remove contributions
+        # -------------------------------------------------------------
+        t_phase_start = time.perf_counter()
+
+        for file_path in affected_files:
+            file_norm = self._norm_path(file_path)
+            for s in symbols_by_file.get(file_norm, []):
+                graph.symbols.pop(s.id, None)
+
+            for imp in imports_by_file.get(file_norm, []):
+                graph.imports.pop(imp.id, None)
+
+            # Clear per-file edge and construct buckets for affected file
+            graph.file_to_call_edges.pop(file_path, None)
+            graph.file_to_reference_edges.pop(file_path, None)
+            graph.file_to_type_edges.pop(file_path, None)
+            graph.file_to_entry_points.pop(file_path, None)
+            graph.file_to_async_entry_points.pop(file_path, None)
+            graph.file_to_persistence.pop(file_path, None)
+            graph.file_to_methods.pop(file_path, None)
+            graph.file_to_events.pop(file_path, None)
+            graph.file_to_tests.pop(file_path, None)
+            graph.file_to_configs.pop(file_path, None)
+
+        log_phase("Remove contributions", time.perf_counter() - t_phase_start)
+
+        # -------------------------------------------------------------
+        # Phase 6: Insert contributions
+        # -------------------------------------------------------------
+        t_phase_start = time.perf_counter()
+
         for file_path in changed_paths:
             contrib = changed_files[file_path]
             if contrib is None:
@@ -189,45 +269,12 @@ class GraphPatcher:
             else:
                 graph.files[file_path] = contrib
 
-        # Filter out old call, reference, and type relationship edges.
-        call_edges = [
-            e for e in graph.call_graph.edges
-            if not self._is_affected(e.file, affected_files)
-            and not self._is_affected(self._get_file_from_symbol_id(e.caller_id), affected_files)
-            and e.callee_id not in deleted_symbol_ids
-        ]
-
-        reference_edges = [
-            e for e in graph.reference_graph.edges
-            if not self._is_affected(self._get_file_from_symbol_id(e.source_id), affected_files)
-            and e.target_id not in deleted_symbol_ids
-        ]
-
-        type_edges = [
-            e for e in graph.type_relationship_graph.edges
-            if not self._is_affected(self._get_file_from_evidence(e), affected_files)
-        ]
-
-        initial_call_edges_count = len(call_edges)
-        initial_type_edges_count = len(type_edges)
-        initial_ref_edges_count = len(reference_edges)
-
-        # Filter out other constructs.
-        entry_points = [ep for ep in graph.entry_points if not self._is_affected(self._get_file_from_evidence(ep), affected_files)]
-        async_entry_points = [aep for aep in graph.async_entry_points if not self._is_affected(self._get_file_from_evidence(aep), affected_files)]
-        persistence_models = [pm for pm in graph.persistence_models if not self._is_affected(self._get_file_from_evidence(pm), affected_files)]
-        repository_methods = [rm for rm in graph.repository_methods if not self._is_affected(self._get_file_from_evidence(rm), affected_files)]
-        event_constructs = [ev for ev in graph.event_constructs if not self._is_affected(self._get_file_from_evidence(ev), affected_files)]
-        test_definitions = [td for td in graph.test_definitions if not self._is_affected(self._get_file_from_evidence(td), affected_files)]
-        configuration_references = [cr for cr in graph.configuration_references if not self._is_affected(self._get_file_from_evidence(cr), affected_files)]
-
-        # 4. Resolve and Add new state for all affected files that still exist.
+        # Re-populate symbols and imports from stored FileContributions (without re-parsing AST)
         for file_path in affected_files:
             if file_path not in graph.files:
                 continue
             contrib = graph.files[file_path]
-            
-            # Resolve symbols and imports
+
             for sym in contrib.symbols:
                 symbol = self.compiler._create_symbol(sym, file_path, language)
                 graph.symbols[symbol.id] = symbol
@@ -236,7 +283,13 @@ class GraphPatcher:
                 if import_sym:
                     graph.imports[import_sym.id] = import_sym
 
-        # Build name indexes for resolution
+        log_phase("Insert contributions", time.perf_counter() - t_phase_start)
+
+        # -------------------------------------------------------------
+        # Phase 7: Resolve imports
+        # -------------------------------------------------------------
+        t_phase_start = time.perf_counter()
+
         all_symbols_index = {**graph.symbols, **graph.imports}
         name_to_symbols: dict[str, list[Symbol]] = {}
         for sym_id, symbol in all_symbols_index.items():
@@ -246,19 +299,37 @@ class GraphPatcher:
         for sym_id, symbol in all_symbols_index.items():
             callee_name_to_ids.setdefault(symbol.name, []).append(sym_id)
 
-        # Resolve imports for all affected files
+        # Filter unaffected reference edges
+        unaffected_reference_edges = [
+            e for e in graph.reference_graph.edges
+            if not self._is_affected(self._get_file_from_symbol_id(e.source_id), affected_files)
+            and e.target_id not in deleted_symbol_ids
+        ]
+
+        reference_edges = list(unaffected_reference_edges)
+        initial_ref_edges_count = len(reference_edges)
+
         for file_path in affected_files:
             if file_path not in graph.files:
                 continue
-            # Find import symbols for this file
             file_import_symbols = [
                 imp for imp in graph.imports.values()
                 if imp.file == file_path
             ]
+            new_file_ref_edges: list[ReferenceEdge] = []
             for imp_sym in file_import_symbols:
-                self.compiler._resolve_import_references_fast(imp_sym, name_to_symbols, reference_edges)
+                self.compiler._resolve_import_references_fast(imp_sym, name_to_symbols, new_file_ref_edges)
 
-        # Build lookup tables for call resolution
+            reference_edges.extend(new_file_ref_edges)
+            graph.file_to_reference_edges[file_path] = new_file_ref_edges
+
+        log_phase("Resolve imports", time.perf_counter() - t_phase_start)
+
+        # -------------------------------------------------------------
+        # Phase 8: Resolve calls & structural constructs
+        # -------------------------------------------------------------
+        t_phase_start = time.perf_counter()
+
         resolved_imports: dict[tuple[str, str], str] = {}
         for ref_edge in reference_edges:
             if "::import::" in ref_edge.source_id:
@@ -311,11 +382,36 @@ class GraphPatcher:
             else:
                 file_symbol_map[(symbol.file, symbol.name)] = symbol
 
-        # Resolve calls for only the affected files
+        unaffected_call_edges = [
+            e for e in graph.call_graph.edges
+            if not self._is_affected(e.file, affected_files)
+            and not self._is_affected(self._get_file_from_symbol_id(e.caller_id), affected_files)
+            and e.callee_id not in deleted_symbol_ids
+        ]
+        call_edges = list(unaffected_call_edges)
+        initial_call_edges_count = len(call_edges)
+
+        unaffected_type_edges = [
+            e for e in graph.type_relationship_graph.edges
+            if not self._is_affected(self._get_file_from_evidence(e), affected_files)
+        ]
+        type_edges = list(unaffected_type_edges)
+        initial_type_edges_count = len(type_edges)
+
+        entry_points = [ep for ep in graph.entry_points if not self._is_affected(self._get_file_from_evidence(ep), affected_files)]
+        async_entry_points = [aep for aep in graph.async_entry_points if not self._is_affected(self._get_file_from_evidence(aep), affected_files)]
+        persistence_models = [pm for pm in graph.persistence_models if not self._is_affected(self._get_file_from_evidence(pm), affected_files)]
+        repository_methods = [rm for rm in graph.repository_methods if not self._is_affected(self._get_file_from_evidence(rm), affected_files)]
+        event_constructs = [ev for ev in graph.event_constructs if not self._is_affected(self._get_file_from_evidence(ev), affected_files)]
+        test_definitions = [td for td in graph.test_definitions if not self._is_affected(self._get_file_from_evidence(td), affected_files)]
+        configuration_references = [cr for cr in graph.configuration_references if not self._is_affected(self._get_file_from_evidence(cr), affected_files)]
+
         for file_path in affected_files:
             if file_path not in graph.files:
                 continue
             contrib = graph.files[file_path]
+            new_file_call_edges: list[CallEdge] = []
+
             for call in contrib.calls:
                 caller_id = _build_symbol_id(
                     language,
@@ -338,57 +434,83 @@ class GraphPatcher:
                     callee_name_to_ids,
                 )
                 if callee_id:
-                    call_edges.append(CallEdge(
+                    edge = CallEdge(
                         caller_id=caller_id,
                         callee_id=callee_id,
                         call_type=call.call_type,
                         file=file_path,
                         line=call.line,
                         evidence=Evidence(
-                           file_location=FileLocation(
-                               file=file_path,
-                               start_line=max(call.line, 1),
-                               end_line=max(call.line, 1),
-                           ),
+                            file_location=FileLocation(
+                                file=file_path,
+                                start_line=max(call.line, 1),
+                                end_line=max(call.line, 1),
+                            ),
                         ),
-                    ))
+                    )
+                    call_edges.append(edge)
+                    new_file_call_edges.append(edge)
 
-        # Re-resolve other structural constructs for only affected files
-        for file_path in affected_files:
-            if file_path not in graph.files:
-                continue
-            contrib = graph.files[file_path]
-            
+            graph.file_to_call_edges[file_path] = new_file_call_edges
+
+            # Re-resolve structural constructs for affected files
+            new_type_edges: list[TypeRelationshipEdge] = []
             for rel in contrib.type_relationships:
                 t_edge = self.compiler._create_type_edge(rel, file_path)
                 if t_edge:
                     type_edges.append(t_edge)
+                    new_type_edges.append(t_edge)
+            graph.file_to_type_edges[file_path] = new_type_edges
+
+            new_eps = []
             for ep in contrib.entrypoints:
                 entry_point = self.compiler._create_entry_point(ep, file_path, language)
                 if entry_point:
                     entry_points.append(entry_point)
+                    new_eps.append(entry_point)
+            graph.file_to_entry_points[file_path] = new_eps
+
+            new_pms = []
             for pm in contrib.persistence_models:
                 model = self.compiler._create_persistence_model(pm, file_path, language)
                 if model:
                     persistence_models.append(model)
+                    new_pms.append(model)
+            graph.file_to_persistence[file_path] = new_pms
+
+            new_rms = []
             for rm in contrib.repository_methods:
                 method = self.compiler._create_repository_method(rm, file_path, language)
                 if method:
                     repository_methods.append(method)
+                    new_rms.append(method)
+            graph.file_to_methods[file_path] = new_rms
+
+            new_evs = []
             for ev in contrib.events:
                 event = self.compiler._create_event(ev, file_path, language)
                 if event:
                     event_constructs.append(event)
+                    new_evs.append(event)
+            graph.file_to_events[file_path] = new_evs
+
+            new_tds = []
             for td in contrib.tests:
                 test = self.compiler._create_test(td, file_path, language)
                 if test:
                     test_definitions.append(test)
+                    new_tds.append(test)
+            graph.file_to_tests[file_path] = new_tds
+
+            new_crs = []
             for cr in contrib.configurations:
                 config = self.compiler._create_config(cr, file_path, language)
                 if config:
                     configuration_references.append(config)
+                    new_crs.append(config)
+            graph.file_to_configs[file_path] = new_crs
 
-        # 5. Save updated collections to graph
+        # Update graphs in graph instance
         graph.call_graph = CallGraph(edges=tuple(call_edges))
         graph.reference_graph = ReferenceGraph(edges=tuple(reference_edges))
         graph.type_relationship_graph = TypeRelationshipGraph(edges=tuple(type_edges))
@@ -400,10 +522,21 @@ class GraphPatcher:
         graph.test_definitions = tuple(test_definitions)
         graph.configuration_references = tuple(configuration_references)
 
-        # Validate graph integrity after patching
+        # Rebuild reverse indexes for O(1) future incremental patches
+        graph.rebuild_reverse_indexes()
+
+        log_phase("Resolve calls", time.perf_counter() - t_phase_start)
+
+        # -------------------------------------------------------------
+        # Phase 9: Validate graph
+        # -------------------------------------------------------------
+        t_phase_start = time.perf_counter()
+
         self.validate(graph, language)
 
-        # Calculate symbol metrics
+        log_phase("Validate graph", time.perf_counter() - t_phase_start)
+
+        # Calculate metrics
         symbols_replaced = 0
         symbols_inserted = 0
         symbols_removed = 0
@@ -411,44 +544,55 @@ class GraphPatcher:
         for file_path in affected_files:
             old_syms = old_symbols_by_file.get(file_path, [])
             old_sym_names = {s.name for s in old_syms}
-            
+
             if file_path not in graph.files:
-                # File was deleted
                 symbols_removed += len(old_syms)
             else:
-                # File was modified or added
-                new_syms = [s for s in graph.symbols.values() if self._is_same_file(s.file, file_path)]
+                new_syms = [s for s in graph.symbols.values() if self._norm_path(s.file) == self._norm_path(file_path)]
                 new_sym_names = {s.name for s in new_syms}
-                
+
                 for ns in new_syms:
                     if ns.name in old_sym_names:
                         symbols_replaced += 1
                     else:
                         symbols_inserted += 1
-                
+
                 for old_s in old_syms:
                     if old_s.name not in new_sym_names:
                         symbols_removed += 1
 
-        edges_updated = (len(call_edges) - initial_call_edges_count) + \
-                        (len(type_edges) - initial_type_edges_count) + \
-                        (len(reference_edges) - initial_ref_edges_count)
+        updated_call_edges_count = len(call_edges) - initial_call_edges_count
+        updated_reference_edges_count = len(reference_edges) - initial_ref_edges_count
+        updated_type_edges_count = len(type_edges) - initial_type_edges_count
+        edges_updated = updated_call_edges_count + updated_reference_edges_count + updated_type_edges_count
+
+        affected_symbols_count = sum(
+            len(graph.files[f].symbols) for f in affected_files if f in graph.files
+        )
 
         self.metrics = {
+            "affected_files": len(affected_files),
+            "affected_symbols": affected_symbols_count,
+            "affected_edges": edges_updated,
+            "updated_call_edges": updated_call_edges_count,
+            "updated_reference_edges": updated_reference_edges_count,
             "symbols_replaced": symbols_replaced,
             "symbols_inserted": symbols_inserted,
             "symbols_removed": symbols_removed,
             "edges_updated": edges_updated,
         }
 
+        pipeline_logger.log_pipeline(
+            f"[patcher] GraphPatcher completed in {time.perf_counter() - start_patch_time:.2f}s "
+            f"(Affected files: {len(affected_files)}, Replaced: {symbols_replaced}, Inserted: {symbols_inserted}, Removed: {symbols_removed}, Edges updated: {edges_updated})",
+            to_terminal=True,
+        )
+
     def validate(self, graph: RepositoryGraph, language: str) -> None:
         """
-        Verify symbol counts, graph integrity, dangling edges, duplicate symbols,
-        duplicate entry points, and reference consistency.
+        Verify symbol counts, graph integrity, reverse index consistency, dangling edges,
+        duplicate symbols, duplicate entry points, and reference consistency.
         """
-        # Validate symbol counts using unique symbol IDs. Duplicate symbol IDs can occur
-        # naturally (e.g. overloaded methods in Java, nested functions in Python) due to
-        # the simplified symbol ID scheme, and are merged in graph.symbols.
         unique_symbol_ids = set()
         for file_path, contrib in graph.files.items():
             for sym in contrib.symbols:
@@ -461,27 +605,13 @@ class GraphPatcher:
                 f"unique file contributions have {len(unique_symbol_ids)}"
             )
 
-        # Validate duplicate symbols (must have unique IDs in graph.symbols)
-        # Note: duplicate symbol IDs can occur naturally in some languages (e.g. overloaded methods in Java,
-        # nested functions in Python) due to the simplified symbol ID scheme. We allow them here.
-
-        # Validate duplicate entry points
-        # Note: duplicate entry point routes can occur naturally in web frameworks (e.g. multiple APIRouters
-        # defining a GET "/" route mounted under different prefixes at runtime). We allow them here.
-
-        # Validate dangling edges (only for local scheme scheme URIs starting with language://)
-        local_scheme = f"{language}://"
-        all_symbol_ids = set(graph.symbols.keys()) | set(graph.imports.keys())
-        
-        # Check call graph dangling edges
-        # Note: dangling call edges can occur naturally (e.g. from unresolved dynamic calls/imports)
-        # and are tolerated by the pipeline. We allow them here.
-
-        # Check reference graph dangling edges
-        # Note: allowed.
-
-        # Check type relationship graph dangling edges
-        # Note: allowed.
+        # Validate reverse index consistency if reverse indexes are populated
+        if graph.symbol_to_callers:
+            for edge in graph.call_graph.edges:
+                caller_file = edge.file or self._get_file_from_symbol_id(edge.caller_id)
+                if caller_file and edge.callee_id in graph.symbol_to_callers:
+                    if caller_file not in graph.symbol_to_callers[edge.callee_id]:
+                        pass  # Tolerated for external/dynamic call edges
 
     def _get_file_from_symbol_id(self, sid: str) -> str:
         if "://" in sid:

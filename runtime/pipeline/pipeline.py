@@ -117,16 +117,41 @@ class Pipeline:
         Returns:
             PipelineContext with all results
         """
+        from datetime import datetime
+        from core.runtime.run_context import RunContext
         from runtime.instrumentation.logging import pipeline_logger
-        pipeline_logger.start_run()
+        from language_adapters.base.instrumentation import get_instrumentation
+
+        started_at = datetime.now()
+        run_context = RunContext.create(started_at=started_at)
+        pipeline_logger.start_run(run_context)
         pipeline_start_time = time.perf_counter()
         
         context = PipelineContext(
+            run_context=run_context,
             repository=request.repository.full_name,
             base_sha=request.pull_request.base_sha if request.pull_request else None,
             head_sha=request.pull_request.head_sha if request.pull_request else None,
             request_id=request.metadata.get("delivery_id") if request.metadata else None,
         )
+
+        repo_name = request.repository.full_name
+        pr_num = str(request.pull_request.number) if request.pull_request else "N/A"
+
+        banner = (
+            "====================================================\n\n"
+            "Factor Analysis\n\n"
+            "Run ID:\n"
+            f"{run_context.run_id}\n\n"
+            "Repository:\n"
+            f"{repo_name}\n\n"
+            "PR:\n"
+            f"{pr_num}\n\n"
+            "Logs:\n\n"
+            f"{run_context.log_dir}/\n\n"
+            "===================================================="
+        )
+        pipeline_logger.log_pipeline(banner, to_terminal=True)
         
         try:
             context.mark_compilation_start()
@@ -235,18 +260,63 @@ class Pipeline:
             total_time = time.perf_counter() - pipeline_start_time
             pipeline_logger.log_pipeline(f"Total: {total_time:.1f}s", to_terminal=True)
             
-            # Print timing summary to log file
-            timer.print_summary()
-            
             context.mark_complete()
             
         except Exception as exc:
             context.error = exc
             context.mark_complete()
-            pipeline_logger.log_pipeline(f"✗ {exc}", to_terminal=True)
+            elapsed_time = time.perf_counter() - pipeline_start_time
+            if run_context and run_context.log_manager:
+                run_context.log_manager.log_failure(
+                    exc=exc,
+                    phase="pipeline",
+                    repository=repo_name,
+                    pr=pr_num,
+                    elapsed_time=elapsed_time,
+                )
+            else:
+                pipeline_logger.log_pipeline(f"✗ {exc}", to_terminal=True)
             raise
         finally:
+            timer.print_summary()
             pipeline_logger.write_to_disk()
+
+            if run_context and run_context.log_manager:
+                # Write summary.json
+                summary_data = {
+                    "run_id": run_context.run_id,
+                    "started_at": run_context.started_at.isoformat(),
+                    "completed_at": datetime.now().isoformat(),
+                    "repository": repo_name,
+                    "pr": pr_num,
+                    "total_time_seconds": round(time.perf_counter() - pipeline_start_time, 3),
+                    "context": context.to_dict(),
+                    "has_error": context.error is not None,
+                    "error": str(context.error) if context.error else None,
+                }
+                run_context.log_manager.write_json("summary.json", summary_data)
+
+                # Write profile.json
+                inst = get_instrumentation()
+                profile_data = {
+                    "global_counters": inst.global_counters,
+                    "pass_stats": {
+                        name: {
+                            "total_time": round(stats.total_time, 4),
+                            "call_count": stats.call_count,
+                            "max_time": round(stats.max_time, 4),
+                            "min_time": round(stats.min_time, 4) if stats.min_time != float("inf") else 0,
+                            "files_processed": stats.files_processed,
+                            "counters": stats.counters,
+                            "objects_emitted": stats.objects_emitted,
+                        }
+                        for name, stats in inst.pass_stats.items()
+                    },
+                }
+                run_context.log_manager.write_json("profile.json", profile_data)
+
+                # Close log manager
+                run_context.log_manager.close()
         
         return context
     
@@ -411,7 +481,11 @@ class Pipeline:
             changed_fetch_time = time.perf_counter() - changed_fetch_start
             
             # Clone base_graph using pickle to avoid mutating cache
+            pipeline_logger.log_pipeline("[pipeline] Step 1.2: Cloning base RepositoryGraph for head compilation...", to_terminal=True)
+            clone_start = time.perf_counter()
             patched_graph = pickle.loads(pickle.dumps(base_graph))
+            clone_duration = time.perf_counter() - clone_start
+            pipeline_logger.log_pipeline(f"[pipeline] Step 1.2 done: Base graph cloned in {clone_duration:.2f}s", to_terminal=True)
             
             # Compile changes incrementally on patched_graph
             metrics: dict[str, Any] = {}
@@ -425,9 +499,10 @@ class Pipeline:
                 "language": language,
             }
             
-            print(f"[pipeline] Running incremental compilation for {len(changed_files_dict)} changed files...")
+            pipeline_logger.log_pipeline(f"[pipeline] Step 1.3: Running incremental compilation for {len(changed_files_dict)} changed files...", to_terminal=True)
             try:
-                patched_graph = adapter.compile_incremental(patched_graph, repository_input)
+                with timer.timed("Incremental Compilation"):
+                    patched_graph = adapter.compile_incremental(patched_graph, repository_input)
             except Exception as exc:
                 raise RepositoryCompilationFailed(
                     f"Incremental compilation failed: {exc}",
@@ -438,9 +513,12 @@ class Pipeline:
             patch_duration = metrics.get("patch_duration", 0.0)
             
             # Export head RepositoryModel
+            pipeline_logger.log_pipeline("[pipeline] Step 1.4: Exporting head RepositoryModel via patched_graph.to_model()...", to_terminal=True)
             head_export_start = time.perf_counter()
-            context.head_repository_model = patched_graph.to_model()
+            with timer.timed("RepositoryGraph.to_model"):
+                context.head_repository_model = patched_graph.to_model()
             head_export_duration = time.perf_counter() - head_export_start
+            pipeline_logger.log_pipeline(f"[pipeline] Step 1.4 done: Head RepositoryModel exported in {head_export_duration:.2f}s", to_terminal=True)
             
             timer.print_progress()
             
