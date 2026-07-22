@@ -79,12 +79,22 @@ NOISE_CATEGORIES = {
 
 
 def is_compiler_metadata(val: str) -> bool:
-    """Check if a string represents internal compiler metadata or graph IDs."""
+    """Check if a string represents internal compiler metadata or graph IDs.
+
+    Pruned identifiers (per review-scope spec):
+      - ``unit://``  — compiler unit references
+      - ``ref://``   — compiler traceability references (never consumed by the LLM)
+      - ``node://``  — graph node identifiers
+      - ``edge://``  — graph edge identifiers
+      - strings containing ``graph`` — internal graph identifiers
+      - hex strings of length >= 32 — internal hashes
+    """
     if not val:
         return False
     val_lower = val.lower()
     if (
         val_lower.startswith("unit://") or
+        val_lower.startswith("ref://") or
         val_lower.startswith("node://") or
         val_lower.startswith("edge://") or
         "graph" in val_lower
@@ -325,7 +335,12 @@ def prune_review_context(review_context: ReviewContext) -> ReviewContext:
         deepest_execution=pruned_de
     )
 
-    # 3. Filter discoveries
+    # 3. Filter discoveries with evidence deduplication.
+    # Identical Reference objects across multiple discoveries are canonicalized
+    # to a single shared instance (keyed by id+kind+location+compiler_artifact).
+    # This eliminates duplicate filtering work during serialization and reduces
+    # memory pressure without changing the serialized format.
+    seen_refs: dict[tuple[str, str, str, str], Reference] = {}
     pruned_discoveries: list[Discovery] = []
     if review_context.discoveries:
         for d in review_context.discoveries:
@@ -336,7 +351,12 @@ def prune_review_context(review_context: ReviewContext) -> ReviewContext:
                     is_compiler_metadata(ref.location) or
                     is_compiler_metadata(ref.compiler_artifact)
                 ):
-                    pruned_refs_list.append(ref)
+                    ref_key = (ref.id, ref.kind, ref.location, ref.compiler_artifact)
+                    canonical = seen_refs.get(ref_key)
+                    if canonical is None:
+                        seen_refs[ref_key] = ref
+                        canonical = ref
+                    pruned_refs_list.append(canonical)
 
             pruned_facts: dict[str, Any] = {}
             for k, v in d.facts.items():

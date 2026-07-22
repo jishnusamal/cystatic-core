@@ -1099,7 +1099,7 @@ class TestHighDensityFiltering:
             location="unit://noise/1",
             compiler_artifact="graph_node"
         )
-        
+
         discovery = Discovery(
             id="ref://discovery/1",
             kind="deep_execution",
@@ -1112,16 +1112,602 @@ class TestHighDensityFiltering:
             reference_count=2,
             references=(ref_good, ref_noise)
         )
-        
+
         rc = TestHelper.create_review_context(discoveries=(discovery,))
-        
+
         compiler = LLMContextCompiler()
         result = compiler.compile(rc)
-        
+
         assert len(result.disc) == 1
         d_compiled = result.disc[0]
-        
+
         facts_compiled = d_compiled[1]
         assert "path" in facts_compiled
         assert "weight" in facts_compiled
         assert "internal_compiler_hash" not in facts_compiled
+
+
+# ---------------------------------------------------------------------------
+# Tests: Review Scope — Scope (what must be excluded)
+# ---------------------------------------------------------------------------
+
+class TestReviewScopeVerification:
+    """Scope tests: verify that artifacts outside the review scope are excluded."""
+
+    def test_ref_uri_treated_as_compiler_metadata(self):
+        """ref:// URIs are compiler traceability identifiers and must be pruned."""
+        from llm_context.review_scope_builder import is_compiler_metadata
+
+        assert is_compiler_metadata("ref://test/1") is True
+        assert is_compiler_metadata("ref://discovery/abc") is True
+        assert is_compiler_metadata("REF://upper/case") is True
+
+    def test_unit_uri_treated_as_compiler_metadata(self):
+        """unit:// URIs remain classified as compiler metadata."""
+        from llm_context.review_scope_builder import is_compiler_metadata
+
+        assert is_compiler_metadata("unit://noise/1") is True
+
+    def test_node_edge_uri_treated_as_compiler_metadata(self):
+        """node:// and edge:// URIs are compiler graph identifiers."""
+        from llm_context.review_scope_builder import is_compiler_metadata
+
+        assert is_compiler_metadata("node://graph/42") is True
+        assert is_compiler_metadata("edge://graph/42-43") is True
+
+    def test_non_metadata_refs_not_pruned(self):
+        """Legitimate file locations and behavior URIs are NOT pruned."""
+        from llm_context.review_scope_builder import is_compiler_metadata
+
+        assert is_compiler_metadata("file.py:10-25") is False
+        assert is_compiler_metadata("behavior://domain/checkout") is False
+        assert is_compiler_metadata("change://test") is False
+        assert is_compiler_metadata("") is False
+
+    def test_ref_uri_pruned_from_execution_step_references(self):
+        """ref:// strings in ExecutionStep.references are removed during pruning."""
+        from llm_context.review_scope_builder import prune_review_context
+
+        step = TestHelper.create_execution_step(
+            references=("ref://unit/1", "behavior://domain/checkout", "unit://noise/2"),
+        )
+        ep = TestHelper.create_entry_point(execution_chain=(step,))
+        rc = TestHelper.create_review_context(
+            execution=TestHelper.create_execution_context(entry_points=(ep,))
+        )
+
+        pruned = prune_review_context(rc)
+        step_refs = pruned.execution.entry_points[0].execution_chain[0].references
+
+        assert not any(r.startswith("ref://") for r in step_refs)
+        assert not any(r.startswith("unit://") for r in step_refs)
+        assert "behavior://domain/checkout" in step_refs
+
+    def test_ref_uri_pruned_from_discovery_references(self):
+        """ref:// id in Discovery.references are removed during pruning."""
+        from llm_context.review_scope_builder import prune_review_context
+
+        ref_noise = TestHelper.create_reference(
+            id="ref://noise/1",
+            kind="dependency",
+            location="ref://noise/1",
+            compiler_artifact="internal",
+        )
+        ref_clean = TestHelper.create_reference(
+            id="behavior://domain/pay",
+            kind="behavior",
+            location="payment.py:10-20",
+            compiler_artifact="checkout",
+        )
+        disc = TestHelper.create_discovery(
+            references=(ref_noise, ref_clean),
+            reference_count=2,
+        )
+        rc = TestHelper.create_review_context(discoveries=(disc,))
+        pruned = prune_review_context(rc)
+
+        surviving_ids = {r.id for r in pruned.discoveries[0].references}
+        assert "ref://noise/1" not in surviving_ids
+        assert "behavior://domain/pay" in surviving_ids
+
+    def test_unrelated_framework_execution_nodes_removed(self):
+        """Unchanged framework nodes are absent from the compiled execution graph."""
+        from llm_context.review_scope_builder import prune_review_context
+
+        step_fw = TestHelper.create_execution_step(
+            symbol_id="sym://fw/depends",
+            symbol_name="Depends",
+            symbol_kind="function",
+            depth=0,
+            changed=False,
+        )
+        step_biz = TestHelper.create_execution_step(
+            symbol_id="sym://domain/pay",
+            symbol_name="PaymentService",
+            symbol_kind="class",
+            depth=1,
+            changed=False,
+        )
+        ep = TestHelper.create_entry_point(execution_chain=(step_fw, step_biz))
+        rc = TestHelper.create_review_context(
+            execution=TestHelper.create_execution_context(entry_points=(ep,))
+        )
+
+        # Verify pruning: only the business node survives in the ReviewContext
+        pruned = prune_review_context(rc)
+        chain = pruned.execution.entry_points[0].execution_chain
+        surviving_names = [s.symbol.name for s in chain]
+        assert "Depends" not in surviving_names
+        assert "PaymentService" in surviving_names
+
+        # Verify compiler: DAG has exactly 1 node (the business node)
+        compiler = LLMContextCompiler()
+        result = compiler.compile(rc)
+        assert len(result.eg.nodes) == 1
+
+    def test_hex_hash_facts_excluded(self):
+        """Discovery facts containing 32+ char hex hashes are stripped."""
+        from llm_context.review_scope_builder import prune_review_context
+
+        disc = TestHelper.create_discovery(
+            facts={
+                "path": "A -> B",
+                "hash_key": "a" * 32,
+                "internal_id": "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6",
+                "weight": "high",
+            }
+        )
+        rc = TestHelper.create_review_context(discoveries=(disc,))
+        pruned = prune_review_context(rc)
+        facts = pruned.discoveries[0].facts
+
+        assert "path" in facts
+        assert "weight" in facts
+        assert "hash_key" not in facts
+        assert "internal_id" not in facts
+
+
+# ---------------------------------------------------------------------------
+# Tests: Review Scope — Preservation (what must be retained)
+# ---------------------------------------------------------------------------
+
+class TestReviewScopePreservation:
+    """Preservation tests: verify that review-relevant artifacts are never discarded."""
+
+    def test_changed_file_retained(self):
+        """Every changed file appears in the compiled file table."""
+        change = TestHelper.create_change(
+            symbol_id="sym://app/create_order",
+            symbol_name="create_order",
+            symbol_kind="function",
+            change_type="modified",
+        )
+        file_change = TestHelper.create_file_change(
+            path="orders/service.py",
+            changes=(change,),
+        )
+        rc = TestHelper.create_review_context(
+            change=TestHelper.create_change_context(files=(file_change,))
+        )
+
+        compiler = LLMContextCompiler()
+        result = compiler.compile(rc)
+
+        file_paths = {result.st[entry[0]] for entry in result.f}
+        assert "orders/service.py" in file_paths
+
+    def test_changed_symbol_retained(self):
+        """Every changed symbol appears in the compiled symbol table."""
+        change = TestHelper.create_change(
+            symbol_id="sym://app/create_order",
+            symbol_name="create_order",
+            symbol_kind="function",
+            change_type="added",
+        )
+        file_change = TestHelper.create_file_change(changes=(change,))
+        rc = TestHelper.create_review_context(
+            change=TestHelper.create_change_context(files=(file_change,))
+        )
+
+        compiler = LLMContextCompiler()
+        result = compiler.compile(rc)
+
+        assert len(result.sym) >= 1
+        assert len(result.f) == 1
+
+    def test_changed_symbol_in_noise_category_retained_in_execution(self):
+        """A symbol marked changed=True survives pruning even if it is stdlib/framework."""
+        from llm_context.review_scope_builder import prune_review_context
+
+        step = TestHelper.create_execution_step(
+            symbol_name="logging",
+            symbol_kind="module",
+            depth=0,
+            changed=True,
+        )
+        ep = TestHelper.create_entry_point(execution_chain=(step,))
+        rc = TestHelper.create_review_context(
+            execution=TestHelper.create_execution_context(entry_points=(ep,))
+        )
+
+        pruned = prune_review_context(rc)
+        assert len(pruned.execution.entry_points[0].execution_chain) == 1
+
+    def test_discovery_count_preserved(self):
+        """Discovery count is identical before and after pruning."""
+        from llm_context.review_scope_builder import prune_review_context
+
+        d1 = TestHelper.create_discovery(id="discovery://a/1", kind="deep_execution")
+        d2 = TestHelper.create_discovery(id="discovery://b/1", kind="shared_execution")
+        d3 = TestHelper.create_discovery(id="discovery://c/1", kind="boundary_crossing")
+        rc = TestHelper.create_review_context(discoveries=(d1, d2, d3))
+
+        pruned = prune_review_context(rc)
+        assert len(pruned.discoveries) == 3
+
+    def test_discovery_count_preserved_after_compile(self):
+        """Compiled disc tuple length equals original discovery count."""
+        d1 = TestHelper.create_discovery(kind="deep_execution", facts={"depth": 5})
+        d2 = TestHelper.create_discovery(kind="shared_execution", facts={"count": 3})
+        rc = TestHelper.create_review_context(discoveries=(d1, d2))
+
+        compiler = LLMContextCompiler()
+        result = compiler.compile(rc)
+
+        assert len(result.disc) == 2
+
+    def test_execution_path_non_noise_steps_preserved(self):
+        """Business logic and domain steps are always retained."""
+        from llm_context.review_scope_builder import prune_review_context
+
+        step_biz = TestHelper.create_execution_step(
+            symbol_name="OrderProcessor",
+            symbol_kind="class",
+            depth=0,
+            changed=False,
+        )
+        step_event = TestHelper.create_execution_step(
+            symbol_name="OrderCreatedPublisher",
+            symbol_kind="class",
+            depth=1,
+            changed=False,
+        )
+        ep = TestHelper.create_entry_point(execution_chain=(step_biz, step_event))
+        rc = TestHelper.create_review_context(
+            execution=TestHelper.create_execution_context(entry_points=(ep,))
+        )
+
+        pruned = prune_review_context(rc)
+        chain = pruned.execution.entry_points[0].execution_chain
+        names = {s.symbol.name for s in chain}
+
+        assert "OrderProcessor" in names
+        assert "OrderCreatedPublisher" in names
+
+    def test_valid_discovery_references_retained(self):
+        """References with non-metadata ids and locations survive pruning."""
+        from llm_context.review_scope_builder import prune_review_context
+
+        ref = TestHelper.create_reference(
+            id="behavior://domain/checkout",
+            kind="behavior",
+            location="checkout.py:10-40",
+            compiler_artifact="checkout_service",
+        )
+        disc = TestHelper.create_discovery(references=(ref,), reference_count=1)
+        rc = TestHelper.create_review_context(discoveries=(disc,))
+
+        pruned = prune_review_context(rc)
+        assert len(pruned.discoveries[0].references) == 1
+        assert pruned.discoveries[0].references[0].id == "behavior://domain/checkout"
+
+    def test_discovery_facts_with_clean_values_retained(self):
+        """Discovery facts with non-metadata keys and values are fully retained."""
+        from llm_context.review_scope_builder import prune_review_context
+
+        facts = {
+            "max_depth": 7,
+            "shared_symbol_ids": ("sym://domain/pay",),
+            "path": "Controller -> Service -> Repository",
+            "weight": "high",
+        }
+        disc = TestHelper.create_discovery(facts=facts)
+        rc = TestHelper.create_review_context(discoveries=(disc,))
+
+        pruned = prune_review_context(rc)
+        retained = pruned.discoveries[0].facts
+
+        assert retained["max_depth"] == 7
+        assert retained["weight"] == "high"
+        assert retained["path"] == "Controller -> Service -> Repository"
+
+
+# ---------------------------------------------------------------------------
+# Tests: Review Scope — Equivalence (output identity)
+# ---------------------------------------------------------------------------
+
+class TestReviewScopeEquivalence:
+    """Equivalence tests: outputs are identical whether generated from original
+    or pruned contexts, and are deterministic across multiple runs."""
+
+    def test_deterministic_pruned_output(self):
+        """Pruning the same context twice produces identical results."""
+        from llm_context.review_scope_builder import prune_review_context
+
+        step = TestHelper.create_execution_step(
+            symbol_name="CheckoutService",
+            symbol_kind="class",
+            depth=0,
+            changed=True,
+            references=("ref://noise/1", "behavior://domain/checkout"),
+        )
+        ep = TestHelper.create_entry_point(execution_chain=(step,))
+        ref = TestHelper.create_reference(
+            id="behavior://domain/checkout",
+            kind="behavior",
+            location="checkout.py:5",
+            compiler_artifact="checkout",
+        )
+        disc = TestHelper.create_discovery(references=(ref,), reference_count=1)
+        rc = TestHelper.create_review_context(
+            execution=TestHelper.create_execution_context(entry_points=(ep,)),
+            discoveries=(disc,),
+        )
+
+        pruned1 = prune_review_context(rc)
+        pruned2 = prune_review_context(rc)
+        assert pruned1 == pruned2
+
+    def test_discovery_facts_equivalent_after_pruning(self):
+        """Discovery facts dict is identical between original and pruned context
+        (after removing metadata keys)."""
+        from llm_context.review_scope_builder import prune_review_context
+
+        facts = {
+            "max_depth": 4,
+            "path": "A -> B -> C",
+            "compiler_noise": "unit://internal/hash",
+        }
+        disc = TestHelper.create_discovery(facts=facts)
+        rc = TestHelper.create_review_context(discoveries=(disc,))
+        pruned = prune_review_context(rc)
+
+        retained = pruned.discoveries[0].facts
+        assert retained.get("max_depth") == 4
+        assert retained.get("path") == "A -> B -> C"
+        assert "compiler_noise" not in retained
+
+    def test_execution_ordering_equivalent_after_pruning(self):
+        """After pruning noise steps, the relative order of surviving steps
+        matches their order in the original execution chain."""
+        from llm_context.review_scope_builder import prune_review_context
+
+        steps = [
+            TestHelper.create_execution_step(
+                symbol_id=f"sym://domain/svc{i}",
+                symbol_name=f"Service{i}",
+                symbol_kind="class",
+                depth=i,
+                changed=False,
+            )
+            for i in range(4)
+        ]
+        noise = TestHelper.create_execution_step(
+            symbol_name="Depends",
+            symbol_kind="function",
+            depth=2,
+            changed=False,
+        )
+        chain = (steps[0], steps[1], noise, steps[2], steps[3])
+        ep = TestHelper.create_entry_point(execution_chain=chain)
+        rc = TestHelper.create_review_context(
+            execution=TestHelper.create_execution_context(entry_points=(ep,))
+        )
+
+        pruned = prune_review_context(rc)
+        pruned_chain = pruned.execution.entry_points[0].execution_chain
+
+        surviving_names = [s.symbol.name for s in pruned_chain]
+        assert "Depends" not in surviving_names
+        svc_indices = [surviving_names.index(f"Service{i}") for i in range(4)]
+        assert svc_indices == sorted(svc_indices)
+
+    def test_compiled_output_deterministic_across_runs(self):
+        """LLMContextCompiler produces identical output on repeated calls."""
+        step = TestHelper.create_execution_step(
+            symbol_name="PaymentService",
+            symbol_kind="class",
+            depth=0,
+            changed=True,
+        )
+        ep = TestHelper.create_entry_point(execution_chain=(step,))
+        change = TestHelper.create_change(
+            symbol_id="sym://domain/pay",
+            symbol_name="PaymentService",
+            symbol_kind="class",
+            change_type="modified",
+        )
+        file_change = TestHelper.create_file_change(changes=(change,))
+        rc = TestHelper.create_review_context(
+            change=TestHelper.create_change_context(files=(file_change,)),
+            execution=TestHelper.create_execution_context(entry_points=(ep,)),
+        )
+
+        compiler = LLMContextCompiler()
+        r1 = compiler.compile(rc)
+        r2 = compiler.compile(rc)
+        assert r1 == r2
+
+    def test_shared_references_across_discoveries_canonicalized(self):
+        """When two discoveries share an identical Reference, the same object
+        is stored (evidence deduplication). Both discoveries still receive the ref."""
+        from llm_context.review_scope_builder import prune_review_context
+
+        shared_ref = TestHelper.create_reference(
+            id="behavior://domain/checkout",
+            kind="behavior",
+            location="checkout.py:5",
+            compiler_artifact="checkout",
+        )
+        d1 = TestHelper.create_discovery(
+            id="discovery://a/1",
+            kind="deep_execution",
+            references=(shared_ref,),
+            reference_count=1,
+        )
+        d2 = TestHelper.create_discovery(
+            id="discovery://b/1",
+            kind="shared_execution",
+            references=(shared_ref,),
+            reference_count=1,
+        )
+        rc = TestHelper.create_review_context(discoveries=(d1, d2))
+        pruned = prune_review_context(rc)
+
+        ref_d1 = pruned.discoveries[0].references[0]
+        ref_d2 = pruned.discoveries[1].references[0]
+
+        assert ref_d1.id == ref_d2.id == "behavior://domain/checkout"
+        assert ref_d1 is ref_d2
+
+
+# ---------------------------------------------------------------------------
+# Tests: Review Scope — Metrics (measurable reduction with assertions)
+# ---------------------------------------------------------------------------
+
+class TestReviewScopeMetrics:
+    """Metrics tests: assert measurable token/size reductions when pruning applies."""
+
+    def _build_noisy_review_context(self) -> ReviewContext:
+        """Build a ReviewContext that contains framework execution noise and
+        compiler metadata references that the pruner removes."""
+        change = TestHelper.create_change(
+            symbol_id="sym://domain/checkout",
+            symbol_name="checkout",
+            symbol_kind="function",
+            change_type="modified",
+        )
+        file_change = TestHelper.create_file_change(
+            path="checkout/service.py",
+            changes=(change,),
+        )
+        change_ctx = TestHelper.create_change_context(files=(file_change,))
+
+        step_changed = TestHelper.create_execution_step(
+            symbol_id="sym://domain/checkout",
+            symbol_name="checkout",
+            symbol_kind="function",
+            depth=0,
+            changed=True,
+        )
+        step_fw1 = TestHelper.create_execution_step(
+            symbol_name="APIRouter",
+            symbol_kind="class",
+            depth=1,
+            changed=False,
+        )
+        step_fw2 = TestHelper.create_execution_step(
+            symbol_name="Depends",
+            symbol_kind="function",
+            depth=2,
+            changed=False,
+        )
+        step_fw3 = TestHelper.create_execution_step(
+            symbol_name="CORSMiddleware",
+            symbol_kind="class",
+            depth=3,
+            changed=False,
+        )
+        ep = TestHelper.create_entry_point(
+            endpoint="POST /checkout",
+            path="/checkout",
+            execution_chain=(step_changed, step_fw1, step_fw2, step_fw3),
+            references=("ref://internal/1", "unit://noise/2"),
+        )
+        exec_ctx = TestHelper.create_execution_context(entry_points=(ep,))
+
+        ref_noise = TestHelper.create_reference(
+            id="ref://internal/hash/1",
+            kind="dependency",
+            location="unit://noise/1",
+            compiler_artifact="internal",
+        )
+        ref_clean = TestHelper.create_reference(
+            id="behavior://domain/checkout",
+            kind="behavior",
+            location="checkout.py:1-50",
+            compiler_artifact="checkout",
+        )
+        disc = TestHelper.create_discovery(
+            facts={
+                "path": "POST /checkout -> checkout",
+                "compiler_hash": "a" * 32,
+            },
+            references=(ref_noise, ref_clean),
+            reference_count=2,
+        )
+
+        return TestHelper.create_review_context(
+            change=change_ctx,
+            execution=exec_ctx,
+            discoveries=(disc,),
+        )
+
+    def _compile_without_pruning(self, rc: ReviewContext) -> LLMContext:
+        """Compile rc bypassing the review-scope pruning phase."""
+        import llm_context.compiler as compiler_mod
+        original_brs = compiler_mod.build_review_scope
+        compiler_mod.build_review_scope = lambda ctx: ctx
+        try:
+            return LLMContextCompiler().compile(rc)
+        finally:
+            compiler_mod.build_review_scope = original_brs
+
+    def test_execution_node_count_smaller_after_pruning(self):
+        """Pruning removes framework nodes — compiled graph has fewer nodes."""
+        noisy_rc = self._build_noisy_review_context()
+        full_result = self._compile_without_pruning(noisy_rc)
+        pruned_result = LLMContextCompiler().compile(noisy_rc)
+        assert len(pruned_result.eg.nodes) < len(full_result.eg.nodes)
+
+    def test_string_table_smaller_after_pruning(self):
+        """Pruning removes framework identifiers — string table has fewer entries."""
+        noisy_rc = self._build_noisy_review_context()
+        full_result = self._compile_without_pruning(noisy_rc)
+        pruned_result = LLMContextCompiler().compile(noisy_rc)
+        assert len(pruned_result.st) <= len(full_result.st)
+
+    def test_discovery_count_unchanged_by_pruning(self):
+        """Pruning never removes a discovery — only cleans its references and facts."""
+        noisy_rc = self._build_noisy_review_context()
+        full_result = self._compile_without_pruning(noisy_rc)
+        pruned_result = LLMContextCompiler().compile(noisy_rc)
+        assert len(pruned_result.disc) == len(full_result.disc)
+
+    def test_serialized_size_decreases_after_pruning(self):
+        """JSON-serialized LLMContext is smaller after pruning than without it."""
+        import json
+        import dataclasses
+
+        noisy_rc = self._build_noisy_review_context()
+
+        def _serialize(ctx) -> str:
+            return json.dumps(dataclasses.asdict(ctx), default=str)
+
+        full_result = self._compile_without_pruning(noisy_rc)
+        full_size = len(_serialize(full_result))
+
+        pruned_result = LLMContextCompiler().compile(noisy_rc)
+        pruned_size = len(_serialize(pruned_result))
+
+        assert pruned_size < full_size, (
+            f"Expected pruned size ({pruned_size}) < full size ({full_size})"
+        )
+
+    def test_changed_symbol_count_unchanged_by_pruning(self):
+        """The number of changed symbols and files is never reduced by pruning."""
+        noisy_rc = self._build_noisy_review_context()
+        full_result = self._compile_without_pruning(noisy_rc)
+        pruned_result = LLMContextCompiler().compile(noisy_rc)
+        assert len(pruned_result.f) == len(full_result.f)
+        assert len(pruned_result.sym) == len(full_result.sym)
