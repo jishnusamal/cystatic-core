@@ -333,3 +333,40 @@ class TestGitHubRenderer:
         assert "# Cystatic Analysis" in result
         assert "python" in result
         assert "Modified:** 1 symbols" in result
+
+
+class TestPipelineTokenCount:
+    """Tests for pipeline LLMContext token counting."""
+    
+    def test_calculate_llm_context_tokens(self):
+        """Test calculating token counts for LLMContext elements."""
+        from runtime.pipeline.pipeline import Pipeline
+        pipeline = Pipeline()
+        
+        test_context = {
+            "st": ["", "file.py", "func"],
+            "f": [[1, 2]],
+            "sym": [[0, 1, 2]],
+            "ep": [[2, 1]],
+            "cs": [1, 2, 3, 4, 5],
+            "cf": [],
+            "eg": {"n": [], "e": []},
+            "epts": [],
+            "disc": []
+        }
+        
+        token_counts = pipeline.calculate_llm_context_tokens(test_context)
+        assert token_counts is not None
+        assert "total" in token_counts
+        assert token_counts["st"] > 0
+        assert token_counts["f"] > 0
+        assert token_counts["sym"] > 0
+        assert token_counts["total"] >= sum(token_counts[k] for k in test_context.keys())
+    
+    def test_calculate_llm_context_tokens_empty(self):
+        """Test calculating token counts for empty context."""
+        from runtime.pipeline.pipeline import Pipeline
+        pipeline = Pipeline()
+        
+        assert pipeline.calculate_llm_context_tokens({}) is None
+

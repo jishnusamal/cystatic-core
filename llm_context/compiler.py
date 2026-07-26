@@ -19,7 +19,7 @@ Given the same ReviewContext, this compiler always produces the exact same LLMCo
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from review_context.model import (
     ReviewContext,
@@ -40,6 +40,8 @@ from review_context.model import (
 
 from .model import LLMContext, StringTable, ExecutionGraph, ENUM_REVERSE
 
+if TYPE_CHECKING:
+    from runtime.settings import CompilerSettings
 
 # Regex for extracting file path and line range from location strings
 _LOCATION_RE = re.compile(r"^(.+?)(?::(\d+)(?:-(\d+))?)?$")
@@ -106,6 +108,12 @@ class LLMContextCompiler:
     facts optimized for LLM consumption.
     """
 
+    def __init__(self, settings: CompilerSettings | None = None) -> None:
+        if settings is None:
+            from runtime.settings import get_compiler_settings
+            settings = get_compiler_settings()
+        self._settings = settings
+
     def compile(self, review_context: ReviewContext) -> LLMContext:
         """Compile a ReviewContext into an LLMContext.
 
@@ -117,7 +125,7 @@ class LLMContextCompiler:
             token-efficient compact representation.
         """
         # Phase 0: Prune implementation noise semantically
-        pruned_context = build_review_scope(review_context)
+        pruned_context = build_review_scope(review_context, settings=self._settings)
 
         sb = _StringBuilder()
 
@@ -126,7 +134,7 @@ class LLMContextCompiler:
         symbol_table, symbol_id_map = self._build_symbol_table(
             pruned_context.change, pruned_context.execution, file_table, sb
         )
-        endpoint_table = self._build_endpoint_table(pruned_context.execution, sb)
+        endpoint_table = self._build_endpoint_table(pruned_context.execution, pruned_context.change, sb)
 
         # Phase 2: Build change section
         change_summary = self._build_change_summary(pruned_context.change.summary, sb)
@@ -211,7 +219,10 @@ class LLMContextCompiler:
         table: list[tuple[int, int, int]] = []
         seen: dict[str, int] = {}  # symbol id -> index
 
-        # Pass 1: Changed symbols
+        # Keep track of count of symbols added per file to enforce LLM_CONTEXT_MAX_SYMBOLS_PER_FILE
+        symbols_per_file: dict[int, int] = {}
+
+        # Pass 1: Changed symbols (Always preserved, ignore limits)
         for f in change_ctx.files:
             for c in f.changes:
                 sym = c.symbol
@@ -230,8 +241,9 @@ class LLMContextCompiler:
                     )
                     seen[sym.id] = len(table)
                     table.append(sym_entry)
+                    symbols_per_file[file_id] = symbols_per_file.get(file_id, 0) + 1
 
-        # Pass 2: Execution symbols
+        # Pass 2: Execution symbols (subject to limit)
         if exec_ctx and exec_ctx.entry_points:
             for ep in exec_ctx.entry_points:
                 for step in ep.execution_chain:
@@ -239,6 +251,11 @@ class LLMContextCompiler:
                     if sym and sym.id and sym.id not in seen:
                         file_path, _, _ = _parse_location(sym.location)
                         file_id = file_idx_map.get(file_path, 0)
+
+                        # Enforce limit of symbols per file
+                        limit = self._settings.LLM_CONTEXT_MAX_SYMBOLS_PER_FILE
+                        if symbols_per_file.get(file_id, 0) >= limit:
+                            continue
 
                         derivable_name = _resolve_symbol_name_from_uri(sym.id)
                         if sym.name == derivable_name or _is_noise_string(sym.name):
@@ -253,12 +270,14 @@ class LLMContextCompiler:
                         )
                         seen[sym.id] = len(table)
                         table.append(sym_entry)
+                        symbols_per_file[file_id] = symbols_per_file.get(file_id, 0) + 1
 
         return table, seen
 
     def _build_endpoint_table(
         self,
         exec_ctx: ExecutionContext,
+        change_ctx: ChangeContext,
         sb: _StringBuilder,
     ) -> list[tuple[int, int]]:
         """Build normalized endpoint lookup table.
@@ -268,7 +287,39 @@ class LLMContextCompiler:
         table: list[tuple[int, int]] = []
         seen: dict[str, int] = {}  # endpoint string -> index
 
+        # Find endpoints reached/changed by changed files directly to prioritize them
+        changed_files = {f.path for f in change_ctx.files} if change_ctx and change_ctx.files else set()
+
+        # Deterministic sorting/partitioning of entry points: changed/reached first, then others
+        prioritized_eps = []
+        other_eps = []
         for ep in exec_ctx.entry_points:
+            # Check if any step in the execution chain belongs to a changed file
+            is_changed = False
+            for step in ep.execution_chain:
+                if step.symbol and step.symbol.location:
+                    file_path, _, _ = _parse_location(step.symbol.location)
+                    if file_path in changed_files:
+                        is_changed = True
+                        break
+            if is_changed:
+                prioritized_eps.append(ep)
+            else:
+                other_eps.append(ep)
+
+        # Enforce budget limit: LLM_CONTEXT_MAX_ENDPOINTS
+        limit = self._settings.LLM_CONTEXT_MAX_ENDPOINTS
+        
+        # Sort both lists deterministically to ensure byte-identical output
+        prioritized_eps.sort(key=lambda x: (x.endpoint, x.path))
+        other_eps.sort(key=lambda x: (x.endpoint, x.path))
+
+        # Always preserve prioritized ones, then fill with others up to limit
+        selected_eps = prioritized_eps[:]
+        remaining_slots = max(0, limit - len(selected_eps))
+        selected_eps.extend(other_eps[:remaining_slots])
+
+        for ep in selected_eps:
             if ep.endpoint not in seen:
                 entry = (
                     sb.add(ep.endpoint),
@@ -278,6 +329,7 @@ class LLMContextCompiler:
                 table.append(entry)
 
         return table
+
 
     # -----------------------------------------------------------------------
     # Phase 2: Build Change Section
@@ -355,10 +407,29 @@ class LLMContextCompiler:
         entry_point_data: list[tuple] = []
 
         for ep in exec_ctx.entry_points:
+            # Skip if endpoint not in endpoint_table (which was filtered/limited)
+            if ep.endpoint not in endpoint_idx_map:
+                continue
+
             chain_node_idxs: list[int] = []
             prev_node_idx: int | None = None
 
+            # First, separate changed and other steps
+            # Limits are applied to inferred context (non-changed steps).
+            # The configured limit is LLM_CONTEXT_MAX_EXECUTION_CHAIN_LENGTH.
+            limit = self._settings.LLM_CONTEXT_MAX_EXECUTION_CHAIN_LENGTH
+            
+            steps = []
             for step in ep.execution_chain:
+                # If step is changed or symbol is in symbol_id_map, it is considered changed/preservable.
+                # However, symbol_id_map contains all execution symbols, so we check step.changed
+                if step.changed:
+                    steps.append(step)
+                else:
+                    if len(steps) < limit:
+                        steps.append(step)
+
+            for step in steps:
                 node_key = (step.behavior, step.symbol.id, step.depth)
 
                 if node_key not in node_map:
@@ -391,6 +462,7 @@ class LLMContextCompiler:
             terminal_idx = sb.add(ep.terminal)
             ep_tuple = (endpoint_idx, tuple(chain_node_idxs), terminal_idx, ep.max_depth)
             entry_point_data.append(ep_tuple)
+
 
         return ExecutionGraph(
             nodes=tuple(nodes),

@@ -1657,11 +1657,12 @@ class TestReviewScopeMetrics:
         """Compile rc bypassing the review-scope pruning phase."""
         import llm_context.compiler as compiler_mod
         original_brs = compiler_mod.build_review_scope
-        compiler_mod.build_review_scope = lambda ctx: ctx
+        compiler_mod.build_review_scope = lambda ctx, *args, **kwargs: ctx
         try:
             return LLMContextCompiler().compile(rc)
         finally:
             compiler_mod.build_review_scope = original_brs
+
 
     def test_execution_node_count_smaller_after_pruning(self):
         """Pruning removes framework nodes — compiled graph has fewer nodes."""
@@ -1818,4 +1819,75 @@ class TestWave2CompilerOptimizations:
         assert "node://graph/1" not in supp_nodes
         assert "unit://noise/1" not in supp_nodes
         assert "valid_node_id" in supp_nodes
+
+    def test_compiler_settings_limits_truncation(self):
+        """Test that compiler limits like MAX_DISCOVERY_EVIDENCE, MAX_REFERENCES_PER_NODE, etc. are respected."""
+        from runtime.settings import CompilerSettings
+        custom_settings = CompilerSettings(
+            LLM_CONTEXT_MAX_DISCOVERY_EVIDENCE=2,
+            LLM_CONTEXT_MAX_REFERENCES_PER_NODE=1,
+            LLM_CONTEXT_MAX_ENDPOINTS=1,
+            LLM_CONTEXT_MAX_SYMBOLS_PER_FILE=1,
+            LLM_CONTEXT_MAX_EXECUTION_CHAIN_LENGTH=1,
+        )
+
+        # 1. Create a discovery with 3 references to test LLM_CONTEXT_MAX_DISCOVERY_EVIDENCE
+        ref1 = Reference(id="ref1", kind="symbol", location="loc1", compiler_artifact="art")
+        ref2 = Reference(id="ref2", kind="symbol", location="loc2", compiler_artifact="art")
+        ref3 = Reference(id="ref3", kind="symbol", location="loc3", compiler_artifact="art")
+        disc = TestHelper.create_discovery(references=(ref1, ref2, ref3), reference_count=3)
+
+        # 2. Create steps with references to test LLM_CONTEXT_MAX_REFERENCES_PER_NODE
+        step1 = TestHelper.create_execution_step(
+            symbol_id="sym://foo/bar",
+            symbol_name="bar",
+            symbol_kind="function",
+            symbol_location="foo.py:10",
+            depth=1,
+            references=("ref1", "ref2", "ref3"),
+            changed=False
+        )
+        step2 = TestHelper.create_execution_step(
+            symbol_id="sym://foo/baz",
+            symbol_name="baz",
+            symbol_kind="function",
+            symbol_location="foo.py:20",
+            depth=2,
+            references=("ref1",),
+            changed=False
+        )
+
+        ep1 = TestHelper.create_entry_point(endpoint="ep1", path="/ep1", execution_chain=(step1, step2))
+        ep2 = TestHelper.create_entry_point(endpoint="ep2", path="/ep2", execution_chain=(step2,))
+
+        rc = TestHelper.create_review_context(
+            execution=TestHelper.create_execution_context(entry_points=(ep1, ep2)),
+            discoveries=(disc,)
+        )
+
+        compiler = LLMContextCompiler(settings=custom_settings)
+        # We can also test prune_review_context directly to verify discovery and node references truncation
+        from llm_context.review_scope_builder import prune_review_context
+        pruned_rc = prune_review_context(rc, settings=custom_settings)
+
+        # Verify discovery evidence limit: max evidence = 2
+        assert len(pruned_rc.discoveries[0].references) == 2
+
+        # Verify reference per node limit: max references = 1
+        assert len(pruned_rc.execution.entry_points[0].execution_chain[0].references) == 1
+
+        result = compiler.compile(rc)
+
+        # Verify endpoint limit: max endpoints = 1
+        assert len(result.ep) == 1
+
+        # Verify symbols per file limit: symbols are from foo.py, step1 and step2 are both in foo.py. Max symbols = 1.
+        # Since they are not changed (no changes in change_context), one should be dropped
+        # Resulting symbols should be 1
+        assert len(result.sym) == 1
+
+        # Verify execution chain limit: execution chain length = 1. Only step1 should be in the execution chain for ep1 (since step2 was dropped due to limit)
+        assert len(result.eg.nodes) == 1
+
+
 

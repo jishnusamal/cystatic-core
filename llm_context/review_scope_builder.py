@@ -16,7 +16,10 @@ static analysis or repository traversal. It filters the context to retain:
 from __future__ import annotations
 
 import sys
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from runtime.settings import CompilerSettings
 
 from review_context.model import (
     ReviewContext,
@@ -259,8 +262,12 @@ def classify_symbol(name: str, symbol_id: str, file_path: str, kind: str) -> str
     return "Business Logic"
 
 
-def prune_review_context(review_context: ReviewContext) -> ReviewContext:
+def prune_review_context(review_context: ReviewContext, settings: CompilerSettings | None = None) -> ReviewContext:
     """Pre-filter ReviewContext to retain only high-signal production data."""
+    if settings is None:
+        from runtime.settings import get_compiler_settings
+        settings = get_compiler_settings()
+
     # 1. Build preservation sets (subject of code change)
     changed_files: set[str] = set()
     changed_symbols: set[str] = set()
@@ -292,6 +299,10 @@ def prune_review_context(review_context: ReviewContext) -> ReviewContext:
                         ref_str for ref_str in step.references
                         if not is_compiler_metadata(ref_str)
                     )
+                    # Apply LLM_CONTEXT_MAX_REFERENCES_PER_NODE
+                    if len(pruned_refs) > settings.LLM_CONTEXT_MAX_REFERENCES_PER_NODE:
+                        pruned_refs = pruned_refs[:settings.LLM_CONTEXT_MAX_REFERENCES_PER_NODE]
+
                     pruned_step = ExecutionStep(
                         behavior=step.behavior,
                         symbol=step.symbol,
@@ -308,6 +319,10 @@ def prune_review_context(review_context: ReviewContext) -> ReviewContext:
                 ref_str for ref_str in ep.references
                 if not is_compiler_metadata(ref_str)
             )
+            # Apply LLM_CONTEXT_MAX_REFERENCES_PER_NODE
+            if len(pruned_ep_refs) > settings.LLM_CONTEXT_MAX_REFERENCES_PER_NODE:
+                pruned_ep_refs = pruned_ep_refs[:settings.LLM_CONTEXT_MAX_REFERENCES_PER_NODE]
+
             pruned_terminal = "" if is_compiler_metadata(ep.terminal) else ep.terminal
 
             pruned_ep = EntryPointExecution(
@@ -327,6 +342,8 @@ def prune_review_context(review_context: ReviewContext) -> ReviewContext:
             ref_str for ref_str in de.references
             if not is_compiler_metadata(ref_str)
         )
+        if len(pruned_de_refs) > settings.LLM_CONTEXT_MAX_REFERENCES_PER_NODE:
+            pruned_de_refs = pruned_de_refs[:settings.LLM_CONTEXT_MAX_REFERENCES_PER_NODE]
         pruned_de = DeepestExecution(
             entry_point=de.entry_point,
             depth=de.depth,
@@ -341,10 +358,6 @@ def prune_review_context(review_context: ReviewContext) -> ReviewContext:
     )
 
     # 3. Filter discoveries with evidence deduplication.
-    # Identical Reference objects across multiple discoveries are canonicalized
-    # to a single shared instance (keyed by id+kind+location+compiler_artifact).
-    # This eliminates duplicate filtering work during serialization and reduces
-    # memory pressure without changing the serialized format.
     seen_refs: dict[tuple[str, str, str, str], Reference] = {}
     pruned_discoveries: list[Discovery] = []
     if review_context.discoveries:
@@ -373,6 +386,12 @@ def prune_review_context(review_context: ReviewContext) -> ReviewContext:
                         seen_refs[ref_key] = canonical_ref
                         canonical = canonical_ref
                     pruned_refs_list.append(canonical)
+
+            # Apply LLM_CONTEXT_MAX_DISCOVERY_REFERENCES
+            # Max evidence items per discovery limit (LLM_CONTEXT_MAX_DISCOVERY_EVIDENCE)
+            max_evidence = settings.LLM_CONTEXT_MAX_DISCOVERY_EVIDENCE
+            if len(pruned_refs_list) > max_evidence:
+                pruned_refs_list = pruned_refs_list[:max_evidence]
 
             pruned_facts: dict[str, Any] = {}
             for k, v in d.facts.items():
@@ -418,7 +437,6 @@ def prune_review_context(review_context: ReviewContext) -> ReviewContext:
 
             # Prune entire noise file UNLESS reachable via execution path
             if file_category in NOISE_CATEGORIES and not is_file_reached_in_exec:
-                # If the entire file is noise (like a test file) and not reached in exec, skip it.
                 continue
 
             pruned_changes: list[Change] = []
@@ -460,11 +478,12 @@ def prune_review_context(review_context: ReviewContext) -> ReviewContext:
     )
 
 
-def build_review_scope(review_context: ReviewContext) -> ReviewContext:
+def build_review_scope(review_context: ReviewContext, settings: CompilerSettings | None = None) -> ReviewContext:
     """Return a deterministic review-scoped projection of ``review_context``.
 
     Consumes the already-materialized ReviewContext and produces a minimal
     projection containing only artifacts required for review-scoped reasoning.
     No static analysis or repository traversal is performed.
     """
-    return prune_review_context(review_context)
+    return prune_review_context(review_context, settings=settings)
+

@@ -353,49 +353,52 @@ async def analyze_repository(
         # Include LLM context if available
         if llm_context is not None:
             response_content["llm_context"] = llm_context
+            token_counts = pipeline.calculate_llm_context_tokens(llm_context)
+            if token_counts:
+                response_content["llm_context_token_counts"] = token_counts
         
         # Include ReviewContext if available
-        if review_context is not None:
-            # Generate LLM comment from ReviewContext
-            try:
-                print("[routes] Generating LLM comment")
-                llm_result = pipeline.generate_llm_comment(
-                    context,
-                    repository=repository,
-                    pr_number=str(pr_number) if pr_number else "",
-                    language=context.language or "unknown",
-                )
-                # Add rendered comment to review context
-                review_context["comment"] = llm_result.get("comment", "")
-                # Include full LLM result with metadata
-                review_context["llm_metadata"] = {
-                    "model": llm_result.get("model"),
-                    "generated": llm_result.get("generated"),
-                    "is_valid": llm_result.get("is_valid"),
-                    "validation_errors": llm_result.get("validation_errors", []),
-                    "truncated": llm_result.get("truncated", False),
-                }
-                # Include the structured LLM response
-                llm_response = llm_result.get("llm_response")
-                if llm_response:
-                    review_context["llm_response"] = llm_response
-                llm_raw_output = llm_result.get("llm_raw_output")
-                if llm_raw_output:
-                    review_context["llm_raw_output"] = llm_raw_output
-                response_content["review_context"] = review_context
-                print(f"[routes] LLM comment generated: model={llm_result.get('model')}, valid={llm_result.get('is_valid')}")
-            except Exception as exc:
-                print(f"[routes] LLM comment generation failed: {exc}")
-                # Include review context with error comment
-                review_context["comment"] = "## ⚠️ Analysis Complete\n\nFactor analysis completed. LLM comment generation failed."
-                review_context["llm_metadata"] = {
-                    "model": "fallback",
-                    "generated": False,
-                    "is_valid": True,
-                    "validation_errors": [f"LLM generation failed: {exc}"],
-                    "truncated": False,
-                }
-                response_content["review_context"] = review_context
+        # if review_context is not None:
+        #     # Generate LLM comment from ReviewContext
+        #     try:
+        #         print("[routes] Generating LLM comment")
+        #         llm_result = pipeline.generate_llm_comment(
+        #             context,
+        #             repository=repository,
+        #             pr_number=str(pr_number) if pr_number else "",
+        #             language=context.language or "unknown",
+        #         )
+        #         # Add rendered comment to review context
+        #         review_context["comment"] = llm_result.get("comment", "")
+        #         # Include full LLM result with metadata
+        #         review_context["llm_metadata"] = {
+        #             "model": llm_result.get("model"),
+        #             "generated": llm_result.get("generated"),
+        #             "is_valid": llm_result.get("is_valid"),
+        #             "validation_errors": llm_result.get("validation_errors", []),
+        #             "truncated": llm_result.get("truncated", False),
+        #         }
+        #         # Include the structured LLM response
+        #         llm_response = llm_result.get("llm_response")
+        #         if llm_response:
+        #             review_context["llm_response"] = llm_response
+        #         llm_raw_output = llm_result.get("llm_raw_output")
+        #         if llm_raw_output:
+        #             review_context["llm_raw_output"] = llm_raw_output
+        #         response_content["review_context"] = review_context
+        #         print(f"[routes] LLM comment generated: model={llm_result.get('model')}, valid={llm_result.get('is_valid')}")
+        #     except Exception as exc:
+        #         print(f"[routes] LLM comment generation failed: {exc}")
+        #         # Include review context with error comment
+        #         review_context["comment"] = "## ⚠️ Analysis Complete\n\nFactor analysis completed. LLM comment generation failed."
+        #         review_context["llm_metadata"] = {
+        #             "model": "fallback",
+        #             "generated": False,
+        #             "is_valid": True,
+        #             "validation_errors": [f"LLM generation failed: {exc}"],
+        #             "truncated": False,
+        #         }
+        #         response_content["review_context"] = review_context
         
         return JSONResponse(
             content=response_content,

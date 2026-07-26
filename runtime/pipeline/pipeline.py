@@ -36,6 +36,7 @@ from runtime.pipeline.context import PipelineContext
 from runtime.renderers.github_renderer import GitHubRenderer
 from runtime.renderers.json_renderer import JSONRenderer
 from runtime.storage.repository_store import RepositoryStore
+import tiktoken
 
 # Custom print wrapper to avoid polluting stdout
 def print(*args, **kwargs):
@@ -101,7 +102,9 @@ class Pipeline:
         self._discovery_compiler = EngineeringDiscoveryCompiler()
         self._discovery_discovery_compiler = DiscoveryCompiler()
         self._review_context_compiler = ReviewContextCompiler()
-        self._llm_context_compiler = LLMContextCompiler()
+        from runtime.settings import get_compiler_settings
+        self._llm_context_compiler = LLMContextCompiler(settings=get_compiler_settings())
+
         
         # Renderers
         self._json_renderer = JSONRenderer()
@@ -1311,6 +1314,36 @@ class Pipeline:
             return result
         except Exception as exc:
             print(f"[pipeline] LLMContext serialization failed: {exc}")
+            return None
+
+    def calculate_llm_context_tokens(self, serialized_context: dict[str, Any]) -> dict[str, int] | None:
+        """
+        Calculate token counts for each element in the serialized LLMContext using tiktoken.
+        
+        Args:
+            serialized_context: The serialized LLMContext dictionary.
+            
+        Returns:
+            A dictionary mapping each key in LLMContext to its token count, plus a 'total' token count,
+            or None if calculation fails.
+        """
+        if not serialized_context:
+            return None
+        
+        try:
+            # Default to cl100k_base encoding (used by gpt-4, gpt-3.5-turbo, etc.)
+            encoding = tiktoken.get_encoding("cl100k_base")
+            
+            token_counts: dict[str, int] = {}
+            for key, val in serialized_context.items():
+                serialized_val = json.dumps(val)
+                token_counts[key] = len(encoding.encode(serialized_val))
+            
+            # Also calculate the total token count of the entire serialized context
+            token_counts["total"] = len(encoding.encode(json.dumps(serialized_context)))
+            return token_counts
+        except Exception as exc:
+            print(f"[pipeline] Token count calculation failed: {exc}")
             return None
     
     def generate_llm_comment(
