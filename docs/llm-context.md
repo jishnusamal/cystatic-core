@@ -178,17 +178,14 @@ The serialized `llm_context` JSON root is a dictionary containing the following 
 
 | Key | Meaning | Value Type | Description |
 |---|---|---|---|
-| **`st`** | String Table | `list[str]` | A flat array of all repeated strings (paths, names, triggers, IDs). Index `0` is empty string. |
-| **`f`** | Files Lookup Table | `list[list[int]]` | Files discovered in the review scope. |
-| **`sym`** | Symbols Lookup Table | `list[list[Any]]` | Classes, functions, variables, etc. defined or referenced in those files. |
-| **`bh`** | Behaviors Lookup Table | `list[list[int]]` | Specific behaviors associated with code units/symbols. |
-| **`ref`** | References Lookup Table | `list[list[int]]` | Traceability markers back to raw compiler artifacts. |
-| **`ep`** | Endpoints Lookup Table | `list[list[int]]` | API routes, webhooks, or event handlers that trigger execution. |
+| **`st`** | String Table | `list[str]` | A flat array of all repeated strings (paths, names, triggers, IDs). Index `0` is empty string. Paths are prefix-grouped. |
+| **`f`** | Files Lookup Table | `list[list[int]]` | Files discovered in the review scope `[path_idx, ct_id]`. |
+| **`sym`** | Symbols Lookup Table | `list[list[int]]` | Classes, functions, variables, etc. `[file_id, name_idx, kind_id]`. |
+| **`ep`** | Endpoints Lookup Table | `list[list[int]]` | API routes, webhooks, or event handlers `[endpoint_idx, path_idx]`. |
 | **`cs`** | Change Summary | `list[int]` | High-level metrics describing the overall scope of the change. |
-| **`cf`** | Changed Files | `list[list[Any]]` | Detailed mapping of modifications grouped under each changed file. |
+| **`cf`** | Changed Files | `list[list[Any]]` | Changed file mapping: `[file_idx, [changed_sym_idx_1, changed_sym_idx_2, ...]]`. |
 | **`eg`** | Execution Graph | `dict[str, list]` | Directed acyclic graph tracking execution sequences. |
 | **`epts`** | Entry Points | `list[list[Any]]` | Tracing from specific entry points down through their execution graphs. |
-| **`de`** | Deepest Execution | `list[int]` | Metric tracking the single longest execution depth. |
 | **`disc`** | Discoveries | `list[list[Any]]` | Deterministic conclusions or anomalies detected during analysis. |
 
 ---
@@ -198,38 +195,22 @@ The serialized `llm_context` JSON root is a dictionary containing the following 
 Each lookup table entry has a strict positional format. Below is the mapping for each list:
 
 #### 1. Files (`f`)
-Each element is a list representing `[path_idx, lang_id, ct_id]`:
+Each element is a list representing `[path_idx, ct_id]`:
 * `0`: **`path_idx`** (int) -> Index in String Table (`st`)
-* `1`: **`lang_id`** (int) -> Enum ID in `lang` table
-* `2`: **`ct_id`** (int) -> Enum ID in `ct` (change type) table
+* `1`: **`ct_id`** (int) -> Enum ID in `ct` (change type) table
 
 #### 2. Symbols (`sym`)
-Each element is a list representing `[file_id, name_idx, kind_id, vis_id, [start_line, end_line]]`:
+Each element is a list representing `[file_id, name_idx, kind_id]`:
 * `0`: **`file_id`** (int) -> Index in Files Table (`f`)
 * `1`: **`name_idx`** (int) -> Index in String Table (`st`). *Note: Set to `0` if name can be resolved from URI (e.g. text following `#` or `::`).*
 * `2`: **`kind_id`** (int) -> Enum ID in `kind` table
-* `3`: **`vis_id`** (int) -> Enum ID in `vis` (visibility) table
-* `4`: **`location`** (list[int, int]) -> Two-integer list `[start_line, end_line]`
 
-#### 3. Behaviors (`bh`)
-Each element is a list representing `[sym_id, kind_id]`:
-* `0`: **`sym_id`** (int) -> Index in Symbols Table (`sym`)
-* `1`: **`kind_id`** (int) -> Enum ID in `kind` table
-
-#### 4. References (`ref`)
-Each element is a list representing `[id_idx, kind_id, location_idx, artifact_idx]`:
-* `0`: **`id_idx`** (int) -> Index in String Table (`st`)
-* `1`: **`kind_id`** (int) -> Enum ID in `ref_kind` table
-* `2`: **`location_idx`** (int) -> Index in String Table (`st`)
-* `3`: **`artifact_idx`** (int) -> Index in String Table (`st`)
-
-#### 5. Endpoints (`ep`)
-Each element is a list representing `[endpoint_idx, method_id, path_idx]`:
+#### 3. Endpoints (`ep`)
+Each element is a list representing `[endpoint_idx, path_idx]`:
 * `0`: **`endpoint_idx`** (int) -> Index in String Table (`st`) (e.g. `"POST /api/v1/users"`)
-* `1`: **`method_id`** (int) -> Enum ID in `method` table
-* `2`: **`path_idx`** (int) -> Index in String Table (`st`) (e.g. `"/api/v1/users"`)
+* `1`: **`path_idx`** (int) -> Index in String Table (`st`) (e.g. `"/api/v1/users"`)
 
-#### 6. Change Summary (`cs`)
+#### 4. Change Summary (`cs`)
 A single list of 5 integers representing `[cls_id, scope_id, file_count, symbol_count, behavior_count]`:
 * `0`: **`cls_id`** (int) -> Enum ID in `cls` (classification) table
 * `1`: **`scope_id`** (int) -> Enum ID in `scope` table
@@ -237,48 +218,32 @@ A single list of 5 integers representing `[cls_id, scope_id, file_count, symbol_
 * `3`: **`symbol_count`** (int) -> Total count of modified symbols
 * `4`: **`behavior_count`** (int) -> Total count of modified behaviors
 
-#### 7. Changed Files (`cf`)
-Each element represents a file modification: `[file_idx, changes_list]`:
+#### 5. Changed Files (`cf`)
+Each element represents a file modification: `[file_idx, changed_sym_idxs]`:
 * `0`: **`file_idx`** (int) -> Index in Files Table (`f`)
-* `1`: **`changes_list`** (list[list]) -> A list of changes, where each change is `[sym_idx, ct_id, [bh_change_ids...]]`:
-  * `sym_idx` (int) -> Index in Symbols Table (`sym`)
-  * `ct_id` (int) -> Enum ID in `ct` (change type) table
-  * `bh_change_ids` (list[int]) -> List of Enum IDs in `bh_change` table
+* `1`: **`changed_sym_idxs`** (list[int]) -> List of symbol indices in `sym` that were modified in this file
 
-#### 8. Execution Graph (`eg`)
+#### 6. Execution Graph (`eg`)
 The dictionary has two keys: `"n"` (nodes) and `"e"` (edges):
-* **`n` (Nodes):** A list of list structures: `[bh_idx, sym_idx, kind_id, depth, changed, shared, reaches_svc_idx, reaches_mod_idx, reaches_pkg_idx, [ref_idxs...]]`
-  * `0`: `bh_idx` (int) -> Index in Behaviors Table (`bh`)
-  * `1`: `sym_idx` (int) -> Index in Symbols Table (`sym`)
-  * `2`: `kind_id` (int) -> Enum ID in `kind` table
-  * `3`: `depth` (int) -> Execution depth from triggering entry point
-  * `4`: `changed` (bool) -> Indicates if this execution unit is modified
-  * `5`: `shared` (bool) -> Indicates if this unit is shared execution infrastructure
-  * `6`: `reaches_svc_idx` (int) -> Index in String Table (`st`) representing reached service name
-  * `7`: `reaches_mod_idx` (int) -> Index in String Table (`st`) representing reached module name
-  * `8`: `reaches_pkg_idx` (int) -> Index in String Table (`st`) representing reached package name
-  * `9`: `ref_idxs` (list[int]) -> List of indices in String Table (`st`) referencing associated context elements
+* **`n` (Nodes):** A list of list structures: `[sym_idx, depth, reaches_svc_idx, reaches_mod_idx]`
+  * `0`: `sym_idx` (int) -> Index in Symbols Table (`sym`)
+  * `1`: `depth` (int) -> Execution depth from triggering entry point
+  * `2`: `reaches_svc_idx` (int) -> Index in String Table (`st`) representing reached service name
+  * `3`: `reaches_mod_idx` (int) -> Index in String Table (`st`) representing reached module name
 * **`e` (Edges):** List of connection paths: `[parent_node_idx, child_node_idx]`:
   * Parent/child values reference indices of the `"n"` node array list.
 
-#### 9. Entry Points (`epts`)
+#### 7. Entry Points (`epts`)
 Each entry point trace: `[endpoint_idx, [node_idxs...], terminal_idx, max_depth]`:
 * `0`: **`endpoint_idx`** (int) -> Index in Endpoints Table (`ep`)
 * `1`: **`node_idxs`** (list[int]) -> List of indices into the Execution Graph nodes (`eg["n"]`) representing the execution flow
 * `2`: **`terminal_idx`** (int) -> Index in String Table (`st`) (representing details of the return or termination point)
 * `3`: **`max_depth`** (int) -> Deepest stack depth reached from this trigger
 
-#### 10. Deepest Execution (`de`)
-A list representing `[endpoint_idx, depth]`:
-* `0`: **`endpoint_idx`** (int) -> Index in Endpoints Table (`ep`)
-* `1`: **`depth`** (int) -> Deepest execution level reached
-
-#### 11. Discoveries (`disc`)
-Each item represents a compiler finding: `[id_idx, kind_id, facts_dict, [ref_idxs...]]`:
-* `0`: **`id_idx`** (int) -> Index in String Table (`st`) (e.g. Discovery identifier)
-* `1`: **`kind_id`** (int) -> Enum ID in `bh_kind` table
-* `2`: **`facts_dict`** (dict[str, Any]) -> Raw metadata dictionary (key/value string properties describing the finding)
-* `3`: **`ref_idxs`** (list[int]) -> List of indices in References Table (`ref`) supporting this discovery
+#### 8. Discoveries (`disc`)
+Each item represents a compiler finding: `[kind_id, facts_dict]`:
+* `0`: **`kind_id`** (int) -> Enum ID in `bh_kind` table
+* `1`: **`facts_dict`** (dict[str, Any]) -> Raw metadata dictionary (key/value string properties describing the finding)
 
 ---
 

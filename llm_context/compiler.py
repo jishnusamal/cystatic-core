@@ -187,7 +187,7 @@ class LLMContextCompiler:
         for f in change_ctx.files:
             if f.path not in seen:
                 entry = (
-                    sb.add(f.path),
+                    sb.add_path(f.path),
                     _enum_id("ct", f.change_type),
                 )
                 seen[f.path] = len(table)
@@ -214,7 +214,7 @@ class LLMContextCompiler:
         """
         file_idx_map: dict[str, int] = {}
         for i, entry in enumerate(file_table):
-            file_idx_map[sb[entry[0]]] = i
+            file_idx_map[sb.get_string(entry[0])] = i
 
         table: list[tuple[int, int, int]] = []
         seen: dict[str, int] = {}  # symbol id -> index
@@ -358,26 +358,24 @@ class LLMContextCompiler:
         file_table: list[tuple[int, int]],
         symbol_id_map: dict[str, int],
         sb: _StringBuilder,
-    ) -> list[tuple]:
-        """Build change files as positional tuples.
+    ) -> list[tuple[int, tuple[int, ...]]]:
+        """Build change files as compact positional tuples.
 
-        Each entry: (file_idx, ((sym_idx, ct_id, (bh_change_ids...)), ...))
-        Uses enum encoding for change_type and behavior_changes.
+        Each entry: (file_idx, (changed_sym_idx_1, changed_sym_idx_2, ...))
         """
         file_idx_map: dict[str, int] = {}
         for i, entry in enumerate(file_table):
-            file_idx_map[sb[entry[0]]] = i
+            file_idx_map[sb.get_string(entry[0])] = i
 
-        result: list[tuple] = []
+        result: list[tuple[int, tuple[int, ...]]] = []
         for f in files:
             file_idx = file_idx_map.get(f.path, 0)
-            changes_list: list[tuple] = []
+            changed_sym_idxs: list[int] = []
             for c in f.changes:
                 sym_idx = symbol_id_map.get(c.symbol.id, 0)
-                ct_id = _enum_id("ct", c.change_type)
-                bh_change_ids = tuple(_enum_id("bh_change", bc) for bc in c.behavior_changes)
-                changes_list.append((sym_idx, ct_id, bh_change_ids))
-            result.append((file_idx, tuple(changes_list)))
+                if sym_idx not in changed_sym_idxs:
+                    changed_sym_idxs.append(sym_idx)
+            result.append((file_idx, tuple(changed_sym_idxs)))
 
         return result
 
@@ -391,7 +389,7 @@ class LLMContextCompiler:
         symbol_id_map: dict[str, int],
         endpoint_table: list[tuple[int, int]],
         sb: _StringBuilder,
-    ) -> tuple[ExecutionGraph, list[tuple]]:
+    ) -> tuple[ExecutionGraph, list[tuple[int, tuple[int, ...], int, int]]]:
         """Build execution DAG and entry point references.
 
         Returns:
@@ -399,12 +397,12 @@ class LLMContextCompiler:
         """
         endpoint_idx_map: dict[str, int] = {}
         for i, ep_entry in enumerate(endpoint_table):
-            endpoint_idx_map[sb[ep_entry[0]]] = i
+            endpoint_idx_map[sb.get_string(ep_entry[0])] = i
 
         node_map: dict[tuple[str, str, int], int] = {}
-        nodes: list[tuple] = []
+        nodes: list[tuple[int, int, int, int]] = []
         edges: list[tuple[int, int]] = []
-        entry_point_data: list[tuple] = []
+        entry_point_data: list[tuple[int, tuple[int, ...], int, int]] = []
 
         for ep in exec_ctx.entry_points:
             # Skip if endpoint not in endpoint_table (which was filtered/limited)
@@ -437,14 +435,14 @@ class LLMContextCompiler:
                     node_map[node_key] = node_idx
 
                     sym_idx = symbol_id_map.get(step.symbol.id, 0)
-                    kind_id = _enum_id("kind", step.kind)
                     reaches_svc_idx = sb.add(step.reaches.service) if step.reaches.service else 0
+                    reaches_mod_idx = sb.add(step.reaches.module) if step.reaches.module else 0
 
                     node = (
                         sym_idx,
-                        kind_id,
                         step.depth,
                         reaches_svc_idx,
+                        reaches_mod_idx,
                     )
                     nodes.append(node)
                 else:
@@ -495,11 +493,12 @@ class LLMContextCompiler:
 # ---------------------------------------------------------------------------
 
 class _StringBuilder:
-    """Collects unique strings and assigns stable indices."""
+    """Collects unique strings and assigns stable indices. Handles path prefix compression."""
 
     def __init__(self) -> None:
         self.strings: list[str] = [""]
         self._index: dict[str, int] = {"": 0}
+        self.path_map: dict[int, str] = {}
 
     def add(self, s: str) -> int:
         if s in self._index:
@@ -508,6 +507,39 @@ class _StringBuilder:
         self.strings.append(s)
         self._index[s] = idx
         return idx
+
+    def add_path(self, path: str) -> int:
+        """Add a path to the string table with directory prefix optimization.
+        
+        Stores paths grouped under their directory prefix when applicable, e.g.:
+            "payment/"
+            " checkout.py"
+        """
+        if path in self._index:
+            return self._index[path]
+
+        if "/" in path:
+            dir_part, _, file_part = path.rpartition("/")
+            dir_prefix = f"{dir_part}/"
+            dir_idx = self.add(dir_prefix)
+            file_entry = f" {file_part}"
+            file_idx = self.add(file_entry)
+            full_idx = file_idx  # index pointing to formatted string entry
+            self._index[path] = full_idx
+            self.path_map[full_idx] = path
+            return full_idx
+        else:
+            idx = self.add(path)
+            self.path_map[idx] = path
+            return idx
+
+    def get_string(self, idx: int) -> str:
+        """Get original string, resolving path maps if present."""
+        if idx in self.path_map:
+            return self.path_map[idx]
+        if idx < len(self.strings):
+            return self.strings[idx]
+        return ""
 
     def __getitem__(self, idx: int) -> str:
         return self.strings[idx]

@@ -188,15 +188,11 @@ ENUM_BH_CHANGE = {
 # All enum tables indexed by name for easy lookup
 ENUM_TABLES: dict[str, dict[int, str]] = {
     "kind": ENUM_KIND,
-    "vis": ENUM_VIS,
     "lang": ENUM_LANG,
     "ct": ENUM_CT,
-    "ref_kind": ENUM_REF_KIND,
     "bh_kind": ENUM_BH_KIND,
-    "method": ENUM_METHOD,
     "cls": ENUM_CLS,
     "scope": ENUM_SCOPE,
-    "bh_change": ENUM_BH_CHANGE,
 }
 
 # Reverse mappings: string -> int for each enum
@@ -241,8 +237,8 @@ class ExecutionGraph:
     This eliminates duplicate execution chains by factoring shared prefixes
     into a single DAG structure.
     """
-    nodes: tuple[tuple, ...] = field(default_factory=tuple)
-    # Each node: (sym_idx, kind_id, depth, reaches_svc_idx)
+    nodes: tuple[tuple[int, int, int, int], ...] = field(default_factory=tuple)
+    # Each node: (sym_idx, depth, reaches_svc_idx, reaches_mod_idx)
 
     edges: tuple[tuple[int, int], ...] = field(default_factory=tuple)
     # Each edge: (parent_node_idx, child_node_idx)
@@ -290,8 +286,8 @@ class LLMContext:
     # Summary: (cls_id, scope_id, file_count, sym_count, bh_count)
     cs: tuple[int, int, int, int, int] = (0, 0, 0, 0, 0)
 
-    # File changes: (file_idx, ((sym_idx, ct_id, (bh_change_ids...)), ...))
-    cf: tuple[tuple, ...] = field(default_factory=tuple)
+    # File changes: (file_idx, (changed_sym_idx_1, changed_sym_idx_2, ...))
+    cf: tuple[tuple[int, tuple[int, ...]], ...] = field(default_factory=tuple)
 
     # -----------------------------------------------------------------------
     # Execution Section
@@ -301,7 +297,7 @@ class LLMContext:
     eg: ExecutionGraph = field(default_factory=ExecutionGraph)
 
     # Entry points: (ep_idx, (node_idxs...), terminal_idx, max_depth)
-    epts: tuple[tuple, ...] = field(default_factory=tuple)
+    epts: tuple[tuple[int, tuple[int, ...], int, int], ...] = field(default_factory=tuple)
 
     # -----------------------------------------------------------------------
     # Discoveries Section
