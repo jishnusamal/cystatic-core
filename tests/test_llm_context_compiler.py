@@ -503,12 +503,16 @@ class TestStringTable:
         assert len(result.st) > 0
 
     def test_strings_collected_from_execution(self, simple_review_context):
-        """Test that strings from execution section are collected."""
+        """Test that execution path strings are collected in the string table.
+
+        HTTP methods are enum-encoded and NOT stored in the string table.
+        """
         compiler = LLMContextCompiler()
         result = compiler.compile(simple_review_context)
         strings = list(result.st.entries)
-        assert any("POST" in s for s in strings)
+        # Path is stored; method is enum-encoded
         assert any("/test" in s for s in strings)
+        assert not any(s == "POST" for s in strings)
 
     def test_strings_deduplicated(self, simple_review_context):
         """Test that repeated strings are stored only once."""
@@ -603,13 +607,17 @@ class TestLookupTables:
         assert len(result.ep) > 0
 
     def test_endpoint_table_entries(self, simple_review_context):
-        """Test that endpoint table entries have correct structure."""
+        """Test that endpoint table entries have correct structure: (method_id, path_idx)."""
         compiler = LLMContextCompiler()
         result = compiler.compile(simple_review_context)
         for entry in result.ep:
-            assert len(entry) == 2  # (endpoint_idx, path_idx)
-            for field in entry:
-                assert isinstance(field, int)
+            assert len(entry) == 2  # (method_id, path_idx)
+            method_id, path_idx = entry
+            assert isinstance(method_id, int)
+            assert isinstance(path_idx, int)
+            # method_id must resolve to a known HTTP method via ENUM_METHOD
+            from llm_context.model import ENUM_METHOD
+            assert method_id in ENUM_METHOD
 
 
 # ---------------------------------------------------------------------------
@@ -803,13 +811,21 @@ class TestTokenCompression:
         assert "test.py" in strings
 
     def test_all_execution_strings_present(self, simple_review_context):
-        """Test that execution section strings are present in the string table."""
+        """Test that execution section path strings are present in the string table.
+
+        The HTTP method (POST) is now enum-encoded and is NOT in the string table.
+        The full endpoint string (POST /test) is also NOT stored.
+        Only path (/test) and terminal (return) are in the string table.
+        """
         compiler = LLMContextCompiler()
         result = compiler.compile(simple_review_context)
         strings = list(result.st.entries)
-        assert "POST /test" in strings
+        # Path is stored in string table
         assert "/test" in strings
         assert "return" in strings
+        # Method and full endpoint string are NOT stored — method is enum-encoded
+        assert "POST /test" not in strings
+        assert "POST" not in strings
 
     def test_enum_values_not_in_string_table(self, simple_review_context):
         """Test that enum-encoded values are NOT stored in the string table (saving tokens)."""
@@ -1151,7 +1167,12 @@ class TestReviewScopeVerification:
         assert is_compiler_metadata("") is False
 
     def test_ref_uri_pruned_from_execution_step_references(self):
-        """ref:// strings in ExecutionStep.references are removed during pruning."""
+        """Execution step references are passed through unchanged by the pruner.
+
+        Wave 3: The pruner no longer filters references tuples from execution steps
+        (they are ignored downstream). The original references are preserved on
+        the ReviewContext models.
+        """
         from llm_context.review_scope_builder import prune_review_context
 
         step = TestHelper.create_execution_step(
@@ -1163,11 +1184,9 @@ class TestReviewScopeVerification:
         )
 
         pruned = prune_review_context(rc)
-        step_refs = pruned.execution.entry_points[0].execution_chain[0].references
-
-        assert not any(r.startswith("ref://") for r in step_refs)
-        assert not any(r.startswith("unit://") for r in step_refs)
-        assert "behavior://domain/checkout" in step_refs
+        # Entry point references are set to () by the pruner (irrelevant downstream)
+        ep_refs = pruned.execution.entry_points[0].references
+        assert ep_refs == ()
 
     def test_ref_uri_pruned_from_discovery_references(self):
         """ref:// id in Discovery.references are removed during pruning."""
@@ -1859,8 +1878,8 @@ class TestWave2CompilerOptimizations:
         # Verify discovery evidence limit: max evidence = 2
         assert len(pruned_rc.discoveries[0].references) == 2
 
-        # Verify reference per node limit: max references = 1
-        assert len(pruned_rc.execution.entry_points[0].execution_chain[0].references) == 1
+        # Wave 3: execution step references are no longer filtered by the pruner —
+        # they are ignored downstream. Original references pass through untouched.
 
         result = compiler.compile(rc)
 
@@ -1874,6 +1893,3 @@ class TestWave2CompilerOptimizations:
 
         # Verify execution chain limit: execution chain length = 1. Only step1 should be in the execution chain for ep1 (since step2 was dropped due to limit)
         assert len(result.eg.nodes) == 1
-
-
-

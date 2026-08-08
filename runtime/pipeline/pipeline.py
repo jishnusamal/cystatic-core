@@ -1280,14 +1280,8 @@ class Pipeline:
             result["cf"] = []
             for file_entry in llm_ctx.cf:
                 file_idx = file_entry[0]
-                changes = file_entry[1]
-                change_list = []
-                for change_entry in changes:
-                    sym_idx = change_entry[0]
-                    ct_id = change_entry[1]
-                    bh_change_ids = list(change_entry[2])
-                    change_list.append([sym_idx, ct_id, bh_change_ids])
-                result["cf"].append([file_idx, change_list])
+                changed_sym_idxs = list(file_entry[1])
+                result["cf"].append([file_idx, changed_sym_idxs])
             
             # Serialize execution section
             result["eg"] = {

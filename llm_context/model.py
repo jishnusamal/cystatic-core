@@ -193,6 +193,7 @@ ENUM_TABLES: dict[str, dict[int, str]] = {
     "bh_kind": ENUM_BH_KIND,
     "cls": ENUM_CLS,
     "scope": ENUM_SCOPE,
+    "method": ENUM_METHOD,
 }
 
 # Reverse mappings: string -> int for each enum
@@ -276,7 +277,7 @@ class LLMContext:
     # Symbols: (file_id, name_idx, kind_id)
     sym: tuple[tuple[int, int, int], ...] = field(default_factory=tuple)
 
-    # Endpoints: (endpoint_idx, path_idx)
+    # Endpoints: (method_id, path_idx)  — method is ENUM_METHOD, path is string-table index
     ep: tuple[tuple[int, int], ...] = field(default_factory=tuple)
 
     # -----------------------------------------------------------------------

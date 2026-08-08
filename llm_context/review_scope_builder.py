@@ -295,66 +295,22 @@ def prune_review_context(review_context: ReviewContext, settings: CompilerSettin
                 category = classify_symbol(sym_name, sym_id, sym_loc, sym_kind)
 
                 if is_changed or category not in NOISE_CATEGORIES:
-                    pruned_refs = tuple(
-                        ref_str for ref_str in step.references
-                        if not is_compiler_metadata(ref_str)
-                    )
-                    # Apply LLM_CONTEXT_MAX_REFERENCES_PER_NODE
-                    if len(pruned_refs) > settings.LLM_CONTEXT_MAX_REFERENCES_PER_NODE:
-                        pruned_refs = pruned_refs[:settings.LLM_CONTEXT_MAX_REFERENCES_PER_NODE]
-
-                    pruned_step = ExecutionStep(
-                        behavior=step.behavior,
-                        symbol=step.symbol,
-                        kind=step.kind,
-                        depth=step.depth,
-                        changed=step.changed,
-                        shared=step.shared,
-                        reaches=step.reaches,
-                        references=pruned_refs
-                    )
-                    pruned_steps.append(pruned_step)
-
-            pruned_ep_refs = tuple(
-                ref_str for ref_str in ep.references
-                if not is_compiler_metadata(ref_str)
-            )
-            # Apply LLM_CONTEXT_MAX_REFERENCES_PER_NODE
-            if len(pruned_ep_refs) > settings.LLM_CONTEXT_MAX_REFERENCES_PER_NODE:
-                pruned_ep_refs = pruned_ep_refs[:settings.LLM_CONTEXT_MAX_REFERENCES_PER_NODE]
-
-            pruned_terminal = "" if is_compiler_metadata(ep.terminal) else ep.terminal
+                    pruned_steps.append(step)
 
             pruned_ep = EntryPointExecution(
                 endpoint=ep.endpoint,
                 method=ep.method,
                 path=ep.path,
                 execution_chain=tuple(pruned_steps),
-                terminal=pruned_terminal,
+                terminal=ep.terminal if not is_compiler_metadata(ep.terminal) else "",
                 max_depth=ep.max_depth,
-                references=pruned_ep_refs
+                references=(),
             )
             pruned_entry_points.append(pruned_ep)
 
-    de = review_context.execution.deepest_execution if review_context.execution else None
-    if de:
-        pruned_de_refs = tuple(
-            ref_str for ref_str in de.references
-            if not is_compiler_metadata(ref_str)
-        )
-        if len(pruned_de_refs) > settings.LLM_CONTEXT_MAX_REFERENCES_PER_NODE:
-            pruned_de_refs = pruned_de_refs[:settings.LLM_CONTEXT_MAX_REFERENCES_PER_NODE]
-        pruned_de = DeepestExecution(
-            entry_point=de.entry_point,
-            depth=de.depth,
-            references=pruned_de_refs
-        )
-    else:
-        pruned_de = DeepestExecution()
-
     pruned_execution = ExecutionContext(
         entry_points=tuple(pruned_entry_points),
-        deepest_execution=pruned_de
+        deepest_execution=DeepestExecution(),
     )
 
     # 3. Filter discoveries with evidence deduplication.
