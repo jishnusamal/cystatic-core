@@ -1339,6 +1339,65 @@ class Pipeline:
         except Exception as exc:
             print(f"[pipeline] Token count calculation failed: {exc}")
             return None
+
+    def compress_llm_context(self, serialized_context: dict[str, Any], rate: float = 0.5) -> dict[str, Any] | None:
+        """
+        Compress serialized LLMContext using LLMLingua PromptCompressor.
+
+        Args:
+            serialized_context: The serialized LLMContext dictionary.
+            rate: Target compression ratio (ratio of preserved content).
+
+        Returns:
+            Compressed serialized LLMContext dictionary or original if compression is inapplicable/fails.
+        """
+        if not serialized_context:
+            return None
+
+        try:
+            from llmlingua import PromptCompressor
+            compressor = PromptCompressor()
+
+            # Create a shallow copy to modify string components
+            compressed_context = dict(serialized_context)
+
+            # 1. Compress string table 'st' if present
+            if "st" in serialized_context and isinstance(serialized_context["st"], list):
+                compressed_st = []
+                for s in serialized_context["st"]:
+                    if isinstance(s, str) and len(s) > 20:
+                        res = compressor.compress_prompt([s], rate=rate)
+                        compressed_st.append(res.get("compressed_prompt", s))
+                    else:
+                        compressed_st.append(s)
+                compressed_context["st"] = compressed_st
+
+            # 2. Compress string facts in discoveries 'disc' if present
+            if "disc" in serialized_context and isinstance(serialized_context["disc"], list):
+                compressed_disc = []
+                for item in serialized_context["disc"]:
+                    if isinstance(item, list) and len(item) == 2:
+                        kind_id, facts = item
+                        compressed_facts = []
+                        if isinstance(facts, list):
+                            for fact in facts:
+                                if isinstance(fact, str) and len(fact) > 20:
+                                    res = compressor.compress_prompt([fact], rate=rate)
+                                    compressed_facts.append(res.get("compressed_prompt", fact))
+                                else:
+                                    compressed_facts.append(fact)
+                            compressed_disc.append([kind_id, compressed_facts])
+                        else:
+                            compressed_disc.append(item)
+                    else:
+                        compressed_disc.append(item)
+                compressed_context["disc"] = compressed_disc
+
+            return compressed_context
+        except Exception as exc:
+            print(f"[pipeline] LLMLingua compression failed: {exc}")
+            return serialized_context
+
     
     def generate_llm_comment(
         self,
@@ -1370,7 +1429,7 @@ class Pipeline:
         
         try:
             from openai import OpenAI
-            from api.settings import get_settings
+            from core.config import get_settings
             
             settings = get_settings()
             

@@ -31,7 +31,7 @@ class LLMContextRenderer:
         
         Args:
             artifact: EngineeringDiscoveryModel to render
-            settings: Optional application settings (from api.settings.get_settings())
+            settings: Optional application settings (from core.config.get_settings())
             
         Returns:
             Dictionary representation suitable for YAML serialization

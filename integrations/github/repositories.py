@@ -37,7 +37,7 @@ class GitHubRepositoryProvider(RepositoryProvider):
             GitHubClient instance (authenticated if credentials are available)
         """
         # Prefer PAT from settings (works for repository content endpoints)
-        from api.settings import get_settings
+        from core.config import get_settings
         settings = get_settings()
         pat = settings.GITHUB_ACCESS_TOKEN
         if pat:

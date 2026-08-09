@@ -30,7 +30,7 @@ def get_registry_instance() -> Any:
     global _registry
     if _registry is None:
         from integrations.github.provider import GitHubIntegration
-        from api.settings import get_settings
+        from core.config import get_settings
         
         _registry = get_registry()
         
@@ -117,7 +117,7 @@ async def github_webhook(
         - Requires GitHub App webhook secret to be configured for signature verification
         - Analysis results are posted as a comment on the pull request
     """
-    from api.settings import get_settings
+    from core.config import get_settings
     
     settings = get_settings()
     registry = get_registry_instance()
@@ -356,6 +356,15 @@ async def analyze_repository(
             token_counts = pipeline.calculate_llm_context_tokens(llm_context)
             if token_counts:
                 response_content["llm_context_token_counts"] = token_counts
+            
+            # Compress LLM context using llmlingua
+            llm_context_compressed = pipeline.compress_llm_context(llm_context)
+            if llm_context_compressed is not None:
+                response_content["llm_context_compressed"] = llm_context_compressed
+                compressed_token_counts = pipeline.calculate_llm_context_tokens(llm_context_compressed)
+                if compressed_token_counts:
+                    response_content["llm_context_compressed_token_counts"] = compressed_token_counts
+
         
         # Include ReviewContext if available
         # if review_context is not None:
@@ -422,7 +431,7 @@ def _get_github_token() -> str | None:
     Returns:
         Token string or None
     """
-    from api.settings import get_settings
+    from core.config import get_settings
     settings = get_settings()
     return settings.GITHUB_ACCESS_TOKEN
 

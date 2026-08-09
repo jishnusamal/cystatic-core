@@ -437,6 +437,36 @@ class Timer:
         self._stack.clear()
         self._depth = 0
 
+    def print_progress(self) -> None:
+        """Log the latest recorded timing entry."""
+        if self._timings:
+            latest = self._timings[-1]
+            elapsed_str = (
+                f"{latest['elapsed'] * 1000:.2f}ms"
+                if latest['elapsed'] < 1.0
+                else f"{latest['elapsed']:.2f}s"
+            )
+            pipeline_logger.log_pipeline(
+                f"[timer] Progress: {latest['name']} finished in {elapsed_str}",
+                to_terminal=False,
+            )
+
+    def print_summary(self) -> None:
+        """Log a summary of all recorded timings for the run."""
+        if not self._timings:
+            return
+        pipeline_logger.log_pipeline("[timer] --- Timing Summary ---", to_terminal=False)
+        for record in self._timings:
+            elapsed_str = (
+                f"{record['elapsed'] * 1000:.2f}ms"
+                if record['elapsed'] < 1.0
+                else f"{record['elapsed']:.2f}s"
+            )
+            pipeline_logger.log_pipeline(
+                f"[timer]   {record['name']:<50} {elapsed_str}",
+                to_terminal=False,
+            )
+
 
 # Module-level timer instance (mirrors the old runtime.instrumentation.timer.timer singleton)
 timer = Timer()
