@@ -15,6 +15,7 @@ redundancy through:
 """
 
 from .compiler import LLMContextCompiler
+from .compression import ContextCompressor
 from .model import LLMContext
 
-__all__ = ["LLMContextCompiler", "LLMContext"]
+__all__ = ["LLMContextCompiler", "ContextCompressor", "LLMContext"]

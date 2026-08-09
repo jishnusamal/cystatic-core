@@ -1340,13 +1340,13 @@ class Pipeline:
             print(f"[pipeline] Token count calculation failed: {exc}")
             return None
 
-    def compress_llm_context(self, serialized_context: dict[str, Any], rate: float = 0.5) -> dict[str, Any] | None:
+    def compress_llm_context(self, serialized_context: dict[str, Any], rate: float = 0.33) -> dict[str, Any] | None:
         """
-        Compress serialized LLMContext using LLMLingua PromptCompressor.
+        Compress serialized LLMContext using ContextCompressor wrapper.
 
         Args:
             serialized_context: The serialized LLMContext dictionary.
-            rate: Target compression ratio (ratio of preserved content).
+            rate: Target compression ratio (ratio of preserved content, default 0.33).
 
         Returns:
             Compressed serialized LLMContext dictionary or original if compression is inapplicable/fails.
@@ -1355,45 +1355,9 @@ class Pipeline:
             return None
 
         try:
-            from llmlingua import PromptCompressor
-            compressor = PromptCompressor()
-
-            # Create a shallow copy to modify string components
-            compressed_context = dict(serialized_context)
-
-            # 1. Compress string table 'st' if present
-            if "st" in serialized_context and isinstance(serialized_context["st"], list):
-                compressed_st = []
-                for s in serialized_context["st"]:
-                    if isinstance(s, str) and len(s) > 20:
-                        res = compressor.compress_prompt([s], rate=rate)
-                        compressed_st.append(res.get("compressed_prompt", s))
-                    else:
-                        compressed_st.append(s)
-                compressed_context["st"] = compressed_st
-
-            # 2. Compress string facts in discoveries 'disc' if present
-            if "disc" in serialized_context and isinstance(serialized_context["disc"], list):
-                compressed_disc = []
-                for item in serialized_context["disc"]:
-                    if isinstance(item, list) and len(item) == 2:
-                        kind_id, facts = item
-                        compressed_facts = []
-                        if isinstance(facts, list):
-                            for fact in facts:
-                                if isinstance(fact, str) and len(fact) > 20:
-                                    res = compressor.compress_prompt([fact], rate=rate)
-                                    compressed_facts.append(res.get("compressed_prompt", fact))
-                                else:
-                                    compressed_facts.append(fact)
-                            compressed_disc.append([kind_id, compressed_facts])
-                        else:
-                            compressed_disc.append(item)
-                    else:
-                        compressed_disc.append(item)
-                compressed_context["disc"] = compressed_disc
-
-            return compressed_context
+            from engine.llm_context import ContextCompressor
+            compressor = ContextCompressor()
+            return compressor.compress_serialized_dict(serialized_context, target_rate=rate)
         except Exception as exc:
             print(f"[pipeline] LLMLingua compression failed: {exc}")
             return serialized_context

@@ -90,14 +90,32 @@ class GitHubRepositoryProvider(RepositoryProvider):
         # Download the repository as a zipball at the specific commit
         client = self._get_client()
         try:
-            print(f"[repositories] Downloading zipball for {repo_ref.full_name} at {sha}...")
+            url = f"/repos/{repo_ref.full_name}/zipball/{sha}"
+            print(f"[repositories] Downloading zipball for {repo_ref.full_name} at {sha} (URL: {url})...")
+            
+            print(f"[repositories] Sending GET request via client.get to {url}...")
             response = client.get(
-                f"/repos/{repo_ref.full_name}/zipball/{sha}",
+                url,
                 headers={"Accept": "application/vnd.github+json"},
-                timeout=120,
+                stream=True,
+                allow_redirects=True,
+                timeout=(10, 300),
             )
+            print(f"[repositories] Response HTTP status: {response.status_code}")
             response.raise_for_status()
-            print(f"[repositories] Zipball downloaded: {len(response.content)} bytes")
+
+            content_bytes = bytearray()
+            chunk_count = 0
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    content_bytes.extend(chunk)
+                    chunk_count += 1
+                    
+            zip_content = bytes(content_bytes)
+            print(f"[repositories] Zipball download complete: {len(zip_content)} bytes ({len(zip_content) / (1024 * 1024):.2f} MB)")
+        except Exception as e:
+            print(f"[repositories] ERROR during zipball download for {repo_ref.full_name} at {sha}: {e}")
+            raise
         finally:
             client.close()
 
@@ -105,7 +123,7 @@ class GitHubRepositoryProvider(RepositoryProvider):
         files: dict[str, str] = {}
         tree_entries: list[dict[str, Any]] = []
         
-        with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+        with zipfile.ZipFile(io.BytesIO(zip_content)) as zf:
             all_names = zf.namelist()
             print(f"[repositories] Zipball entries: {len(all_names)}")
             if not all_names:
