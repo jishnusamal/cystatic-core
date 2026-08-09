@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from api.settings import get_settings
+from core.config import get_settings
 
 router = APIRouter(tags=["health"])
 

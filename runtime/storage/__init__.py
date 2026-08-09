@@ -1,6 +1,6 @@
-"""Storage abstractions for repository models."""
+"""Backward-compatibility shim. Import from engine.repository.indexing instead."""
 
-from runtime.storage.repository_store import (
+from engine.repository.indexing.repository_store import (
     FilesystemRepositoryStore,
     MemoryRepositoryStore,
     RepositoryStore,

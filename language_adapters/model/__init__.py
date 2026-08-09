@@ -1,40 +1,36 @@
-"""Model package - language-independent repository representation."""
+"""Backward-compatibility shim. New code should import from engine.repository.model."""
 
-from .symbol import Symbol, SymbolKind, SymbolVisibility
-from .evidence import (
+from engine.repository.model import (
+    Symbol,
+    SymbolKind,
+    SymbolVisibility,
     Evidence,
     FileLocation,
     SymbolReference,
     CallReference,
     ImportReference,
     AnnotationReference,
-)
-from .graphs import (
     CallEdge,
     CallGraph,
     ReferenceEdge,
     ReferenceGraph,
     TypeRelationshipEdge,
     TypeRelationshipGraph,
-)
-from .repository_model import (
     RepositoryModel,
     EntryPoint,
     EntryPointKind,
     AsyncEntryPoint,
-)
-from .persistence import (
     PersistenceModel,
     PersistenceModelKind,
     RepositoryMethod,
     RepositoryMethodKind,
-)
-from .events import EventConstruct, EventOperationKind
-from .tests import TestDefinition, TestFramework, TestFixture
-from .configuration import ConfigurationReference, ConfigReferenceKind
-from .file_contribution import FileContribution
-from .repository_graph import RepositoryGraph
-from .repository_index import (
+    EventConstruct,
+    EventOperationKind,
+    TestDefinition,
+    TestFramework,
+    TestFixture,
+    ConfigurationReference,
+    ConfigReferenceKind,
     RepositoryIndex,
     FileIndex,
     SymbolEntry,
@@ -48,62 +44,23 @@ from .repository_index import (
     EventEntry,
     TestEntry,
     ConfigEntry,
+    FileContribution,
+    RepositoryGraph,
 )
 
 __all__ = [
-    # Symbol
-    "Symbol",
-    "SymbolKind",
-    "SymbolVisibility",
-    # Evidence
-    "Evidence",
-    "FileLocation",
-    "SymbolReference",
-    "CallReference",
-    "ImportReference",
-    "AnnotationReference",
-    # Graphs
-    "CallEdge",
-    "CallGraph",
-    "ReferenceEdge",
-    "ReferenceGraph",
-    "TypeRelationshipEdge",
-    "TypeRelationshipGraph",
-    # Repository Model
-    "RepositoryModel",
-    "EntryPoint",
-    "EntryPointKind",
-    "AsyncEntryPoint",
-    # Persistence
-    "PersistenceModel",
-    "PersistenceModelKind",
-    "RepositoryMethod",
-    "RepositoryMethodKind",
-    # Events
-    "EventConstruct",
-    "EventOperationKind",
-    # Tests
-    "TestDefinition",
-    "TestFramework",
-    "TestFixture",
-    # Configuration
-    "ConfigurationReference",
-    "ConfigReferenceKind",
-    # Repository Index (IR)
-    "RepositoryIndex",
-    "FileIndex",
-    "SymbolEntry",
-    "ImportEntry",
-    "RawReference",
-    "CallEntry",
-    "EntrypointEntry",
-    "TypeRelationshipEntry",
-    "PersistenceEntry",
-    "RepositoryMethodEntry",
-    "EventEntry",
-    "TestEntry",
-    "ConfigEntry",
-    # Incremental Compilation Graph
-    "FileContribution",
-    "RepositoryGraph",
+    "Symbol", "SymbolKind", "SymbolVisibility",
+    "Evidence", "FileLocation", "SymbolReference", "CallReference",
+    "ImportReference", "AnnotationReference",
+    "CallEdge", "CallGraph", "ReferenceEdge", "ReferenceGraph",
+    "TypeRelationshipEdge", "TypeRelationshipGraph",
+    "RepositoryModel", "EntryPoint", "EntryPointKind", "AsyncEntryPoint",
+    "PersistenceModel", "PersistenceModelKind", "RepositoryMethod", "RepositoryMethodKind",
+    "EventConstruct", "EventOperationKind",
+    "TestDefinition", "TestFramework", "TestFixture",
+    "ConfigurationReference", "ConfigReferenceKind",
+    "RepositoryIndex", "FileIndex", "SymbolEntry", "ImportEntry", "RawReference",
+    "CallEntry", "EntrypointEntry", "TypeRelationshipEntry", "PersistenceEntry",
+    "RepositoryMethodEntry", "EventEntry", "TestEntry", "ConfigEntry",
+    "FileContribution", "RepositoryGraph",
 ]

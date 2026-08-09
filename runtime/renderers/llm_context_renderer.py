@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from operational.model import EngineeringDiscoveryModel
-from runtime.errors import RendererFailed
+from engine.operational.model import EngineeringDiscoveryModel
+from core.errors import RendererFailed
 
 
 class LLMContextRenderer:

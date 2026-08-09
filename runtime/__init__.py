@@ -1,9 +1,15 @@
-"""Runtime package for Cystatic pipeline execution."""
+"""Runtime package for Factor pipeline execution.
 
-from runtime.errors import (
-    CompilationTimeout,
+This package is a compatibility shim. New code should import directly from:
+  - core.errors (errors)
+  - models (domain models)
+  - engine.pipeline (pipeline and context)
+"""
+
+from core.errors import (
     CacheReadFailed,
     CacheWriteFailed,
+    CompilationTimeout,
     DiffFetchFailed,
     InvalidDiff,
     InvalidWebhook,
@@ -20,14 +26,16 @@ from runtime.errors import (
 )
 from typing import Any
 
+
 def __getattr__(name: str) -> Any:
     if name == "PipelineContext":
-        from runtime.pipeline.context import PipelineContext
+        from engine.pipeline.context import PipelineContext
         return PipelineContext
     if name == "Pipeline":
-        from runtime.pipeline.pipeline import Pipeline
+        from engine.pipeline.pipeline import Pipeline
         return Pipeline
     raise AttributeError(f"module {__name__} has no attribute {name}")
+
 
 __all__ = [
     # Errors

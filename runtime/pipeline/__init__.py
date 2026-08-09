@@ -1,6 +1,6 @@
-"""Pipeline orchestration package."""
+"""Backward-compatibility shim. Import from engine.pipeline instead."""
 
-from runtime.pipeline.context import PipelineContext
-from runtime.pipeline.pipeline import Pipeline
+from engine.pipeline.context import PipelineContext
+from engine.pipeline.pipeline import Pipeline
 
 __all__ = ["Pipeline", "PipelineContext"]

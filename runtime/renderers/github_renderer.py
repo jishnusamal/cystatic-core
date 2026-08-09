@@ -11,8 +11,8 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, Template
 
-from operational.model import OperationalChangeModel, EngineeringDiscoveryArtifact
-from runtime.errors import RendererFailed
+from engine.operational.model import OperationalChangeModel, EngineeringDiscoveryArtifact
+from core.errors import RendererFailed
 
 class GitHubRenderer:
     """

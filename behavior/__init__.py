@@ -1,1 +1,3 @@
-"""Behavior compilation package - identifies affected behaviors from code changes."""
+"""Backward-compatibility shim. New code should import from engine.behavior."""
+from engine.behavior.model import BehaviorModel
+__all__ = ["BehaviorModel"]
