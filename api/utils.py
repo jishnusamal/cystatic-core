@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from schemas import AnalyzeRequest
 import os, json
 from .settings import get_settings
-from api.models import persist_analysis_job
+from api.analysis.jobs import persist_analysis_job
 from source_adapters.github.event_handler import (
     build_pull_request_analysis_job,
     schedule_pull_request_analysis,
