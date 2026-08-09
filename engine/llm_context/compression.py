@@ -99,7 +99,87 @@ class ContextCompressor:
                     compressed_st.append(s)
             compressed_context["st"] = compressed_st
 
-        # 2. Compress discovery facts if present
+        # 2. Compress symbols 'sym' if present
+        if "sym" in serialized_context and isinstance(serialized_context["sym"], list):
+            compressed_sym: list[Any] = []
+            for item in serialized_context["sym"]:
+                if isinstance(item, (list, tuple)):
+                    compressed_item: list[Any] = []
+                    for elem in item:
+                        if isinstance(elem, str) and len(elem) > 20:
+                            compressed_item.append(
+                                self.compress(elem, target_rate=target_rate, force_tokens=force_tokens)
+                            )
+                        else:
+                            compressed_item.append(elem)
+                    compressed_sym.append(type(item)(compressed_item))
+                elif isinstance(item, str) and len(item) > 20:
+                    compressed_sym.append(
+                        self.compress(item, target_rate=target_rate, force_tokens=force_tokens)
+                    )
+                else:
+                    compressed_sym.append(item)
+            compressed_context["sym"] = compressed_sym
+
+        # 3. Compress execution graph 'eg' if present
+        if "eg" in serialized_context and isinstance(serialized_context["eg"], dict):
+            compressed_eg = dict(serialized_context["eg"])
+            for eg_key in ("nodes", "edges"):
+                if eg_key in compressed_eg and isinstance(compressed_eg[eg_key], list):
+                    compressed_nodes: list[Any] = []
+                    for node in compressed_eg[eg_key]:
+                        if isinstance(node, (list, tuple)):
+                            compressed_node: list[Any] = []
+                            for elem in node:
+                                if isinstance(elem, str) and len(elem) > 20:
+                                    compressed_node.append(
+                                        self.compress(elem, target_rate=target_rate, force_tokens=force_tokens)
+                                    )
+                                else:
+                                    compressed_node.append(elem)
+                            compressed_nodes.append(type(node)(compressed_node))
+                        elif isinstance(node, str) and len(node) > 20:
+                            compressed_nodes.append(
+                                self.compress(node, target_rate=target_rate, force_tokens=force_tokens)
+                            )
+                        else:
+                            compressed_nodes.append(node)
+                    compressed_eg[eg_key] = compressed_nodes
+            compressed_context["eg"] = compressed_eg
+
+        # 4. Compress file changes 'cf' if present
+        if "cf" in serialized_context and isinstance(serialized_context["cf"], list):
+            compressed_cf: list[Any] = []
+            for item in serialized_context["cf"]:
+                if isinstance(item, (list, tuple)):
+                    compressed_cf_item: list[Any] = []
+                    for elem in item:
+                        if isinstance(elem, (list, tuple)):
+                            compressed_sub: list[Any] = []
+                            for sub in elem:
+                                if isinstance(sub, str) and len(sub) > 20:
+                                    compressed_sub.append(
+                                        self.compress(sub, target_rate=target_rate, force_tokens=force_tokens)
+                                    )
+                                else:
+                                    compressed_sub.append(sub)
+                            compressed_cf_item.append(type(elem)(compressed_sub))
+                        elif isinstance(elem, str) and len(elem) > 20:
+                            compressed_cf_item.append(
+                                self.compress(elem, target_rate=target_rate, force_tokens=force_tokens)
+                            )
+                        else:
+                            compressed_cf_item.append(elem)
+                    compressed_cf.append(type(item)(compressed_cf_item))
+                elif isinstance(item, str) and len(item) > 20:
+                    compressed_cf.append(
+                        self.compress(item, target_rate=target_rate, force_tokens=force_tokens)
+                    )
+                else:
+                    compressed_cf.append(item)
+            compressed_context["cf"] = compressed_cf
+
+        # 5. Compress discovery facts 'disc' if present
         if "disc" in serialized_context and isinstance(serialized_context["disc"], list):
             compressed_disc = []
             for item in serialized_context["disc"]:
