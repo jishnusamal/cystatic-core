@@ -321,12 +321,37 @@ class LLMContextCompiler:
             disc_endpoint_keys,
         )
 
+        # Selected entry points within endpoint budget
+        changed_files = {f.path for f in pruned_context.change.files} if pruned_context.change and pruned_context.change.files else set()
+        prioritized = []
+        other = []
+        for ep, compressed_steps in retained_eps:
+            is_changed = False
+            for step in compressed_steps:
+                if step.symbol and step.symbol.location:
+                    file_path, _, _ = _parse_location(step.symbol.location)
+                    if file_path in changed_files:
+                        is_changed = True
+                        break
+            if is_changed:
+                prioritized.append((ep, compressed_steps))
+            else:
+                other.append((ep, compressed_steps))
+
+        prioritized.sort(key=lambda x: (x[0].method, x[0].path))
+        other.sort(key=lambda x: (x[0].method, x[0].path))
+
+        limit = self._settings.LLM_CONTEXT_MAX_ENDPOINTS
+        selected_eps = prioritized[:]
+        remaining_slots = max(0, limit - len(selected_eps))
+        selected_eps.extend(other[:remaining_slots])
+
         # -----------------------------------------------------------------------
         # Step 4: Build symbol table (changed + chain + discovery referenced)
         # -----------------------------------------------------------------------
-        # First pass: collect all symbol IDs needed from retained chains
+        # First pass: collect all symbol IDs needed from SELECTED chains only
         chain_symbol_ids: set[str] = set()
-        for ep, compressed_steps in retained_eps:
+        for ep, compressed_steps in selected_eps:
             for step in compressed_steps:
                 if step.symbol and step.symbol.id:
                     chain_symbol_ids.add(step.symbol.id)
@@ -334,9 +359,9 @@ class LLMContextCompiler:
         sb = _StringBuilder()
 
         # Determine which files to include in the file table
-        # (changed files + files containing chain symbols)
+        # (changed files + files containing chain symbols from SELECTED chains only)
         chain_file_paths: set[str] = set()
-        for ep, compressed_steps in retained_eps:
+        for ep, compressed_steps in selected_eps:
             for step in compressed_steps:
                 if step.symbol and step.symbol.location:
                     fp, _, _ = _parse_location(step.symbol.location)
@@ -360,7 +385,8 @@ class LLMContextCompiler:
         # Build symbol table
         symbol_table, symbol_id_map = self._build_symbol_table_filtered(
             pruned_context.change,
-            pruned_context.execution,
+            selected_eps,
+            retained_eps,
             changed_symbol_ids,
             chain_symbol_ids,
             disc_symbol_ids,
@@ -371,11 +397,17 @@ class LLMContextCompiler:
         # -----------------------------------------------------------------------
         # Step 5: Build endpoint table (retained EPs only)
         # -----------------------------------------------------------------------
-        endpoint_table = self._build_endpoint_table_filtered(
-            retained_eps,
-            pruned_context.change,
-            sb,
-        )
+        endpoint_table = []
+        seen_endpoints = {}
+        for ep, _ in selected_eps:
+            key = (ep.method, ep.path)
+            if key not in seen_endpoints:
+                entry = (
+                    _enum_id("method", ep.method),
+                    sb.add(ep.path),
+                )
+                seen_endpoints[key] = len(endpoint_table)
+                endpoint_table.append(entry)
 
         # Build endpoint_idx_map for execution building
         from .model import ENUM_METHOD
@@ -525,7 +557,8 @@ class LLMContextCompiler:
     def _build_symbol_table_filtered(
         self,
         change_ctx: ChangeContext,
-        exec_ctx: ExecutionContext,
+        selected_eps: list[tuple[EntryPointExecution, list[ExecutionStep]]],
+        retained_eps: list[tuple[EntryPointExecution, list[ExecutionStep]]],
         changed_symbol_ids: set[str],
         chain_symbol_ids: set[str],
         disc_symbol_ids: set[str],
@@ -542,14 +575,15 @@ class LLMContextCompiler:
         Each entry: (file_id, name_idx, kind_id)
         """
         table: list[tuple[int, int, int]] = []
-        seen: dict[str, int] = {}
+        seen_tuples: dict[tuple[int, int, int], int] = {}
+        symbol_id_map: dict[str, int] = {}
         symbols_per_file: dict[int, int] = {}
 
         # Pass 1: Changed symbols (always preserved, ignore limits)
         for f in change_ctx.files:
             for c in f.changes:
                 sym = c.symbol
-                if sym.id not in seen:
+                if sym.id not in symbol_id_map:
                     file_path, _, _ = _parse_location(sym.location)
                     file_id = file_idx_map.get(file_path, 0)
 
@@ -561,44 +595,87 @@ class LLMContextCompiler:
                         name_idx,
                         _enum_id("kind", sym.kind),
                     )
-                    seen[sym.id] = len(table)
-                    table.append(sym_entry)
+                    
+                    if sym_entry not in seen_tuples:
+                        idx = len(table)
+                        table.append(sym_entry)
+                        seen_tuples[sym_entry] = idx
+                    else:
+                        idx = seen_tuples[sym_entry]
+                        
+                    symbol_id_map[sym.id] = idx
                     symbols_per_file[file_id] = symbols_per_file.get(file_id, 0) + 1
 
         # Pass 2: Chain-referenced symbols (subject to per-file limit)
         all_referenced = chain_symbol_ids | disc_symbol_ids
-        if exec_ctx and exec_ctx.entry_points:
-            for ep in exec_ctx.entry_points:
-                for step in ep.execution_chain:
-                    sym = step.symbol
-                    if sym and sym.id and sym.id not in seen:
-                        # Only add if referenced by a retained chain or discovery
-                        if sym.id not in all_referenced:
-                            continue
+        for ep, compressed_steps in selected_eps:
+            for step in compressed_steps:
+                sym = step.symbol
+                if sym and sym.id and sym.id not in symbol_id_map:
+                    # Only add if referenced by a retained chain or discovery
+                    if sym.id not in all_referenced:
+                        continue
 
-                        file_path, _, _ = _parse_location(sym.location)
-                        file_id = file_idx_map.get(file_path, 0)
+                    file_path, _, _ = _parse_location(sym.location)
+                    file_id = file_idx_map.get(file_path, 0)
 
-                        limit = self._settings.LLM_CONTEXT_MAX_SYMBOLS_PER_FILE
-                        if symbols_per_file.get(file_id, 0) >= limit:
-                            continue
+                    limit = self._settings.LLM_CONTEXT_MAX_SYMBOLS_PER_FILE
+                    if symbols_per_file.get(file_id, 0) >= limit:
+                        continue
 
-                        derivable_name = _resolve_symbol_name_from_uri(sym.id)
-                        if sym.name == derivable_name or _is_noise_string(sym.name):
-                            name_idx = 0
-                        else:
-                            name_idx = sb.add(sym.name)
+                    derivable_name = _resolve_symbol_name_from_uri(sym.id)
+                    if sym.name == derivable_name or _is_noise_string(sym.name):
+                        name_idx = 0
+                    else:
+                        name_idx = sb.add(sym.name)
 
-                        sym_entry = (
-                            file_id,
-                            name_idx,
-                            _enum_id("kind", sym.kind),
-                        )
-                        seen[sym.id] = len(table)
+                    sym_entry = (
+                        file_id,
+                        name_idx,
+                        _enum_id("kind", sym.kind),
+                    )
+                    
+                    if sym_entry not in seen_tuples:
+                        idx = len(table)
                         table.append(sym_entry)
-                        symbols_per_file[file_id] = symbols_per_file.get(file_id, 0) + 1
+                        seen_tuples[sym_entry] = idx
+                    else:
+                        idx = seen_tuples[sym_entry]
+                        
+                    symbol_id_map[sym.id] = idx
+                    symbols_per_file[file_id] = symbols_per_file.get(file_id, 0) + 1
 
-        return table, seen
+        # Pass 3: Remaining discovery-referenced symbols from any retained chain (even if EP was discarded)
+        for ep, compressed_steps in retained_eps:
+            for step in compressed_steps:
+                sym = step.symbol
+                if sym and sym.id and sym.id in disc_symbol_ids and sym.id not in symbol_id_map:
+                    file_path, _, _ = _parse_location(sym.location)
+                    file_id = file_idx_map.get(file_path, 0)
+
+                    derivable_name = _resolve_symbol_name_from_uri(sym.id)
+                    if sym.name == derivable_name or _is_noise_string(sym.name):
+                        name_idx = 0
+                    else:
+                        name_idx = sb.add(sym.name)
+
+                    sym_entry = (
+                        file_id,
+                        name_idx,
+                        _enum_id("kind", sym.kind),
+                    )
+                    
+                    if sym_entry not in seen_tuples:
+                        idx = len(table)
+                        table.append(sym_entry)
+                        seen_tuples[sym_entry] = idx
+                    else:
+                        idx = seen_tuples[sym_entry]
+                        
+                    symbol_id_map[sym.id] = idx
+                    symbols_per_file[file_id] = symbols_per_file.get(file_id, 0) + 1
+
+        return table, symbol_id_map
 
     def _build_endpoint_table_filtered(
         self,
@@ -789,7 +866,7 @@ class LLMContextCompiler:
         Returns:
             (ExecutionGraph, list of entry point tuples)
         """
-        node_map: dict[tuple[str, str, int], int] = {}
+        node_map: dict[tuple[str, str], int] = {}
         nodes: list[tuple[int, int, int, int]] = []
         edges: list[tuple[int, int]] = []
         entry_point_data: list[tuple[int, tuple[int, ...], int, int]] = []
@@ -803,7 +880,7 @@ class LLMContextCompiler:
             prev_node_idx: int | None = None
 
             for step in compressed_steps:
-                node_key = (step.behavior, step.symbol.id, step.depth)
+                node_key = (step.behavior, step.symbol.id)
 
                 if node_key not in node_map:
                     node_idx = len(nodes)
@@ -823,13 +900,15 @@ class LLMContextCompiler:
                 else:
                     node_idx = node_map[node_key]
 
-                chain_node_idxs.append(node_idx)
+                # Deduplicate consecutive duplicate node indices
+                if not chain_node_idxs or chain_node_idxs[-1] != node_idx:
+                    chain_node_idxs.append(node_idx)
 
-                if prev_node_idx is not None:
-                    edge = (prev_node_idx, node_idx)
-                    if edge not in edges:
-                        edges.append(edge)
-                prev_node_idx = node_idx
+                    if prev_node_idx is not None and prev_node_idx != node_idx:
+                        edge = (prev_node_idx, node_idx)
+                        if edge not in edges:
+                            edges.append(edge)
+                    prev_node_idx = node_idx
 
             endpoint_idx = endpoint_idx_map[key]
             terminal_idx = sb.add(ep.terminal) if ep.terminal else 0
