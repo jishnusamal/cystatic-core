@@ -1,6 +1,6 @@
 from schemas import AnalyzeRequest
 from jinja2 import Environment, FileSystemLoader, Template  # pyright: ignore[reportMissingImports]
-from api.models import persist_analysis_result
+from api.analysis.persistence import persist_analysis_result
 from language_adapters.python.python_adapter import AnalysisMode
 from core_engine.risk_pattern_detector import RiskPatternDetector, detect_flows
 from core_engine.failure_simulator import FailureSimulator

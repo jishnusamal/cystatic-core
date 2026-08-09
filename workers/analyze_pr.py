@@ -9,7 +9,7 @@ from typing import Any
 
 import dramatiq
 from api.db import TORTOISE_ORM
-from api.models import persist_analysis_job
+from api.analysis.jobs import persist_analysis_job
 from api.settings import get_settings
 from core_engine.failure_simulation_llm import FailureSimulationLLM
 from core_engine.orchestrator import Orchestrator
