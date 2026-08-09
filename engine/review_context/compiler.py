@@ -508,7 +508,7 @@ class ReviewContextCompiler:
                 )
                 discoveries.append(discovery)
         else:
-            # New DiscoveryModel from discovery.model
+            # New DiscoveryModel from engine.discovery.model
             for d_new in discovery_model.discoveries:
                 # Build references from discovery references
                 refs_new: list[Reference] = []

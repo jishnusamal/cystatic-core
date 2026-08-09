@@ -9,8 +9,8 @@ from github import Auth, Github, GithubException
 from integrations.base import RepositoryProvider
 from integrations.github.auth import GitHubAppAuth
 from integrations.github.client import GitHubClient
-from runtime.models import RepositoryReference, RepositorySnapshot, DiffSnapshot, DiffFile, DiffHunk
-from errors.repository import RepositoryNotFound, RepositoryAccessDenied
+from models.core import RepositoryReference, RepositorySnapshot, DiffSnapshot, DiffFile, DiffHunk
+from core.errors import RepositoryNotFound, RepositoryAccessDenied
 
 
 class GitHubRepositoryProvider(RepositoryProvider):

@@ -41,13 +41,13 @@ class LanguageAdapterFactory:
         """Register built-in language adapters."""
         # Import adapters here to avoid circular imports
         try:
-            from language_adapters.python.adapter import PythonLanguageAdapter
+            from engine.language.python.adapter import PythonLanguageAdapter
             self._adapters["python"] = PythonLanguageAdapter
         except ImportError:
             pass
         
         try:
-            from language_adapters.java.adapter import JavaLanguageAdapter
+            from engine.language.java.adapter import JavaLanguageAdapter
             self._adapters["java"] = JavaLanguageAdapter
         except ImportError:
             pass

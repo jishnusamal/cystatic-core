@@ -10,7 +10,7 @@ import json
 import time
 from typing import TYPE_CHECKING, Any
 
-from runtime.instrumentation.timer import timer
+from core.logging import timer
 from engine.change.compiler import ChangeCompiler
 from engine.change.model.repository_comparison import RepositoryComparison
 from engine.change.model.repository_delta import RepositoryDelta
@@ -33,9 +33,9 @@ from core.errors import (
 from engine.language.detection import LanguageAdapterFactory, get_language_factory
 from models import AnalysisRequest, AnalysisTrigger
 from engine.pipeline.context import PipelineContext
-from runtime.renderers.github_renderer import GitHubRenderer
-from runtime.renderers.json_renderer import JSONRenderer
-from runtime.storage.repository_store import RepositoryStore
+from integrations.github.renderers.github_renderer import GitHubRenderer
+from integrations.github.renderers.json_renderer import JSONRenderer
+from engine.repository.indexing import RepositoryStore
 import tiktoken
 
 # Custom print wrapper to avoid polluting stdout

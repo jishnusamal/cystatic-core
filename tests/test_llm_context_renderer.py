@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 import yaml
 
-from language_adapters.model import (
+from engine.language.model import (
     RepositoryModel,
     Symbol,
     SymbolKind,
@@ -21,13 +21,13 @@ from language_adapters.model import (
     EntryPointKind,
     FileLocation,
 )
-from change.model import (
+from engine.change.model import (
     ChangeModel,
     ModifiedSymbol,
     ImportChange,
     EndpointChange,
 )
-from behavior.model import (
+from engine.behavior.model import (
     Behavior,
     BehaviorKind,
     BehaviorModel,
@@ -40,8 +40,8 @@ from behavior.model import (
     TerminalPoint,
     SharedExecution,
 )
-from operational.model import OperationalChangeModel, EngineeringDiscoveryModel
-from runtime.renderers.llm_context_renderer import LLMContextRenderer
+from engine.operational.model import OperationalChangeModel, EngineeringDiscoveryModel
+from integrations.github.renderers.llm_context_renderer import LLMContextRenderer
 
 
 # ---------------------------------------------------------------------------

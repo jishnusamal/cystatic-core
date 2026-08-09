@@ -343,7 +343,7 @@ class PassInstrumentation:
         """Print a concise profile summary for the terminal when in profiling mode."""
         import sys
         from core.logging import pipeline_logger
-        from runtime.instrumentation.timer import timer
+        from core.logging import timer
         
         visitor_timings = [t for t in timer.get_timings() if t["name"] == "Visitor"]
         visitor_time = visitor_timings[0]["elapsed"] if visitor_timings else sum(s.total_time for s in self.pass_stats.values())

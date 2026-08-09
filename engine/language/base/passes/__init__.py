@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from language_adapters.base.file_context import FileContext
+from engine.language.base.file_context import FileContext
 from engine.repository.model.repository_index import FileIndex
 
 

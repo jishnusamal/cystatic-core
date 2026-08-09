@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-from operational.model import OperationalChangeModel
+from engine.operational.model import OperationalChangeModel
 
 
 class OutputProvider(ABC):

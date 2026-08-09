@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from review_context.model import (
+from engine.review_context.model import (
     ReviewContext,
     ChangeContext,
     ChangeSummary,
@@ -23,9 +23,9 @@ from review_context.model import (
     Discovery,
     Reference,
 )
-from llm_context.compiler import LLMContextCompiler
-from llm_context.model import LLMContext, StringTable, ExecutionGraph
-from llm_context.model import ENUM_REVERSE
+from engine.llm_context.compiler import LLMContextCompiler
+from engine.llm_context.model import LLMContext, StringTable, ExecutionGraph
+from engine.llm_context.model import ENUM_REVERSE
 
 
 # ---------------------------------------------------------------------------
@@ -187,13 +187,13 @@ class TestChainCompression:
             _make_step("sym://b", "B", 1),
             _make_step("sym://c", "C", 2),
         ]
-        from llm_context.compiler import _compress_chain
+        from engine.llm_context.compiler import _compress_chain
         assert _compress_chain(steps, {"sym://a"}) == steps
 
     def test_long_chain_first_last_retained(self):
         """Chain of 6 helpers: first and last always kept."""
         steps = [_make_step(f"sym://{c}", c, i) for i, c in enumerate("ABCDEF")]
-        from llm_context.compiler import _compress_chain
+        from engine.llm_context.compiler import _compress_chain
         result = _compress_chain(steps, set())
         assert result[0].symbol.id == "sym://A"
         assert result[-1].symbol.id == "sym://F"
@@ -208,7 +208,7 @@ class TestChainCompression:
             _make_step("sym://e", "E", 4),
             _make_step("sym://f", "F", 5),
         ]
-        from llm_context.compiler import _compress_chain
+        from engine.llm_context.compiler import _compress_chain
         result = _compress_chain(steps, set())
         assert "sym://c" in [s.symbol.id for s in result]
 
@@ -221,7 +221,7 @@ class TestChainCompression:
             _make_step("sym://e", "E", 4),
             _make_step("sym://f", "F", 5),
         ]
-        from llm_context.compiler import _compress_chain
+        from engine.llm_context.compiler import _compress_chain
         result = _compress_chain(steps, set())
         assert "sym://c" in [s.symbol.id for s in result]
 

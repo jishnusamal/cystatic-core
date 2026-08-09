@@ -7,7 +7,7 @@ register their handlers and the visitor calls them during traversal.
 from abc import ABC, abstractmethod
 from typing import Any, Generic, TypeVar
 
-from language_adapters.base.file_context import FileContext
+from engine.language.base.file_context import FileContext
 
 T = TypeVar("T")
 

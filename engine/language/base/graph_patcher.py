@@ -28,7 +28,7 @@ from engine.repository.model import (
 )
 from engine.repository.model.file_contribution import FileContribution
 from engine.repository.model.repository_graph import RepositoryGraph
-from language_adapters.base.semantic_compiler import SemanticCompiler, _build_symbol_id
+from engine.language.base.semantic_compiler import SemanticCompiler, _build_symbol_id
 
 
 class GraphPatcher:

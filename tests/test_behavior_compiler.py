@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from language_adapters.model import (
+from engine.language.model import (
     RepositoryModel,
     Symbol,
     SymbolKind,
@@ -16,13 +16,13 @@ from language_adapters.model import (
     EntryPoint,
     EntryPointKind,
 )
-from change.model import (
+from engine.change.model import (
     ChangeModel,
     ModifiedSymbol,
     ImportChange,
     EndpointChange,
 )
-from behavior.model import (
+from engine.behavior.model import (
     Behavior,
     BehaviorKind,
     BehaviorModel,
@@ -30,7 +30,7 @@ from behavior.model import (
     ExecutionNode,
     ExecutionEdge,
 )
-from behavior.compiler import BehaviorCompiler, BehaviorPassContext
+from engine.behavior.compiler import BehaviorCompiler, BehaviorPassContext
 
 
 # ---------------------------------------------------------------------------

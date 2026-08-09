@@ -22,17 +22,17 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import cast
 
-from operational.compiler.passes.base import (
+from engine.operational.compiler.passes.base import (
     OperationalCompilerPass,
     OperationalPassContext,
 )
 from engine.repository.model import Symbol
 from engine.operational.model import OperationalChangeModel
-from operational.compiler.passes.dependency.impl import DependencyModel
-from operational.compiler.passes.data.impl import DataModel
-from operational.compiler.passes.events.impl import EventModel
-from operational.compiler.passes.api.impl import APIModel
-from operational.compiler.passes.validation.impl import ValidationModel
+from engine.operational.compiler.passes.dependency.impl import DependencyModel
+from engine.operational.compiler.passes.data.impl import DataModel
+from engine.operational.compiler.passes.events.impl import EventModel
+from engine.operational.compiler.passes.api.impl import APIModel
+from engine.operational.compiler.passes.validation.impl import ValidationModel
 
 
 @dataclass(frozen=True)

@@ -6,8 +6,8 @@ Emits only structural configuration facts. No resolution, no graph construction.
 import re
 from typing import Any
 
-from language_adapters.base.file_context import FileContext
-from language_adapters.base.passes import BaseIndexPass
+from engine.language.base.file_context import FileContext
+from engine.language.base.passes import BaseIndexPass
 from engine.repository.model.repository_index import ConfigEntry
 
 

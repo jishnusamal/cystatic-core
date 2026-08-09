@@ -2,8 +2,8 @@
 
 import time
 import pytest
-from language_adapters.python.adapter import PythonLanguageAdapter
-from language_adapters.model import RepositoryGraph, RepositoryModel
+from engine.language.python.adapter import PythonLanguageAdapter
+from engine.language.model import RepositoryGraph, RepositoryModel
 
 
 def generate_synthetic_repo(num_files: int = 100) -> dict[str, str]:

@@ -14,13 +14,13 @@ import time
 from typing import Any
 
 from engine.language.base import BaseLanguageAdapter
-from language_adapters.base.file_context import FileContext
-from language_adapters.base.index_compiler import IndexCompiler
-from language_adapters.base.semantic_compiler import SemanticCompiler
-from language_adapters.base.graph_patcher import GraphPatcher
+from engine.language.base.file_context import FileContext
+from engine.language.base.index_compiler import IndexCompiler
+from engine.language.base.semantic_compiler import SemanticCompiler
+from engine.language.base.graph_patcher import GraphPatcher
 from engine.repository.model import RepositoryModel, FileContribution, RepositoryGraph, SymbolKind
 from engine.repository.model.repository_index import RepositoryIndex, FileIndex
-from language_adapters.python.passes import (
+from engine.language.python.passes import (
     PythonCallIndexPass,
     PythonConfigurationIndexPass,
     PythonEntrypointIndexPass,
@@ -31,8 +31,8 @@ from language_adapters.python.passes import (
     PythonTestIndexPass,
     PythonTypeIndexPass,
 )
-from language_adapters.python.visitors import PythonVisitor
-from runtime.instrumentation.timer import timer
+from engine.language.python.visitors import PythonVisitor
+from core.logging import timer
 
 
 class PythonLanguageAdapter(BaseLanguageAdapter):
@@ -209,7 +209,7 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
         log(f"[adapter] Configurations: {len(index.all_configurations)}")
         
         # Print visitor instrumentation
-        from language_adapters.base.instrumentation import get_instrumentation
+        from engine.language.base.instrumentation import get_instrumentation
         inst = get_instrumentation()
         inst.print_pass_summary()
         inst.print_method_summary()

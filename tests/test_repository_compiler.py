@@ -1,8 +1,8 @@
 """Tests for the Repository Compiler."""
 
 import pytest
-from language_adapters.python.adapter import PythonLanguageAdapter
-from language_adapters.model import SymbolKind, SymbolVisibility, EntryPointKind
+from engine.language.python.adapter import PythonLanguageAdapter
+from engine.language.model import SymbolKind, SymbolVisibility, EntryPointKind
 
 
 @pytest.fixture

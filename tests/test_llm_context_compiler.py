@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from review_context.model import (
+from engine.review_context.model import (
     ReviewContext,
     ChangeContext,
     ChangeSummary,
@@ -26,9 +26,9 @@ from review_context.model import (
     Discovery,
     Reference,
 )
-from llm_context.compiler import LLMContextCompiler
-from llm_context.model import LLMContext, StringTable, ExecutionGraph
-from llm_context.model import ENUM_REVERSE
+from engine.llm_context.compiler import LLMContextCompiler
+from engine.llm_context.model import LLMContext, StringTable, ExecutionGraph
+from engine.llm_context.model import ENUM_REVERSE
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +37,7 @@ from llm_context.model import ENUM_REVERSE
 
 def _enum_val(table: str, id: int) -> str:
     """Look up enum value by ID."""
-    from llm_context.model import ENUM_TABLES
+    from engine.llm_context.model import ENUM_TABLES
     return ENUM_TABLES[table].get(id, "")
 
 
@@ -616,7 +616,7 @@ class TestLookupTables:
             assert isinstance(method_id, int)
             assert isinstance(path_idx, int)
             # method_id must resolve to a known HTTP method via ENUM_METHOD
-            from llm_context.model import ENUM_METHOD
+            from engine.llm_context.model import ENUM_METHOD
             assert method_id in ENUM_METHOD
 
 
@@ -896,7 +896,7 @@ class TestEdgeCases:
 
     def test_location_parsing_various_formats(self):
         """Test that various location formats are parsed correctly."""
-        from llm_context.compiler import _parse_location
+        from engine.llm_context.compiler import _parse_location
 
         # Standard format
         assert _parse_location("file.py:1-10") == ("file.py", 1, 10)
@@ -958,7 +958,7 @@ class TestHighDensityFiltering:
             execution=TestHelper.create_execution_context(entry_points=(ep,))
         )
 
-        from llm_context.compiler import prune_review_context
+        from engine.llm_context.compiler import prune_review_context
         pruned = prune_review_context(rc)
         chain = pruned.execution.entry_points[0].execution_chain
         
@@ -1075,7 +1075,7 @@ class TestHighDensityFiltering:
             execution=TestHelper.create_execution_context(entry_points=(ep,))
         )
 
-        from llm_context.compiler import prune_review_context
+        from engine.llm_context.compiler import prune_review_context
         pruned = prune_review_context(rc)
         chain = pruned.execution.entry_points[0].execution_chain
         
@@ -1138,7 +1138,7 @@ class TestReviewScopeVerification:
 
     def test_ref_uri_treated_as_compiler_metadata(self):
         """ref:// URIs are compiler traceability identifiers and must be pruned."""
-        from llm_context.review_scope_builder import is_compiler_metadata
+        from engine.llm_context.review_scope_builder import is_compiler_metadata
 
         assert is_compiler_metadata("ref://test/1") is True
         assert is_compiler_metadata("ref://discovery/abc") is True
@@ -1146,20 +1146,20 @@ class TestReviewScopeVerification:
 
     def test_unit_uri_treated_as_compiler_metadata(self):
         """unit:// URIs remain classified as compiler metadata."""
-        from llm_context.review_scope_builder import is_compiler_metadata
+        from engine.llm_context.review_scope_builder import is_compiler_metadata
 
         assert is_compiler_metadata("unit://noise/1") is True
 
     def test_node_edge_uri_treated_as_compiler_metadata(self):
         """node:// and edge:// URIs are compiler graph identifiers."""
-        from llm_context.review_scope_builder import is_compiler_metadata
+        from engine.llm_context.review_scope_builder import is_compiler_metadata
 
         assert is_compiler_metadata("node://graph/42") is True
         assert is_compiler_metadata("edge://graph/42-43") is True
 
     def test_non_metadata_refs_not_pruned(self):
         """Legitimate file locations and behavior URIs are NOT pruned."""
-        from llm_context.review_scope_builder import is_compiler_metadata
+        from engine.llm_context.review_scope_builder import is_compiler_metadata
 
         assert is_compiler_metadata("file.py:10-25") is False
         assert is_compiler_metadata("behavior://domain/checkout") is False
@@ -1173,7 +1173,7 @@ class TestReviewScopeVerification:
         (they are ignored downstream). The original references are preserved on
         the ReviewContext models.
         """
-        from llm_context.review_scope_builder import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
 
         step = TestHelper.create_execution_step(
             references=("ref://unit/1", "behavior://domain/checkout", "unit://noise/2"),
@@ -1190,7 +1190,7 @@ class TestReviewScopeVerification:
 
     def test_ref_uri_pruned_from_discovery_references(self):
         """ref:// id in Discovery.references are removed during pruning."""
-        from llm_context.review_scope_builder import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
 
         ref_noise = TestHelper.create_reference(
             id="ref://noise/1",
@@ -1217,7 +1217,7 @@ class TestReviewScopeVerification:
 
     def test_unrelated_framework_execution_nodes_removed(self):
         """Unchanged framework nodes are absent from the compiled execution graph."""
-        from llm_context.review_scope_builder import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
 
         step_fw = TestHelper.create_execution_step(
             symbol_id="sym://fw/depends",
@@ -1252,7 +1252,7 @@ class TestReviewScopeVerification:
 
     def test_hex_hash_facts_excluded(self):
         """Discovery facts containing 32+ char hex hashes are stripped."""
-        from llm_context.review_scope_builder import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
 
         disc = TestHelper.create_discovery(
             facts={
@@ -1322,7 +1322,7 @@ class TestReviewScopePreservation:
 
     def test_changed_symbol_in_noise_category_retained_in_execution(self):
         """A symbol marked changed=True survives pruning even if it is stdlib/framework."""
-        from llm_context.review_scope_builder import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
 
         step = TestHelper.create_execution_step(
             symbol_name="logging",
@@ -1340,7 +1340,7 @@ class TestReviewScopePreservation:
 
     def test_discovery_count_preserved(self):
         """Discovery count is identical before and after pruning."""
-        from llm_context.review_scope_builder import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
 
         d1 = TestHelper.create_discovery(id="discovery://a/1", kind="deep_execution")
         d2 = TestHelper.create_discovery(id="discovery://b/1", kind="shared_execution")
@@ -1363,7 +1363,7 @@ class TestReviewScopePreservation:
 
     def test_execution_path_non_noise_steps_preserved(self):
         """Business logic and domain steps are always retained."""
-        from llm_context.review_scope_builder import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
 
         step_biz = TestHelper.create_execution_step(
             symbol_name="OrderProcessor",
@@ -1391,7 +1391,7 @@ class TestReviewScopePreservation:
 
     def test_valid_discovery_references_retained(self):
         """References with non-metadata ids and locations survive pruning."""
-        from llm_context.review_scope_builder import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
 
         ref = TestHelper.create_reference(
             id="behavior://domain/checkout",
@@ -1408,7 +1408,7 @@ class TestReviewScopePreservation:
 
     def test_discovery_facts_with_clean_values_retained(self):
         """Discovery facts with non-metadata keys and values are fully retained."""
-        from llm_context.review_scope_builder import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
 
         facts = {
             "max_depth": 7,
@@ -1437,7 +1437,7 @@ class TestReviewScopeEquivalence:
 
     def test_deterministic_pruned_output(self):
         """Pruning the same context twice produces identical results."""
-        from llm_context.review_scope_builder import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
 
         step = TestHelper.create_execution_step(
             symbol_name="CheckoutService",
@@ -1466,7 +1466,7 @@ class TestReviewScopeEquivalence:
     def test_discovery_facts_equivalent_after_pruning(self):
         """Discovery facts dict is identical between original and pruned context
         (after removing metadata keys)."""
-        from llm_context.review_scope_builder import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
 
         facts = {
             "max_depth": 4,
@@ -1485,7 +1485,7 @@ class TestReviewScopeEquivalence:
     def test_execution_ordering_equivalent_after_pruning(self):
         """After pruning noise steps, the relative order of surviving steps
         matches their order in the original execution chain."""
-        from llm_context.review_scope_builder import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
 
         steps = [
             TestHelper.create_execution_step(
@@ -1546,7 +1546,7 @@ class TestReviewScopeEquivalence:
     def test_shared_references_across_discoveries_canonicalized(self):
         """When two discoveries share an identical Reference, the same object
         is stored (evidence deduplication). Both discoveries still receive the ref."""
-        from llm_context.review_scope_builder import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
 
         shared_ref = TestHelper.create_reference(
             id="behavior://domain/checkout",
@@ -1660,7 +1660,7 @@ class TestReviewScopeMetrics:
 
     def _compile_without_pruning(self, rc: ReviewContext) -> LLMContext:
         """Compile rc bypassing the review-scope pruning phase."""
-        import llm_context.compiler as compiler_mod
+        import engine.llm_context.compiler as compiler_mod
         original_brs = compiler_mod.build_review_scope
         compiler_mod.build_review_scope = lambda ctx, *args, **kwargs: ctx
         try:
@@ -1729,7 +1729,7 @@ class TestWave2CompilerOptimizations:
 
     def test_test_files_removed_from_change_context(self):
         """Test files in ChangeContext are pruned unless reached by execution."""
-        from llm_context.review_scope_builder import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
 
         change_prod = TestHelper.create_change(
             symbol_id="sym://src/app",
@@ -1806,7 +1806,7 @@ class TestWave2CompilerOptimizations:
 
     def test_supporting_nodes_pruned_in_discovery_references(self):
         """Supporting nodes containing metadata IDs are pruned from discovery references."""
-        from llm_context.review_scope_builder import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
 
         ref = Reference(
             id="behavior://domain/checkout",
@@ -1827,7 +1827,7 @@ class TestWave2CompilerOptimizations:
 
     def test_compiler_settings_limits_truncation(self):
         """Test that compiler limits like MAX_DISCOVERY_EVIDENCE, MAX_REFERENCES_PER_NODE, etc. are respected."""
-        from runtime.settings import CompilerSettings
+        from core.config import CompilerSettings
         custom_settings = CompilerSettings(
             LLM_CONTEXT_MAX_DISCOVERY_EVIDENCE=2,
             LLM_CONTEXT_MAX_REFERENCES_PER_NODE=1,
@@ -1872,7 +1872,7 @@ class TestWave2CompilerOptimizations:
 
         compiler = LLMContextCompiler(settings=custom_settings)
         # We can also test prune_review_context directly to verify discovery and node references truncation
-        from llm_context.review_scope_builder import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
         pruned_rc = prune_review_context(rc, settings=custom_settings)
 
         # Verify discovery evidence limit: max evidence = 2

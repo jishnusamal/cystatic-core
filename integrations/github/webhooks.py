@@ -7,8 +7,8 @@ import hmac
 from typing import Any
 
 from integrations.base import EventProvider
-from runtime.models import AnalysisRequest, AnalysisTrigger, RepositoryReference, PullRequestReference
-from errors.webhook import WebhookVerificationError
+from models.analysis import AnalysisRequest, AnalysisTrigger, RepositoryReference, PullRequestReference
+from core.errors import WebhookVerificationError
 
 
 class GitHubWebhookProvider(EventProvider):

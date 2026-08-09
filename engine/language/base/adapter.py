@@ -5,8 +5,8 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from engine.repository.model import RepositoryModel, RepositoryGraph, FileContribution, SymbolKind
-from language_adapters.base.graph_patcher import GraphPatcher
-from language_adapters.base.semantic_compiler import SemanticCompiler
+from engine.language.base.graph_patcher import GraphPatcher
+from engine.language.base.semantic_compiler import SemanticCompiler
 
 
 class BaseLanguageAdapter(ABC):
@@ -125,7 +125,7 @@ class BaseLanguageAdapter(ABC):
         import time
         import os
         from core.logging import pipeline_logger
-        from runtime.instrumentation.timer import timer
+        from core.logging import timer
 
         start_compile = time.perf_counter()
         pipeline_logger.log_pipeline(

@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from language_adapters.base.parser import BaseParser
+from engine.language.base.parser import BaseParser
 
 
 class JavaParser(BaseParser):

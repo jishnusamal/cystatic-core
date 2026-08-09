@@ -11,7 +11,7 @@ import pytest
 from core.runtime.run_id import generate_run_id
 from core.runtime.run_context import RunContext
 from core.runtime.log_manager import LogManager
-from runtime.instrumentation.logging import pipeline_logger
+from core.logging import pipeline_logger
 
 
 def test_run_id_generation():

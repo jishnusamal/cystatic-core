@@ -5,8 +5,8 @@ import tempfile
 import time
 import os
 import pytest
-from language_adapters.python.adapter import PythonLanguageAdapter
-from language_adapters.model import (
+from engine.language.python.adapter import PythonLanguageAdapter
+from engine.language.model import (
     SymbolKind,
     SymbolVisibility,
     RepositoryGraph,
@@ -340,9 +340,9 @@ def helper():
     @pytest.mark.asyncio
     async def test_pipeline_incremental_orchestration(self, base_source_files):
         """Test end-to-end pipeline run utilizing incremental compilation."""
-        from runtime.pipeline.pipeline import Pipeline
-        from runtime.storage.repository_store import MemoryRepositoryStore
-        from runtime.models import AnalysisRequest, RepositoryReference, PullRequestReference, DiffSnapshot, DiffFile
+        from engine.pipeline.pipeline import Pipeline
+        from engine.repository.indexing import MemoryRepositoryStore
+        from models.analysis import AnalysisRequest, RepositoryReference, PullRequestReference, DiffSnapshot, DiffFile
         from unittest.mock import AsyncMock, MagicMock
         
         # Setup mocks
@@ -391,7 +391,7 @@ def confirm_checkout():
         assert await store.exists("owner/repo", "base")
         
         # Verify repository compilation metrics in logs
-        from runtime.instrumentation.logging import pipeline_logger
+        from core.logging import pipeline_logger
         log_text = "\n".join(pipeline_logger.pipeline_logs)
         assert "Repository compilation" in log_text
         assert "Fetch base repository" in log_text

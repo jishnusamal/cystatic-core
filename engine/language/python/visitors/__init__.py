@@ -8,9 +8,9 @@ import ast
 import time
 from typing import Any
 
-from language_adapters.base.visitors import BaseVisitor
-from language_adapters.base.file_context import FileContext
-from language_adapters.base.instrumentation import get_instrumentation
+from engine.language.base.visitors import BaseVisitor
+from engine.language.base.file_context import FileContext
+from engine.language.base.instrumentation import get_instrumentation
 
 
 class PythonVisitor(BaseVisitor[ast.AST]):

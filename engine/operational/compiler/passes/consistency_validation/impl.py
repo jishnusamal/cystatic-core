@@ -15,7 +15,7 @@ This is compiler validation, not business validation.
 
 from typing import cast
 
-from operational.compiler.passes.base import (
+from engine.operational.compiler.passes.base import (
     OperationalCompilerPass,
     OperationalPassContext,
 )

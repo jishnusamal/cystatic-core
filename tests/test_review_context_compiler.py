@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from language_adapters.model import (
+from engine.language.model import (
     RepositoryModel,
     Symbol,
     SymbolKind,
@@ -22,14 +22,14 @@ from language_adapters.model import (
     EntryPoint as RepoEntryPoint,
     EntryPointKind,
 )
-from change.model import (
+from engine.change.model import (
     ChangeModel,
     ModifiedSymbol,
     ImportChange,
     EndpointChange,
 )
-from change.model.changes import FunctionBodyChange
-from behavior.model import (
+from engine.change.model.changes import FunctionBodyChange
+from engine.behavior.model import (
     Behavior,
     BehaviorKind,
     BehaviorModel,
@@ -42,16 +42,16 @@ from behavior.model import (
     TerminalPoint,
     SharedExecution,
 )
-from operational.model import OperationalChangeModel, EngineeringDiscoveryModel
-from discovery.model import (
+from engine.operational.model import OperationalChangeModel, EngineeringDiscoveryModel
+from engine.discovery.model import (
     DiscoveryModel,
     Discovery as IRDiscovery,
     DiscoveryKind as IRDiscoveryKind,
     DiscoveryFact,
     DiscoveryReference,
 )
-from review_context.compiler import ReviewContextCompiler
-from review_context.model import (
+from engine.review_context.compiler import ReviewContextCompiler
+from engine.review_context.model import (
     ReviewContext,
     ChangeContext,
     ChangeSummary,

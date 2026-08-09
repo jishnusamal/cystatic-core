@@ -8,9 +8,9 @@ import ast
 import time
 from typing import Any
 
-from language_adapters.base.file_context import FileContext
-from language_adapters.base.passes import BaseIndexPass
-from language_adapters.base.instrumentation import get_instrumentation
+from engine.language.base.file_context import FileContext
+from engine.language.base.passes import BaseIndexPass
+from engine.language.base.instrumentation import get_instrumentation
 from engine.repository.model.repository_index import CallEntry
 
 

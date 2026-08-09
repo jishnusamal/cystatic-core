@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from runtime.errors import LanguageDetectionFailed, LanguageNotSupported
-from runtime.language.detection import LanguageAdapterFactory
-from runtime.pipeline.context import PipelineContext
-from runtime.renderers.json_renderer import JSONRenderer
-from runtime.renderers.github_renderer import GitHubRenderer
-from runtime.storage.repository_store import MemoryRepositoryStore
+from core.errors import LanguageDetectionFailed, LanguageNotSupported
+from engine.language.detection import LanguageAdapterFactory
+from engine.pipeline.pipeline import PipelineContext
+from integrations.github.renderers.json_renderer import JSONRenderer
+from integrations.github.renderers.github_renderer import GitHubRenderer
+from engine.repository.indexing import MemoryRepositoryStore
 
 
 class TestLanguageDetection:
@@ -133,8 +133,8 @@ class TestMemoryRepositoryStore:
     @pytest.mark.asyncio
     async def test_save_and_load(self):
         """Test saving and loading a model."""
-        from language_adapters.model import RepositoryModel
-        from language_adapters.model.graphs import CallGraph, ReferenceGraph, TypeRelationshipGraph
+        from engine.language.model import RepositoryModel
+        from engine.language.model.graphs import CallGraph, ReferenceGraph, TypeRelationshipGraph
         
         store = MemoryRepositoryStore()
         model = RepositoryModel(
@@ -163,8 +163,8 @@ class TestMemoryRepositoryStore:
     @pytest.mark.asyncio
     async def test_exists(self):
         """Test checking if a model exists."""
-        from language_adapters.model import RepositoryModel
-        from language_adapters.model.graphs import CallGraph, ReferenceGraph, TypeRelationshipGraph
+        from engine.language.model import RepositoryModel
+        from engine.language.model.graphs import CallGraph, ReferenceGraph, TypeRelationshipGraph
         
         store = MemoryRepositoryStore()
         model = RepositoryModel(
@@ -182,8 +182,8 @@ class TestMemoryRepositoryStore:
     @pytest.mark.asyncio
     async def test_invalidate(self):
         """Test invalidating a cached model."""
-        from language_adapters.model import RepositoryModel
-        from language_adapters.model.graphs import CallGraph, ReferenceGraph, TypeRelationshipGraph
+        from engine.language.model import RepositoryModel
+        from engine.language.model.graphs import CallGraph, ReferenceGraph, TypeRelationshipGraph
         
         store = MemoryRepositoryStore()
         model = RepositoryModel(
@@ -202,8 +202,8 @@ class TestMemoryRepositoryStore:
     @pytest.mark.asyncio
     async def test_invalidate_all(self):
         """Test invalidating all refs for a repository."""
-        from language_adapters.model import RepositoryModel
-        from language_adapters.model.graphs import CallGraph, ReferenceGraph, TypeRelationshipGraph
+        from engine.language.model import RepositoryModel
+        from engine.language.model.graphs import CallGraph, ReferenceGraph, TypeRelationshipGraph
         
         store = MemoryRepositoryStore()
         model = RepositoryModel(
@@ -230,11 +230,11 @@ class TestJSONRenderer:
     
     def test_render_empty_models(self):
         """Test rendering with minimal models."""
-        from language_adapters.model import RepositoryModel
-        from language_adapters.model.graphs import CallGraph, ReferenceGraph, TypeRelationshipGraph
-        from change.model import ChangeModel
-        from behavior.model import BehaviorModel
-        from operational.model import OperationalChangeModel
+        from engine.language.model import RepositoryModel
+        from engine.language.model.graphs import CallGraph, ReferenceGraph, TypeRelationshipGraph
+        from engine.change.model import ChangeModel
+        from engine.behavior.model import BehaviorModel
+        from engine.operational.model import OperationalChangeModel
         
         repository = RepositoryModel(
             symbols=frozenset(),
@@ -278,13 +278,13 @@ class TestGitHubRenderer:
     
     def test_render_simple(self):
         """Test rendering a simple summary."""
-        from language_adapters.model import RepositoryModel, Symbol, SymbolKind
-        from change.model import ChangeModel, ModifiedSymbol
-        from behavior.model import BehaviorModel
-        from operational.model import OperationalChangeModel
+        from engine.language.model import RepositoryModel, Symbol, SymbolKind
+        from engine.change.model import ChangeModel, ModifiedSymbol
+        from engine.behavior.model import BehaviorModel
+        from engine.operational.model import OperationalChangeModel
         
-        from language_adapters.model import RepositoryModel
-        from language_adapters.model.graphs import CallGraph, ReferenceGraph, TypeRelationshipGraph
+        from engine.language.model import RepositoryModel
+        from engine.language.model.graphs import CallGraph, ReferenceGraph, TypeRelationshipGraph
         
         repository = RepositoryModel(
             symbols=frozenset(),
@@ -340,7 +340,7 @@ class TestPipelineTokenCount:
     
     def test_calculate_llm_context_tokens(self):
         """Test calculating token counts for LLMContext elements."""
-        from runtime.pipeline.pipeline import Pipeline
+        from engine.pipeline.pipeline import Pipeline
         pipeline = Pipeline()
         
         test_context = {
@@ -365,7 +365,7 @@ class TestPipelineTokenCount:
     
     def test_calculate_llm_context_tokens_empty(self):
         """Test calculating token counts for empty context."""
-        from runtime.pipeline.pipeline import Pipeline
+        from engine.pipeline.pipeline import Pipeline
         pipeline = Pipeline()
         
         assert pipeline.calculate_llm_context_tokens({}) is None

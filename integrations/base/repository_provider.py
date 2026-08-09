@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-from runtime.models import RepositoryReference, RepositorySnapshot, DiffSnapshot
+from models.core import RepositoryReference, RepositorySnapshot, DiffSnapshot
 
 
 class RepositoryProvider(ABC):

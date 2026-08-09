@@ -20,7 +20,7 @@ import sys
 import time
 from typing import Any
 
-from runtime.instrumentation.timer import timer
+from core.logging import timer
 from core.logging import pipeline_logger
 from engine.repository.model import (
     AsyncEntryPoint,

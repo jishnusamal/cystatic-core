@@ -9,7 +9,7 @@ No inference. No traversal. No graph analysis.
 Just deterministic composition.
 """
 
-from operational.compiler.passes.base import (
+from engine.operational.compiler.passes.base import (
     OperationalCompilerPass,
     OperationalPassContext,
 )

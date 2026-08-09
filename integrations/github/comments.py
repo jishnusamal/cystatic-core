@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from integrations.base import OutputProvider
-from operational.model import OperationalChangeModel
-from runtime.renderers.github_renderer import GitHubRenderer
+from engine.operational.model import OperationalChangeModel
+from integrations.github.renderers.github_renderer import GitHubRenderer
 
 
 class GitHubCommentProvider(OutputProvider):

@@ -14,13 +14,13 @@ A production version would use a proper Java parser like JavaParser.
 from typing import Any
 
 from engine.language.base import BaseLanguageAdapter
-from language_adapters.base.file_context import FileContext
-from language_adapters.base.index_compiler import IndexCompiler
-from language_adapters.base.semantic_compiler import SemanticCompiler
-from language_adapters.java.parser import JavaParser
+from engine.language.base.file_context import FileContext
+from engine.language.base.index_compiler import IndexCompiler
+from engine.language.base.semantic_compiler import SemanticCompiler
+from engine.language.java.parser import JavaParser
 from engine.repository.model import RepositoryModel
 from engine.repository.model.repository_index import RepositoryIndex
-from language_adapters.java.passes import (
+from engine.language.java.passes import (
     JavaSymbolIndexPass,
     JavaImportIndexPass,
     JavaCallIndexPass,

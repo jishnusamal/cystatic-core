@@ -6,9 +6,9 @@ import pytest
 from datetime import datetime
 from unittest.mock import MagicMock
 
-from runtime.pipeline.pipeline import Pipeline
-from runtime.models import AnalysisRequest, RepositoryReference, PullRequestReference, AnalysisTrigger
-from runtime.storage.repository_store import MemoryRepositoryStore
+from engine.pipeline.pipeline import Pipeline
+from models.analysis import AnalysisRequest, RepositoryReference, PullRequestReference, AnalysisTrigger
+from engine.repository.indexing import MemoryRepositoryStore
 from integrations.base import RepositoryProvider
 
 

@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from language_adapters.model import (
+from engine.language.model import (
     RepositoryModel,
     Symbol,
     SymbolKind,
@@ -22,13 +22,13 @@ from language_adapters.model import (
     Evidence,
     FileLocation,
 )
-from change.model import (
+from engine.change.model import (
     ChangeModel,
     ModifiedSymbol,
     ImportChange,
     EndpointChange,
 )
-from behavior.model import (
+from engine.behavior.model import (
     Behavior,
     BehaviorKind,
     BehaviorModel,
@@ -41,8 +41,8 @@ from behavior.model import (
     TerminalPoint,
     SharedExecution,
 )
-from operational.model import OperationalChangeModel, EngineeringDiscoveryModel
-from operational.compiler import EngineeringDiscoveryCompiler
+from engine.operational.model import OperationalChangeModel, EngineeringDiscoveryModel
+from engine.operational.compiler import EngineeringDiscoveryCompiler
 
 
 # ---------------------------------------------------------------------------
@@ -385,7 +385,7 @@ class TestEngineeringDiscoveryModel:
 
     def test_backward_compatibility_alias(self):
         """Test that EngineeringDiscoveryArtifact is an alias."""
-        from operational.model import EngineeringDiscoveryArtifact
+        from engine.operational.model import EngineeringDiscoveryArtifact
         assert EngineeringDiscoveryArtifact is EngineeringDiscoveryModel
 
 

@@ -6,8 +6,8 @@ Emits only raw entrypoint facts. No handler resolution, no symbol matching.
 import ast
 from typing import Any
 
-from language_adapters.base.file_context import FileContext
-from language_adapters.base.passes import BaseIndexPass
+from engine.language.base.file_context import FileContext
+from engine.language.base.passes import BaseIndexPass
 from engine.repository.model.repository_index import EntrypointEntry
 
 # HTTP methods that indicate a REST endpoint decorator

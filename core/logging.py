@@ -371,4 +371,75 @@ class PipelineLogger:
 pipeline_logger = PipelineLogger()
 
 
-__all__ = ["LogManager", "PipelineLogger", "pipeline_logger"]
+# ─── Timer ───────────────────────────────────────────────────────────────────
+
+
+import time
+from contextlib import contextmanager
+from typing import Generator
+
+
+class Timer:
+    """Thread-local performance timer with nested timing support."""
+
+    def __init__(self) -> None:
+        self._timings: list[dict[str, Any]] = []
+        self._stack: list[tuple[str, float, dict[str, Any]]] = []
+        self._depth: int = 0
+
+    def start(self, name: str, metadata: Optional[dict[str, Any]] = None) -> None:
+        self._stack.append((name, time.perf_counter(), metadata or {}))
+
+    def end(self, name: str) -> Optional[float]:
+        if not self._stack:
+            return None
+        active_name, start_time, metadata = self._stack.pop()
+        if active_name != name:
+            pipeline_logger.log_pipeline(
+                f"[timer] WARNING: Timer mismatch - expected {active_name}, got {name}",
+                to_terminal=False,
+            )
+        elapsed = time.perf_counter() - start_time
+        elapsed_str = f"{elapsed * 1000:.2f}ms" if elapsed < 1.0 else f"{elapsed:.2f}s"
+        indent = "  " * self._depth
+        log_msg = f"[timer] {indent}{name:<50} {elapsed_str}"
+        if metadata:
+            meta_parts = [f"{k}={v}" for k, v in metadata.items()]
+            log_msg += f" ({', '.join(meta_parts)})"
+        pipeline_logger.log_pipeline(log_msg, to_terminal=False)
+        record = {"name": name, "elapsed": elapsed, "metadata": dict(metadata)}
+        self._timings.append(record)
+        pipeline_logger.record_timing(record)
+        return elapsed
+
+    @contextmanager
+    def timed(self, name: str, metadata: Optional[dict[str, Any]] = None) -> Generator[None, None, None]:
+        self.start(name, metadata)
+        self._depth += 1
+        try:
+            yield
+        finally:
+            self._depth -= 1
+            self.end(name)
+
+    def nest(self) -> None:
+        self._depth += 1
+
+    def unnest(self) -> None:
+        if self._depth > 0:
+            self._depth -= 1
+
+    def get_timings(self) -> list[dict[str, Any]]:
+        return list(self._timings)
+
+    def reset(self) -> None:
+        self._timings.clear()
+        self._stack.clear()
+        self._depth = 0
+
+
+# Module-level timer instance (mirrors the old runtime.instrumentation.timer.timer singleton)
+timer = Timer()
+
+
+__all__ = ["LogManager", "PipelineLogger", "pipeline_logger", "Timer", "timer"]

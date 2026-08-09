@@ -3,7 +3,7 @@
 import pytest
 from dataclasses import dataclass
 
-from language_adapters.model import (
+from engine.language.model import (
     Symbol,
     SymbolKind,
     SymbolVisibility,
@@ -11,7 +11,7 @@ from language_adapters.model import (
     CallGraph,
     ReferenceGraph,
 )
-from change.model import (
+from engine.change.model import (
     ChangeModel,
     ModifiedSymbol,
     ImportChange,
@@ -24,8 +24,8 @@ from change.model import (
     InterfaceChange,
     EndpointAnnotationChange,
 )
-from change.model.repository_comparison import RepositoryComparison
-from change.compiler import ChangeCompiler
+from engine.change.model.repository_comparison import RepositoryComparison
+from engine.change.compiler import ChangeCompiler
 
 
 @dataclass(frozen=True)
