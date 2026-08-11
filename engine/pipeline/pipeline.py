@@ -1369,6 +1369,7 @@ class Pipeline:
         repository: str = "",
         pr_number: str = "",
         language: str = "",
+        llm_context_compressed: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Generate engineering briefing from LLMContext via LLM.
@@ -1382,6 +1383,7 @@ class Pipeline:
             repository: Repository name
             pr_number: PR number
             language: Programming language
+            llm_context_compressed: Pre-compressed serialized LLM context dictionary
             
         Returns:
             Dictionary with generated briefing, metadata, raw LLM output
@@ -1397,8 +1399,12 @@ class Pipeline:
             
             settings = get_settings()
             
-            # Serialize the compressed LLMContext
-            llm_context_serialized = self.serialize_llm_context(context)
+            # Serialize the LLMContext
+            if llm_context_compressed is not None:
+                llm_context_serialized = llm_context_compressed
+            else:
+                llm_context_serialized = self.serialize_llm_context(context)
+                
             llm_context_json = json.dumps(llm_context_serialized, indent=2)
             
             # Build the Presentation Compiler prompt

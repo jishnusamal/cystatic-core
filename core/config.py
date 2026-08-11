@@ -44,11 +44,13 @@ class Settings(BaseSettings):
     # API Keys
     # ------------------------------------------------------------------
 
-    AI_API_KEY: str
-    AI_API_BASE_URL: str = "https://api.groq.com/openai/v1"
-    AI_MODEL: str = "openai/gpt-oss-120b"
+    AI_API_KEY: str | None = None
+    # AI_API_BASE_URL: str = "https://api.groq.com/openai/v1"
+    # AI_MODEL: str = "openai/gpt-oss-120b"
+    AI_API_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    AI_MODEL: str = "gemini-3.6-flash"
 
-    CYSTATIC_KEYS: dict[str, str] = Field(default_factory=dict)
+    # CYSTATIC_KEYS: dict[str, str] = Field(default_factory=dict)
 
     # ------------------------------------------------------------------
     # Database

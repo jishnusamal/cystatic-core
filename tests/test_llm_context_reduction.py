@@ -845,3 +845,96 @@ class TestLLMContextTokenReduction:
         print("==================================")
         
         assert percent > 50.0
+
+    def test_generate_llm_comment_with_compressed_context(self):
+        """Test that generate_llm_comment accepts and uses llm_context_compressed."""
+        change = TestHelper.create_change(
+            symbol_id="sym://app/fn", symbol_name="fn", symbol_kind="function",
+        )
+        file_change = TestHelper.create_file_change(path="app.py", changes=(change,))
+        rc = TestHelper.create_review_context(
+            change=TestHelper.create_change_context(files=(file_change,)),
+        )
+        
+        from engine.pipeline.pipeline import PipelineContext, Pipeline
+        pipeline = Pipeline()
+        context = PipelineContext(run_context=None, repository="test/repo")
+        context.review_context = rc
+        
+        compiler = LLMContextCompiler()
+        context.llm_context = compiler.compile(rc)
+        
+        # Create a mock compressed context
+        mock_compressed = {
+            "st": ["", "custom_compressed_string"],
+            "sym": [[0, 1, 2]]
+        }
+        
+        # Mock the OpenAI client so it doesn't make a real network call
+        class MockChoices:
+            def __init__(self):
+                class MockMessage:
+                    content = "Mock briefing content"
+                self.message = MockMessage()
+
+        class MockResponse:
+            def __init__(self):
+                self.choices = [MockChoices()]
+                self.model = "mock-model"
+
+        class MockChatCompletions:
+            def create(self, *args, **kwargs):
+                messages = kwargs.get("messages", [])
+                assert len(messages) == 2
+                user_msg = messages[1]["content"]
+                assert "custom_compressed_string" in user_msg
+                return MockResponse()
+
+        class MockChat:
+            def __init__(self):
+                self.completions = MockChatCompletions()
+
+        class MockOpenAI:
+            def __init__(self, *args, **kwargs):
+                self.chat = MockChat()
+
+            def __enter__(self):
+                return self
+            
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                pass
+                
+        import sys
+        import core.config
+        
+        class MockSettings:
+            AI_API_KEY = "mock-key"
+            AI_API_BASE_URL = "http://mock-url"
+            AI_MODEL = "mock-model"
+            
+        orig_get_settings = core.config.get_settings
+        core.config.get_settings = lambda: MockSettings()
+        
+        orig_openai = sys.modules.get('openai')
+        
+        class FakeOpenAIModule:
+            OpenAI = MockOpenAI
+            
+        sys.modules['openai'] = FakeOpenAIModule
+
+        try:
+            res = pipeline.generate_llm_comment(
+                context,
+                repository="test/repo",
+                pr_number="123",
+                language="python",
+                llm_context_compressed=mock_compressed,
+            )
+            assert res["generated"] is True
+            assert res["comment"] == "Mock briefing content"
+        finally:
+            core.config.get_settings = orig_get_settings
+            if orig_openai is not None:
+                sys.modules['openai'] = orig_openai
+            else:
+                del sys.modules['openai']
