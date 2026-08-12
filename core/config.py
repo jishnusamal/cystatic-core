@@ -37,6 +37,7 @@ class Settings(BaseSettings):
 
     APP_ENV: str = "development"
     APP_VERSION: str = "0.1.0"
+    MEMORY_PROFILING: bool = False
 
     ADMIN_EMAIL: str
 

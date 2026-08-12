@@ -130,6 +130,9 @@ class Pipeline:
         pipeline_logger.start_run(run_context)
         pipeline_start_time = time.perf_counter()
         
+        from core.profile import get_current_profiler
+        profiler = get_current_profiler()
+        
         context = PipelineContext(
             run_context=run_context,
             repository=request.repository.full_name,
@@ -164,6 +167,11 @@ class Pipeline:
                 print(f"[pipeline] Step 1: Repository model compilation for {request.repository.full_name}")
                 await self._compile_both_repository_models(context, request)
                 print(f"[pipeline] Step 1 done: language={context.language}, base_model={'set' if context.base_repository_model else 'None'}, head_model={'set' if context.head_repository_model else 'None'}")
+                
+                from core.profile import get_current_profiler
+                profiler = get_current_profiler()
+                if profiler:
+                    profiler.log_memory("After graph construction")
             
             # Step 2: Fetch diff if not provided
             if context.diff_data is None and request.has_diff:
@@ -223,6 +231,9 @@ class Pipeline:
                 timer.print_progress()
             discovery_ir_time = time.perf_counter() - discovery_ir_start
             
+            if profiler:
+                profiler.log_memory("After system-model construction")
+            
             # Step 8: ReviewContext Compilation
             review_start = time.perf_counter()
             with timer.timed("ReviewContext Compilation"):
@@ -240,6 +251,9 @@ class Pipeline:
                 print(f"[pipeline] Step 9 done")
                 timer.print_progress()
             llm_time = time.perf_counter() - llm_start
+            
+            if profiler:
+                profiler.log_memory("After context generation")
             
             # Print timings to terminal in aligned format
             def format_time(seconds: float) -> str:
@@ -412,6 +426,10 @@ class Pipeline:
                 }
                 print(f"[pipeline] Compiling base RepositoryGraph...")
                 try:
+                    from core.profile import get_current_profiler
+                    profiler = get_current_profiler()
+                    if profiler:
+                        profiler.log_memory("After source loading")
                     base_graph = adapter.compile_graph(repository_input)
                 except Exception as exc:
                     raise RepositoryCompilationFailed(
@@ -482,6 +500,12 @@ class Pipeline:
                     changed_files_dict = dict(results)
             
             changed_fetch_time = time.perf_counter() - changed_fetch_start
+            
+            from core.profile import get_current_profiler
+            profiler = get_current_profiler()
+            if profiler:
+                profiler.log_memory("After GitHub/API data retrieval")
+                profiler.log_memory("After repository checkout/download")
             
             # Clone base_graph using pickle to avoid mutating cache
             pipeline_logger.log_pipeline("[pipeline] Step 1.2: Cloning base RepositoryGraph for head compilation...", to_terminal=True)

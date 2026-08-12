@@ -182,6 +182,11 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
         total_parse_time = sum(parse_times)
         avg_parse_time = total_parse_time / len(parse_times) if parse_times else 0
         
+        from core.profile import get_current_profiler
+        profiler = get_current_profiler()
+        if profiler:
+            profiler.log_memory("After parsing")
+        
         from core.logging import pipeline_logger
         log = lambda msg: pipeline_logger.log_pipeline(msg, to_terminal=False)
         
@@ -197,6 +202,11 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
         # Use composite visitor for single AST traversal per file
         with timer.timed("Visitor", metadata={"files": len(file_contexts)}):
             index = self._index_compiler.compile_with_visitor(file_contexts, language, self._visitor)
+        
+        if profiler:
+            profiler.log_memory("After symbol extraction")
+            profiler.log_memory("After endpoint extraction")
+            profiler.log_memory("After dependency/relationship extraction")
         
         # Log indexing statistics
         log(f"[adapter] Symbols Indexed: {len(index.all_symbols)}")

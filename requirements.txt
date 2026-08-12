@@ -150,6 +150,8 @@ pluggy==1.6.0
     # via
     #   pytest
     #   pytest-cov
+psutil==7.2.2
+    # via factor-api
 pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
     # via
     #   cffi

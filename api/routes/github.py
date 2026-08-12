@@ -186,63 +186,15 @@ async def github_webhook(
 async def analyze_repository(
     analysis_request: dict[str, Any],
 ) -> JSONResponse:
-    """
-    Public API endpoint to analyze a repository.
+    import uuid
+    from core.profile import MemoryProfiler
     
-    Accepts repository references, PR URLs, or raw diffs and returns analysis
-    results containing review_context and llm_context.
+    metadata_dict = analysis_request.get("metadata") or {}
+    analysis_id = (metadata_dict.get("delivery_id") if isinstance(metadata_dict, dict) else None) or str(uuid.uuid4())[:8]
     
-    Input:
-        Request body (JSON) with the following fields (Option 1 - PR URL):
-            - pr_url (str, required): GitHub PR URL (e.g., "https://github.com/owner/repo/pull/123")
-        
-        OR (Option 2 - Structured data):
-            - repository (str, required): Repository in format "owner/repo"
-            - pr_number (int, optional): Pull request number to analyze
-            - base_sha (str, optional): Base commit SHA (default: "main")
-            - head_sha (str, optional): Head commit SHA (default: "main")
-            - diff_data (dict, optional): Raw diff data with structure:
-                - files (list): List of diff files, each containing:
-                    - file_path (str): Path to the file
-                    - added_lines (list): Lines added in the diff
-                    - removed_lines (list): Lines removed in the diff
-                    - hunks (list, optional): Diff hunks with detailed changes
+    profiler = MemoryProfiler(analysis_id=analysis_id)
+    profiler.log_memory("Start of request")
     
-    Returns:
-        JSONResponse: Analysis results containing:
-            - review_context (dict, optional): Review and engineering context
-            - llm_context (dict, optional): Compact serialized LLM context
-    
-    Example Request (PR URL):
-        {
-            "pr_url": "https://github.com/huggingface/OpenEnv/pull/611"
-        }
-    
-    Example Request (Structured):
-        {
-            "repository": "owner/repo-name",
-            "pr_number": 123,
-            "base_sha": "abc123",
-            "head_sha": "def456"
-        }
-    
-    Example Response:
-        {
-            "review_context": {...},
-            "llm_context": {...}
-        }
-    
-    Status Codes:
-        200: Analysis completed successfully
-        400: Invalid request format or missing required fields
-        500: Analysis failed due to internal error
-    
-    Notes:
-        - Either pr_url, (pr_number + repository), or diff_data can be provided
-        - If pr_url is provided, the system will automatically fetch PR details from GitHub
-        - If diff_data is provided, it will be analyzed directly without fetching from GitHub
-        - Analysis includes change detection, behavior analysis, and operational impact assessment
-    """
     pipeline = get_pipeline_instance()
     registry = get_registry_instance()
     
@@ -269,6 +221,8 @@ async def analyze_repository(
             pr_number = pr_data["pr_number"]
             base_sha = pr_data["base_sha"]
             head_sha = pr_data["head_sha"]
+            
+            profiler.log_memory("After PR URL parsing")
         else:
             # Use structured data
             repository = analysis_request.get("repository")
@@ -333,6 +287,8 @@ async def analyze_repository(
             trigger=AnalysisTrigger.MANUAL,
         )
         
+        profiler.log_memory("After request validation")
+        
         # Run pipeline
         print(f"[routes] Starting pipeline run for {repo_ref.full_name}")
         context = await pipeline.run(analysis_request_obj)
@@ -360,12 +316,18 @@ async def analyze_repository(
             # Generate LLM briefing using context
             try:
                 print("[routes] Generating LLM briefing")
+                profiler.log_memory("Before LLM request")
+                
                 llm_result = pipeline.generate_llm_comment(
                     context,
                     repository=repository,
                     pr_number=str(pr_number) if pr_number else "",
                     language=context.language or "unknown",
                 )
+                
+                profiler.log_memory("After LLM request")
+                profiler.log_tracemalloc_difference("After LLM request")
+                
                 response_content["llm_output"] = llm_result
             except Exception as exc:
                 print(f"[routes] LLM briefing generation failed: {exc}")
@@ -380,6 +342,10 @@ async def analyze_repository(
                     "llm_raw_output": None,
                 }
         
+        profiler.log_memory("After result construction")
+        profiler.log_memory("End of request")
+        profiler.log_tracemalloc_difference("End of request")
+        
         return JSONResponse(
             content=response_content,
             status_code=200,
@@ -391,6 +357,8 @@ async def analyze_repository(
     except Exception as exc:
         print(f"[routes] Unexpected error: {exc}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc
+    finally:
+        profiler.stop()
 
 
 def _get_github_token() -> str | None:
