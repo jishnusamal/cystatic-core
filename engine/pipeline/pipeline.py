@@ -194,6 +194,8 @@ class Pipeline:
                 print(f"[pipeline] Step 3 done")
                 timer.print_progress()
             change_time = time.perf_counter() - change_start
+            if profiler:
+                profiler.log_memory("After Change Compiler")
             
             # Step 4: Behavior Compilation
             behavior_start = time.perf_counter()
@@ -203,6 +205,8 @@ class Pipeline:
                 print(f"[pipeline] Step 4 done")
                 timer.print_progress()
             behavior_time = time.perf_counter() - behavior_start
+            if profiler:
+                profiler.log_memory("After Behavior Compiler")
             
             # Step 5: Operational Compilation
             operational_start = time.perf_counter()
@@ -212,6 +216,8 @@ class Pipeline:
                 print(f"[pipeline] Step 5 done")
                 timer.print_progress()
             operational_time = time.perf_counter() - operational_start
+            if profiler:
+                profiler.log_memory("After Operational Compiler")
             
             # Step 6: Engineering Discovery Compilation
             discovery_start = time.perf_counter()
@@ -221,6 +227,8 @@ class Pipeline:
                 print(f"[pipeline] Step 6 done")
                 timer.print_progress()
             discovery_time = time.perf_counter() - discovery_start
+            if profiler:
+                profiler.log_memory("After Engineering Discovery Compiler")
             
             # Step 7: Discovery IR Compilation
             discovery_ir_start = time.perf_counter()
@@ -230,6 +238,8 @@ class Pipeline:
                 print(f"[pipeline] Step 7 done")
                 timer.print_progress()
             discovery_ir_time = time.perf_counter() - discovery_ir_start
+            if profiler:
+                profiler.log_memory("After Discovery IR Compiler")
             
             if profiler:
                 profiler.log_memory("After system-model construction")
@@ -242,6 +252,8 @@ class Pipeline:
                 print(f"[pipeline] Step 8 done")
                 timer.print_progress()
             review_time = time.perf_counter() - review_start
+            if profiler:
+                profiler.log_memory("After ReviewContext Compiler")
             
             # Step 9: LLMContext Compilation
             llm_start = time.perf_counter()
@@ -251,6 +263,8 @@ class Pipeline:
                 print(f"[pipeline] Step 9 done")
                 timer.print_progress()
             llm_time = time.perf_counter() - llm_start
+            if profiler:
+                profiler.log_memory("After LLMContext Compiler")
             
             if profiler:
                 profiler.log_memory("After context generation")
@@ -388,6 +402,10 @@ class Pipeline:
                         base_graph = cached_obj
                         base_cached = True
                         print(f"[pipeline] Loaded base RepositoryGraph from cache")
+                        from core.profile import get_current_profiler
+                        profiler = get_current_profiler()
+                        if profiler:
+                            profiler.log_memory("After base graph load")
                 except Exception as exc:
                     print(f"[pipeline] Failed to load base from cache: {exc}")
             
@@ -429,8 +447,10 @@ class Pipeline:
                     from core.profile import get_current_profiler
                     profiler = get_current_profiler()
                     if profiler:
-                        profiler.log_memory("After source loading")
+                        profiler.log_memory("After base repository download")
                     base_graph = adapter.compile_graph(repository_input)
+                    if profiler:
+                        profiler.log_memory("After base graph compilation")
                 except Exception as exc:
                     raise RepositoryCompilationFailed(
                         f"Base repository compilation failed: {exc}",
@@ -458,6 +478,8 @@ class Pipeline:
             base_export_start = time.perf_counter()
             context.base_repository_model = base_graph.to_model()
             base_export_duration = time.perf_counter() - base_export_start
+            if profiler:
+                profiler.log_memory("After base RepositoryModel")
             
             base_files_compiled = 0 if base_cached else len(base_graph.files)
             timer.print_progress()
@@ -505,12 +527,22 @@ class Pipeline:
             profiler = get_current_profiler()
             if profiler:
                 profiler.log_memory("After GitHub/API data retrieval")
-                profiler.log_memory("After repository checkout/download")
+                profiler.log_memory("After head source load")
             
             # Clone base_graph using pickle to avoid mutating cache
             pipeline_logger.log_pipeline("[pipeline] Step 1.2: Cloning base RepositoryGraph for head compilation...", to_terminal=True)
             clone_start = time.perf_counter()
+            if profiler:
+                profiler.log_memory("Before graph clone")
+                profiler.start_sub_peak_tracking()
             patched_graph = pickle.loads(pickle.dumps(base_graph))
+            if profiler:
+                peak_during_clone = profiler.stop_sub_peak_tracking()
+                profiler.checkpoints["peak during graph clone"] = {
+                    "current_rss": profiler.process.memory_info().rss / (1024 * 1024),
+                    "peak_rss": peak_during_clone
+                }
+                profiler.log_memory("After graph clone")
             clone_duration = time.perf_counter() - clone_start
             pipeline_logger.log_pipeline(f"[pipeline] Step 1.2 done: Base graph cloned in {clone_duration:.2f}s", to_terminal=True)
             
@@ -535,6 +567,9 @@ class Pipeline:
                     f"Incremental compilation failed: {exc}",
                     details={"repository": request.repository.full_name, "language": language, "sha": head_sha},
                 ) from exc
+            
+            if profiler:
+                profiler.log_memory("After GraphPatcher")
                 
             changed_compile_time = metrics.get("compile_duration", time.perf_counter() - incremental_start)
             patch_duration = metrics.get("patch_duration", 0.0)
@@ -545,6 +580,8 @@ class Pipeline:
             with timer.timed("RepositoryGraph.to_model"):
                 context.head_repository_model = patched_graph.to_model()
             head_export_duration = time.perf_counter() - head_export_start
+            if profiler:
+                profiler.log_memory("After head RepositoryModel")
             pipeline_logger.log_pipeline(f"[pipeline] Step 1.4 done: Head RepositoryModel exported in {head_export_duration:.2f}s", to_terminal=True)
             
             timer.print_progress()

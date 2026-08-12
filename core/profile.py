@@ -2,7 +2,8 @@ import os
 import time
 import tracemalloc
 import psutil
-from typing import Optional
+import threading
+from typing import Optional, Dict, Any
 from contextvars import ContextVar
 from core.config import get_settings
 from core.logging import pipeline_logger
@@ -16,13 +17,24 @@ class MemoryProfiler:
         self.peak_rss = 0.0
         self.process = psutil.Process(os.getpid())
         self.tracemalloc_started = False
+        self.checkpoints: Dict[str, Dict[str, float]] = {}
         
+        self.tracking_sub_peak = False
+        self.sub_peak_rss = 0.0
+        
+        self._stop_event = threading.Event()
+        self._monitor_thread: Optional[threading.Thread] = None
+
         if self.enabled:
             # Initialize RSS values
             rss_mb = self.process.memory_info().rss / (1024 * 1024)
             self.base_rss = rss_mb
             self.prev_rss = rss_mb
             self.peak_rss = rss_mb
+            
+            # Start background monitor thread
+            self._monitor_thread = threading.Thread(target=self._monitor_rss, daemon=True)
+            self._monitor_thread.start()
             
             # Start tracemalloc
             try:
@@ -34,6 +46,26 @@ class MemoryProfiler:
             # Set this as the active profiler in context
             _current_profiler.set(self)
 
+    def _monitor_rss(self):
+        while not self._stop_event.is_set():
+            try:
+                rss_mb = self.process.memory_info().rss / (1024 * 1024)
+                if rss_mb > self.peak_rss:
+                    self.peak_rss = rss_mb
+                if self.tracking_sub_peak and rss_mb > self.sub_peak_rss:
+                    self.sub_peak_rss = rss_mb
+            except Exception:
+                pass
+            time.sleep(0.005) # sample every 5ms
+
+    def start_sub_peak_tracking(self):
+        self.sub_peak_rss = self.process.memory_info().rss / (1024 * 1024)
+        self.tracking_sub_peak = True
+
+    def stop_sub_peak_tracking(self) -> float:
+        self.tracking_sub_peak = False
+        return self.sub_peak_rss
+
     def log_memory(self, stage: str):
         if not self.enabled:
             return
@@ -44,6 +76,10 @@ class MemoryProfiler:
             self.peak_rss = rss_mb
             
         self.prev_rss = rss_mb
+        self.checkpoints[stage] = {
+            "current_rss": rss_mb,
+            "peak_rss": self.peak_rss
+        }
         
         # Log process RSS info
         pipeline_logger.log_pipeline(
@@ -94,6 +130,19 @@ class MemoryProfiler:
             pipeline_logger.log_pipeline(f"[TRACEMALLOC-TOP][analysis={self.analysis_id}] Error taking snapshot: {e}", to_terminal=True)
 
     def stop(self):
+        self._stop_event.set()
+        if self._monitor_thread:
+            self._monitor_thread.join(timeout=1.0)
+        
+        # Save checkpoints JSON to log directory if running under a run context
+        try:
+            from core.logging import pipeline_logger
+            ctx = pipeline_logger.current_context
+            if ctx and ctx.log_manager:
+                ctx.log_manager.write_json("memory_checkpoints", self.checkpoints)
+        except Exception:
+            pass
+
         if self.tracemalloc_started:
             try:
                 tracemalloc.stop()
