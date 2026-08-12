@@ -370,20 +370,6 @@ class TestPipelineTokenCount:
         
         assert pipeline.calculate_llm_context_tokens({}) is None
 
-    def test_compress_llm_context(self):
-        """Test compressing LLMContext elements using compress_llm_context."""
-        from engine.pipeline.pipeline import Pipeline
-        pipeline = Pipeline()
-        
-        test_context = {
-            "st": ["short", "this is a very long string table entry that can potentially be compressed by llmlingua"],
-            "disc": [[1, ["another very long string fact that contains detailed contextual information for compression"]]]
-        }
-        
-        compressed = pipeline.compress_llm_context(test_context)
-        assert compressed is not None
-        assert "st" in compressed
-        assert "disc" in compressed
-        assert pipeline.compress_llm_context({}) is None
+
 
 

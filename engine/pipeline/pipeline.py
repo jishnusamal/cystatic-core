@@ -1340,41 +1340,17 @@ class Pipeline:
             print(f"[pipeline] Token count calculation failed: {exc}")
             return None
 
-    def compress_llm_context(self, serialized_context: dict[str, Any], rate: float = 0.33) -> dict[str, Any] | None:
-        """
-        Compress serialized LLMContext using ContextCompressor wrapper.
-
-        Args:
-            serialized_context: The serialized LLMContext dictionary.
-            rate: Target compression ratio (ratio of preserved content, default 0.33).
-
-        Returns:
-            Compressed serialized LLMContext dictionary or original if compression is inapplicable/fails.
-        """
-        if not serialized_context:
-            return None
-
-        try:
-            from engine.llm_context import ContextCompressor
-            compressor = ContextCompressor()
-            return compressor.compress_serialized_dict(serialized_context, target_rate=rate)
-        except Exception as exc:
-            print(f"[pipeline] LLMLingua compression failed: {exc}")
-            return serialized_context
-
-    
     def generate_llm_comment(
         self,
         context: PipelineContext,
         repository: str = "",
         pr_number: str = "",
         language: str = "",
-        llm_context_compressed: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Generate engineering briefing from LLMContext via LLM.
         
-        The compressed LLMContext is sent to the LLM alongside the
+        The LLMContext is sent to the LLM alongside the
         Presentation Compiler prompt, which instructs the model to
         produce an engineering briefing — not a review.
         
@@ -1383,7 +1359,6 @@ class Pipeline:
             repository: Repository name
             pr_number: PR number
             language: Programming language
-            llm_context_compressed: Pre-compressed serialized LLM context dictionary
             
         Returns:
             Dictionary with generated briefing, metadata, raw LLM output
@@ -1400,10 +1375,7 @@ class Pipeline:
             settings = get_settings()
             
             # Serialize the LLMContext
-            if llm_context_compressed is not None:
-                llm_context_serialized = llm_context_compressed
-            else:
-                llm_context_serialized = self.serialize_llm_context(context)
+            llm_context_serialized = self.serialize_llm_context(context)
                 
             llm_context_json = json.dumps(llm_context_serialized, indent=2)
             

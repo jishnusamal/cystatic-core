@@ -1,0 +1,5 @@
+name: PROD
+variables:
+  - name: API_URL
+    value: https://api.usefactor.app
+    description: ""

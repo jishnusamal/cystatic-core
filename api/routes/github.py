@@ -357,23 +357,14 @@ async def analyze_repository(
             if token_counts:
                 response_content["llm_context_token_counts"] = token_counts
             
-            # Compress LLM context using llmlingua
-            llm_context_compressed = pipeline.compress_llm_context(llm_context)
-            if llm_context_compressed is not None:
-                response_content["llm_context_compressed"] = llm_context_compressed
-                compressed_token_counts = pipeline.calculate_llm_context_tokens(llm_context_compressed)
-                if compressed_token_counts:
-                    response_content["llm_context_compressed_token_counts"] = compressed_token_counts
-
-            # Generate LLM briefing using compressed context
+            # Generate LLM briefing using context
             try:
-                print("[routes] Generating LLM briefing with compressed context")
+                print("[routes] Generating LLM briefing")
                 llm_result = pipeline.generate_llm_comment(
                     context,
                     repository=repository,
                     pr_number=str(pr_number) if pr_number else "",
                     language=context.language or "unknown",
-                    llm_context_compressed=llm_context_compressed,
                 )
                 response_content["llm_output"] = llm_result
             except Exception as exc:
@@ -381,7 +372,7 @@ async def analyze_repository(
                 response_content["llm_output"] = {
                     "generated": False,
                     "model": "fallback",
-                    "comment": f"## ⚠️ Analysis Complete\n\nFactor analysis completed. LLM briefing generation failed: {exc}",
+                    "comment": f"## ⚠️ LLM briefing generation failed: {exc}",
                     "is_valid": False,
                     "validation_errors": [str(exc)],
                     "truncated": False,

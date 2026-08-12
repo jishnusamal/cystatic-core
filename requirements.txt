@@ -62,8 +62,8 @@ distro==1.9.0
     # via openai
 dnspython==2.8.0
     # via
-    #   factor-api
     #   email-validator
+    #   factor-api
 dramatiq==2.1.0
     # via factor-api
 email-validator==2.3.0
@@ -109,8 +109,8 @@ httpx==0.28.1
 idna==3.11
     # via
     #   anyio
-    #   factor-api
     #   email-validator
+    #   factor-api
     #   httpx
     #   requests
 iniconfig==2.3.0
@@ -215,10 +215,13 @@ pyyaml==6.0.3
     #   uvicorn
 redis==7.4.0
     # via factor-api
+regex==2026.7.19
+    # via tiktoken
 requests==2.33.1
     # via
     #   factor-api
     #   pygithub
+    #   tiktoken
 rich==14.3.3
     # via
     #   factor-api
@@ -247,6 +250,8 @@ starlette==1.0.0
     # via
     #   factor-api
     #   fastapi
+tiktoken==0.13.0
+    # via factor-api
 tortoise-orm==1.1.7
     # via factor-api
 tqdm==4.67.3
