@@ -1,0 +1,28 @@
+info:
+  name: Health
+  type: http
+  seq: 1
+
+http:
+  method: GET
+  url: "{{API_URL}}/health"
+  body:
+    type: text
+    data: |-
+      {
+        "repo": "cystatichq/cystatic-demo-python-app",
+        "pr_number": 2,
+        "diff_url": "https://api.github.com/repos/cystatichq/cystatic-demo-python-app/pulls/1",
+        "diff": "string"
+      }
+  auth:
+    type: apikey
+    key: x-api-key
+    value: test-secret-key
+    placement: header
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

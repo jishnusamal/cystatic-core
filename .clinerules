@@ -141,3 +141,7 @@ A task is complete when:
 * no known blocker remains
 
 Do not continue investigating after completion.
+
+## Guide
+- Use uv instead of pip for installing packages.
+- Always install third party packages whenever required.

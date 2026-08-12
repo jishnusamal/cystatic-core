@@ -3,29 +3,29 @@
 aiosqlite==0.22.1
     # via tortoise-orm
 amplitude-analytics==1.2.3
-    # via cystatic
+    # via factor-api
 annotated-doc==0.0.4
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi
     #   typer
 annotated-types==0.7.0
     # via
-    #   cystatic
+    #   factor-api
     #   pydantic
 anyio==4.13.0
     # via
-    #   cystatic
+    #   factor-api
     #   httpx
     #   openai
     #   starlette
     #   tortoise-orm
     #   watchfiles
 asyncpg==0.31.0
-    # via cystatic
+    # via factor-api
 certifi==2026.2.25
     # via
-    #   cystatic
+    #   factor-api
     #   httpcore
     #   httpx
     #   requests
@@ -33,22 +33,22 @@ certifi==2026.2.25
 cffi==2.0.0 ; platform_python_implementation != 'PyPy'
     # via
     #   cryptography
-    #   cystatic
+    #   factor-api
     #   pynacl
 charset-normalizer==3.4.7
     # via
-    #   cystatic
+    #   factor-api
     #   requests
 click==8.3.1
     # via
-    #   cystatic
+    #   factor-api
     #   rich-toolkit
     #   typer
     #   uvicorn
 colorama==0.4.6 ; sys_platform == 'win32'
     # via
     #   click
-    #   cystatic
+    #   factor-api
     #   pytest
     #   tqdm
     #   uvicorn
@@ -56,61 +56,61 @@ coverage==7.14.1
     # via pytest-cov
 cryptography==46.0.6
     # via
-    #   cystatic
+    #   factor-api
     #   pyjwt
 distro==1.9.0
     # via openai
 dnspython==2.8.0
     # via
-    #   cystatic
     #   email-validator
+    #   factor-api
 dramatiq==2.1.0
-    # via cystatic
+    # via factor-api
 email-validator==2.3.0
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi
     #   pydantic
 fastapi==0.135.2
-    # via cystatic
+    # via factor-api
 fastapi-cli==0.0.24
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi
 fastapi-cloud-cli==0.15.1
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi-cli
 fastar==0.9.0
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi-cloud-cli
 gunicorn==25.3.0
-    # via cystatic
+    # via factor-api
 h11==0.16.0
     # via
-    #   cystatic
+    #   factor-api
     #   httpcore
     #   uvicorn
 httpcore==1.0.9
     # via
-    #   cystatic
+    #   factor-api
     #   httpx
 httptools==0.7.1
     # via
-    #   cystatic
+    #   factor-api
     #   uvicorn
 httpx==0.28.1
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi
     #   fastapi-cloud-cli
     #   openai
 idna==3.11
     # via
     #   anyio
-    #   cystatic
     #   email-validator
+    #   factor-api
     #   httpx
     #   requests
 iniconfig==2.3.0
@@ -119,31 +119,31 @@ iso8601==2.1.0 ; python_full_version < '4'
     # via tortoise-orm
 itsdangerous==2.2.0
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi
 jinja2==3.1.6
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi
 jiter==0.14.0
     # via openai
 markdown-it-py==4.0.0
     # via
-    #   cystatic
+    #   factor-api
     #   rich
 markupsafe==3.0.3
     # via
-    #   cystatic
+    #   factor-api
     #   jinja2
 mdurl==0.1.2
     # via
-    #   cystatic
+    #   factor-api
     #   markdown-it-py
 openai==2.32.0
-    # via cystatic
+    # via factor-api
 packaging==26.0
     # via
-    #   cystatic
+    #   factor-api
     #   gunicorn
     #   pytest
 pluggy==1.6.0
@@ -153,10 +153,10 @@ pluggy==1.6.0
 pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
     # via
     #   cffi
-    #   cystatic
+    #   factor-api
 pydantic==2.12.5
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi
     #   fastapi-cloud-cli
     #   openai
@@ -164,30 +164,30 @@ pydantic==2.12.5
     #   pydantic-settings
 pydantic-core==2.41.5
     # via
-    #   cystatic
+    #   factor-api
     #   pydantic
 pydantic-extra-types==2.11.1
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi
 pydantic-settings==2.13.1
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi
 pygithub==2.9.0
-    # via cystatic
+    # via factor-api
 pygments==2.19.2
     # via
-    #   cystatic
+    #   factor-api
     #   pytest
     #   rich
 pyjwt==2.12.1
     # via
-    #   cystatic
+    #   factor-api
     #   pygithub
 pynacl==1.6.2
     # via
-    #   cystatic
+    #   factor-api
     #   pygithub
 pypika-tortoise==0.6.5
     # via tortoise-orm
@@ -196,70 +196,75 @@ pytest==9.0.2
     #   pytest-asyncio
     #   pytest-cov
 pytest-asyncio==1.4.0
-    # via cystatic
+    # via factor-api
 pytest-cov==7.1.0
-    # via cystatic
+    # via factor-api
 python-dotenv==1.2.2
     # via
-    #   cystatic
+    #   factor-api
     #   pydantic-settings
     #   uvicorn
 python-multipart==0.0.22
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi
 pyyaml==6.0.3
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi
     #   uvicorn
 redis==7.4.0
-    # via cystatic
+    # via factor-api
+regex==2026.7.19
+    # via tiktoken
 requests==2.33.1
     # via
-    #   cystatic
+    #   factor-api
     #   pygithub
+    #   tiktoken
 rich==14.3.3
     # via
-    #   cystatic
+    #   factor-api
     #   rich-toolkit
     #   typer
 rich-toolkit==0.19.7
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi-cli
     #   fastapi-cloud-cli
 rignore==0.7.6
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi-cloud-cli
 sentry-sdk==2.56.0
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi-cloud-cli
 shellingham==1.5.4
     # via
-    #   cystatic
+    #   factor-api
     #   typer
 sniffio==1.3.1
     # via openai
 starlette==1.0.0
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi
+tiktoken==0.13.0
+    # via factor-api
 tortoise-orm==1.1.7
-    # via cystatic
+    # via factor-api
 tqdm==4.67.3
     # via openai
 typer==0.24.1
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi-cli
     #   fastapi-cloud-cli
 typing-extensions==4.15.0
     # via
     #   anyio
-    #   cystatic
+    #   factor-api
     #   fastapi
     #   openai
     #   pydantic
@@ -272,33 +277,33 @@ typing-extensions==4.15.0
     #   typing-inspection
 typing-inspection==0.4.2
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi
     #   pydantic
     #   pydantic-settings
 unidiff==0.7.5
-    # via cystatic
+    # via factor-api
 urllib3==2.6.3
     # via
-    #   cystatic
+    #   factor-api
     #   pygithub
     #   requests
     #   sentry-sdk
 uvicorn==0.42.0
     # via
-    #   cystatic
+    #   factor-api
     #   fastapi
     #   fastapi-cli
     #   fastapi-cloud-cli
 uvloop==0.22.1 ; platform_python_implementation != 'PyPy' and sys_platform != 'cygwin' and sys_platform != 'win32'
     # via
-    #   cystatic
+    #   factor-api
     #   uvicorn
 watchfiles==1.1.1
     # via
-    #   cystatic
+    #   factor-api
     #   uvicorn
 websockets==16.0
     # via
-    #   cystatic
+    #   factor-api
     #   uvicorn

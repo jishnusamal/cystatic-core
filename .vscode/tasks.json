@@ -35,7 +35,7 @@
     {
       "label": "Count Lines",
       "type": "shell",
-      "command": "wc -l **/*.py"
+      "command": "wc -l **/*.py | sort -nr"
     }
   ]
 }
