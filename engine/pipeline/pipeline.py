@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import time
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 from core.logging import timer
@@ -351,6 +352,156 @@ class Pipeline:
         
         return context
     
+    async def _compile_base_graph(
+        self,
+        request: AnalysisRequest,
+        base_sha: str,
+        context: PipelineContext,
+    ) -> tuple[RepositoryGraph, float, float, str]:
+        """Fetch and compile base repository graph in a local scope to ensure source release."""
+        base_fetch_start = time.perf_counter()
+        try:
+            snapshot = await self.repository_provider.fetch_repository_at_sha(request.repository, base_sha)
+        except Exception as exc:
+            raise RepositoryCompilationFailed(
+                f"Failed to fetch base repository at {base_sha}: {exc}",
+                details={"repository": request.repository.full_name, "sha": base_sha},
+            ) from exc
+        base_fetch_time = time.perf_counter() - base_fetch_start
+        print(f"[pipeline] Base snapshot fetched: {len(snapshot.files)} files")
+        
+        # Detect language
+        if context.language is None:
+            print(f"[pipeline] Detecting language from {len(snapshot.files)} files...")
+            language = self.language_factory.detect_language(snapshot.files)
+            context.language = language
+            context.adapter = language
+            print(f"[pipeline] Detected language: {language}")
+        else:
+            language = context.language
+        
+        adapter = self.language_factory.create_adapter(language)
+        
+        base_compile_start = time.perf_counter()
+        repository_input = {
+            "root_directory": request.repository.full_name,
+            "language": language,
+            "files": snapshot.files,
+            "commit_sha": base_sha,
+        }
+        print(f"[pipeline] Compiling base RepositoryGraph...")
+        try:
+            from core.profile import get_current_profiler
+            profiler = get_current_profiler()
+            if profiler:
+                profiler.log_memory("After base repository download")
+            base_graph = adapter.compile_graph(repository_input)
+        except Exception as exc:
+            raise RepositoryCompilationFailed(
+                f"Base repository compilation failed: {exc}",
+                details={"repository": request.repository.full_name, "language": language, "sha": base_sha},
+            ) from exc
+        base_compile_time = time.perf_counter() - base_compile_start
+        return base_graph, base_fetch_time, base_compile_time, language
+
+    async def _compile_head_graph(
+        self,
+        request: AnalysisRequest,
+        head_sha: str,
+        base_graph: RepositoryGraph,
+        language: str,
+        context: PipelineContext,
+    ) -> tuple[RepositoryGraph, float, float, float, float, dict[str, Any]]:
+        """Fetch changed files and compile head repository graph incrementally in a local scope."""
+        changed_fetch_start = time.perf_counter()
+        changed_files_dict = {}
+        
+        if request.pull_request:
+            if context.diff_data is None:
+                if request.has_diff:
+                    context.diff_data = self._diff_snapshot_to_dict(request.diff)
+                else:
+                    try:
+                        await self._fetch_diff(context, request)
+                    except Exception as exc:
+                        raise DiffFetchFailed(
+                            f"Failed to fetch diff: {exc}",
+                            details={"repository": request.repository.full_name},
+                        ) from exc
+            
+            # Fetch only changed files concurrently
+            if context.diff_data and "files" in context.diff_data:
+                async def fetch_one(file_path: str):
+                    try:
+                        if self.repository_provider is None:
+                            return file_path, None
+                        content = await self.repository_provider.fetch_file(
+                            request.repository, file_path, head_sha
+                        )
+                        return file_path, content
+                    except Exception as exc:
+                        print(f"[pipeline] File {file_path} not found at head (assumed deleted): {exc}")
+                        return file_path, None
+                
+                tasks = [fetch_one(file_info["file_path"]) for file_info in context.diff_data["files"]]
+                results = await asyncio.gather(*tasks)
+                changed_files_dict = dict(results)
+        
+        changed_fetch_time = time.perf_counter() - changed_fetch_start
+        
+        from core.profile import get_current_profiler
+        profiler = get_current_profiler()
+        if profiler:
+            profiler.log_memory("After GitHub/API data retrieval")
+            profiler.log_memory("After head source load")
+        
+        # Clone base_graph using pickle to avoid mutating cache
+        from core.logging import pipeline_logger
+        import pickle
+        pipeline_logger.log_pipeline("[pipeline] Step 1.2: Cloning base RepositoryGraph for head compilation...", to_terminal=True)
+        clone_start = time.perf_counter()
+        if profiler:
+            profiler.log_memory("Before graph clone")
+            profiler.start_sub_peak_tracking()
+        patched_graph = pickle.loads(pickle.dumps(base_graph))
+        if profiler:
+            peak_during_clone = profiler.stop_sub_peak_tracking()
+            profiler.checkpoints["peak during graph clone"] = {
+                "current_rss": profiler.process.memory_info().rss / (1024 * 1024),
+                "peak_rss": peak_during_clone
+            }
+            profiler.log_memory("After graph clone")
+        clone_duration = time.perf_counter() - clone_start
+        pipeline_logger.log_pipeline(f"[pipeline] Step 1.2 done: Base graph cloned in {clone_duration:.2f}s", to_terminal=True)
+        
+        # Compile changes incrementally on patched_graph
+        metrics: dict[str, Any] = {}
+        incremental_start = time.perf_counter()
+        
+        adapter = self.language_factory.create_adapter(language)
+        repository_input = {
+            "files": changed_files_dict,
+            "changed_only": True,
+            "metrics": metrics,
+            "language": language,
+        }
+        
+        pipeline_logger.log_pipeline(f"[pipeline] Step 1.3: Running incremental compilation for {len(changed_files_dict)} changed files...", to_terminal=True)
+        try:
+            from core.logging import timer
+            with timer.timed("Incremental Compilation"):
+                patched_graph = adapter.compile_incremental(patched_graph, repository_input)
+        except Exception as exc:
+            raise RepositoryCompilationFailed(
+                f"Incremental compilation failed: {exc}",
+                details={"repository": request.repository.full_name, "language": language, "sha": head_sha},
+            ) from exc
+            
+        changed_compile_time = metrics.get("compile_duration", time.perf_counter() - incremental_start)
+        patch_duration = metrics.get("patch_duration", 0.0)
+        
+        return patched_graph, changed_fetch_time, clone_duration, changed_compile_time, patch_duration, metrics
+
     async def _compile_both_repository_models(self, context: PipelineContext, request: AnalysisRequest) -> None:
         """
         Compile both base and head repository models.
@@ -385,7 +536,6 @@ class Pipeline:
         from core.logging import pipeline_logger
         from engine.repository.model import RepositoryGraph
         import time
-        import pickle
         import asyncio
         
         with timer.timed("Repository Compilation", metadata={"base_sha": base_sha, "head_sha": head_sha}):
@@ -410,58 +560,13 @@ class Pipeline:
                     print(f"[pipeline] Failed to load base from cache: {exc}")
             
             if base_graph is None:
-                # Fetch base repository snapshot
-                print(f"[pipeline] Fetching base repository snapshot at {base_sha}")
-                try:
-                    snapshot = await self.repository_provider.fetch_repository_at_sha(request.repository, base_sha)
-                except Exception as exc:
-                    raise RepositoryCompilationFailed(
-                        f"Failed to fetch base repository at {base_sha}: {exc}",
-                        details={"repository": request.repository.full_name, "sha": base_sha},
-                    ) from exc
-                base_fetch_time = time.perf_counter() - base_fetch_start
-                print(f"[pipeline] Base snapshot fetched: {len(snapshot.files)} files")
-                
-                # Detect language
-                if context.language is None:
-                    print(f"[pipeline] Detecting language from {len(snapshot.files)} files...")
-                    language = self.language_factory.detect_language(snapshot.files)
-                    context.language = language
-                    context.adapter = language
-                    print(f"[pipeline] Detected language: {language}")
-                else:
-                    language = context.language
-                
-                # Create adapter
-                adapter = self.language_factory.create_adapter(language)
-                
-                base_compile_start = time.perf_counter()
-                repository_input: dict[str, Any] = {
-                    "root_directory": request.repository.full_name,
-                    "language": language,
-                    "files": snapshot.files,
-                    "commit_sha": base_sha,
-                }
-                print(f"[pipeline] Compiling base RepositoryGraph...")
-                try:
-                    from core.profile import get_current_profiler
-                    profiler = get_current_profiler()
-                    if profiler:
-                        profiler.log_memory("After base repository download")
-                    base_graph = adapter.compile_graph(repository_input)
-                    # Release base raw source strings early to save memory
-                    if "snapshot" in locals():
-                        del snapshot
-                    if "repository_input" in locals():
-                        del repository_input
-                    if profiler:
-                        profiler.log_memory("After base graph compilation")
-                except Exception as exc:
-                    raise RepositoryCompilationFailed(
-                        f"Base repository compilation failed: {exc}",
-                        details={"repository": request.repository.full_name, "language": language, "sha": base_sha},
-                    ) from exc
-                base_compile_time = time.perf_counter() - base_compile_start
+                base_graph, base_fetch_time, base_compile_time, language = await self._compile_base_graph(
+                    request, base_sha, context
+                )
+                from core.profile import get_current_profiler
+                profiler = get_current_profiler()
+                if profiler:
+                    profiler.log_memory("After base graph compilation")
                 
                 # Save base graph to cache
                 if self.repository_store is not None:
@@ -483,6 +588,8 @@ class Pipeline:
             base_export_start = time.perf_counter()
             context.base_repository_model = base_graph.to_model()
             base_export_duration = time.perf_counter() - base_export_start
+            from core.profile import get_current_profiler
+            profiler = get_current_profiler()
             if profiler:
                 profiler.log_memory("After base RepositoryModel")
             
@@ -491,98 +598,13 @@ class Pipeline:
             
             # --- Head Repository Incremental Stage ---
             print(f"[pipeline] Compiling head repository incrementally at {head_sha}")
-            changed_fetch_start = time.perf_counter()
-            changed_files_dict = {}
             
-            if request.pull_request:
-                # Get the diff
-                if context.diff_data is None:
-                    if request.has_diff:
-                        context.diff_data = self._diff_snapshot_to_dict(request.diff)
-                    else:
-                        try:
-                            await self._fetch_diff(context, request)
-                        except Exception as exc:
-                            raise DiffFetchFailed(
-                                f"Failed to fetch diff: {exc}",
-                                details={"repository": request.repository.full_name},
-                            ) from exc
-                
-                # Fetch only changed files concurrently
-                if context.diff_data and "files" in context.diff_data:
-                    async def fetch_one(file_path: str):
-                        try:
-                            if self.repository_provider is None:
-                                return file_path, None
-                            content = await self.repository_provider.fetch_file(
-                                request.repository, file_path, head_sha
-                            )
-                            return file_path, content
-                        except Exception as exc:
-                            print(f"[pipeline] File {file_path} not found at head (assumed deleted): {exc}")
-                            return file_path, None
-                    
-                    tasks = [fetch_one(file_info["file_path"]) for file_info in context.diff_data["files"]]
-                    results = await asyncio.gather(*tasks)
-                    changed_files_dict = dict(results)
-            
-            changed_fetch_time = time.perf_counter() - changed_fetch_start
-            
-            from core.profile import get_current_profiler
-            profiler = get_current_profiler()
-            if profiler:
-                profiler.log_memory("After GitHub/API data retrieval")
-                profiler.log_memory("After head source load")
-            
-            # Clone base_graph using pickle to avoid mutating cache
-            pipeline_logger.log_pipeline("[pipeline] Step 1.2: Cloning base RepositoryGraph for head compilation...", to_terminal=True)
-            clone_start = time.perf_counter()
-            if profiler:
-                profiler.log_memory("Before graph clone")
-                profiler.start_sub_peak_tracking()
-            patched_graph = pickle.loads(pickle.dumps(base_graph))
-            if profiler:
-                peak_during_clone = profiler.stop_sub_peak_tracking()
-                profiler.checkpoints["peak during graph clone"] = {
-                    "current_rss": profiler.process.memory_info().rss / (1024 * 1024),
-                    "peak_rss": peak_during_clone
-                }
-                profiler.log_memory("After graph clone")
-            clone_duration = time.perf_counter() - clone_start
-            pipeline_logger.log_pipeline(f"[pipeline] Step 1.2 done: Base graph cloned in {clone_duration:.2f}s", to_terminal=True)
-            
-            # Compile changes incrementally on patched_graph
-            metrics: dict[str, Any] = {}
-            incremental_start = time.perf_counter()
-            
-            adapter = self.language_factory.create_adapter(language)
-            repository_input = {
-                "files": changed_files_dict,
-                "changed_only": True,
-                "metrics": metrics,
-                "language": language,
-            }
-            
-            pipeline_logger.log_pipeline(f"[pipeline] Step 1.3: Running incremental compilation for {len(changed_files_dict)} changed files...", to_terminal=True)
-            try:
-                with timer.timed("Incremental Compilation"):
-                    patched_graph = adapter.compile_incremental(patched_graph, repository_input)
-                    # Release head raw source changes early to save memory
-                    if "changed_files_dict" in locals():
-                        del changed_files_dict
-                    if "repository_input" in locals():
-                        del repository_input
-            except Exception as exc:
-                raise RepositoryCompilationFailed(
-                    f"Incremental compilation failed: {exc}",
-                    details={"repository": request.repository.full_name, "language": language, "sha": head_sha},
-                ) from exc
+            patched_graph, changed_fetch_time, clone_duration, changed_compile_time, patch_duration, metrics = await self._compile_head_graph(
+                request, head_sha, base_graph, language, context
+            )
             
             if profiler:
                 profiler.log_memory("After GraphPatcher")
-                
-            changed_compile_time = metrics.get("compile_duration", time.perf_counter() - incremental_start)
-            patch_duration = metrics.get("patch_duration", 0.0)
             
             # Export head RepositoryModel
             pipeline_logger.log_pipeline("[pipeline] Step 1.4: Exporting head RepositoryModel via patched_graph.to_model()...", to_terminal=True)
@@ -637,6 +659,7 @@ class Pipeline:
         pipeline_logger.log_pipeline(f"  Edges updated: {edges_updated}", to_terminal=True)
         pipeline_logger.log_pipeline(f"  Patch duration: {patch_duration:.3f}s", to_terminal=True)
         pipeline_logger.log_pipeline(f"  Export duration: {head_export_duration:.3f}s", to_terminal=True)
+
     
     async def _fetch_diff(self, context: PipelineContext, request: AnalysisRequest) -> None:
         """

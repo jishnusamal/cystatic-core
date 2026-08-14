@@ -447,7 +447,9 @@ class DiagnosticProfiler:
         }
 
         # Write results
-        output_file = f"profiling/phase2/{repo_name.split('/')[-1].lower()}.json"
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        repo_lower = repo_name.split('/')[-1].lower()
+        output_file = f"profiling/phase2/{repo_lower}_{timestamp}.json"
         with open(output_file, "w") as f:
             json.dump({
                 "pr_url": self.pr_url,
@@ -455,6 +457,15 @@ class DiagnosticProfiler:
                 "metrics": self.metrics
             }, f, indent=2)
         print(f"[DIAGNOSTIC] Results successfully written to {output_file}")
+
+        # Also write to base file for latest results convenience
+        base_output_file = f"profiling/phase2/{repo_lower}.json"
+        with open(base_output_file, "w") as f:
+            json.dump({
+                "pr_url": self.pr_url,
+                "checkpoints": self.checkpoints,
+                "metrics": self.metrics
+            }, f, indent=2)
 
 
 async def main():

@@ -176,16 +176,22 @@ async def run_all():
             
     # Save results
     os.makedirs("logs", exist_ok=True)
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    json_path = f"logs/memory_benchmark_results_{timestamp}.json"
+    with open(json_path, "w") as f:
+        json.dump(results, f, indent=2)
+    # Also write to base file for latest results convenience
     with open("logs/memory_benchmark_results.json", "w") as f:
         json.dump(results, f, indent=2)
         
-    print("\nBenchmark completed. Results saved to logs/memory_benchmark_results.json")
+    print(f"\nBenchmark completed. Results saved to {json_path} and logs/memory_benchmark_results.json")
     
     # Generate the Markdown baseline file
     generate_markdown_report(results)
 
 def generate_markdown_report(results):
-    report_path = "docs/memory-optimization-baseline.md"
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    report_path = f"docs/memory-optimization-baseline-{timestamp}.md"
     os.makedirs("docs", exist_ok=True)
     
     lines = []
@@ -254,6 +260,12 @@ def generate_markdown_report(results):
     with open(report_path, "w") as f:
         f.write("\n".join(lines))
     print(f"Report written to {report_path}")
+
+    # Also write to base file for latest results convenience
+    base_report_path = "docs/memory-optimization-baseline.md"
+    with open(base_report_path, "w") as f:
+        f.write("\n".join(lines))
+    print(f"Latest report updated at {base_report_path}")
 
 if __name__ == "__main__":
     asyncio.run(run_all())
