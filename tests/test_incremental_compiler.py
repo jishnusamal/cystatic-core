@@ -342,7 +342,7 @@ def helper():
         """Test end-to-end pipeline run utilizing incremental compilation."""
         from engine.pipeline.pipeline import Pipeline
         from engine.repository.indexing import MemoryRepositoryStore
-        from models.analysis import AnalysisRequest, RepositoryReference, PullRequestReference, DiffSnapshot, DiffFile
+        from models import AnalysisRequest, RepositoryReference, PullRequestReference, DiffSnapshot, DiffFile
         from unittest.mock import AsyncMock, MagicMock
         
         # Setup mocks

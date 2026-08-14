@@ -3,118 +3,164 @@
   "checkpoints": [
     {
       "stage": "RSS before request",
-      "rss_mb": 456.75,
-      "timestamp": 1786564089.56333
+      "rss_mb": 297.0,
+      "timestamp": 1786734385.030139,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
     },
     {
       "stage": "RSS after repository download",
-      "rss_mb": 886.75,
-      "timestamp": 1786564169.130882
+      "rss_mb": 523.71875,
+      "timestamp": 1786734446.209044,
+      "source_files_reachable": 30899,
+      "source_bytes_reachable": 396761662
     },
     {
       "stage": "RSS after parsing",
-      "rss_mb": 2266.6875,
-      "timestamp": 1786564234.301863
+      "rss_mb": 2833.28125,
+      "timestamp": 1786734531.5050619,
+      "source_files_reachable": 30899,
+      "source_bytes_reachable": 396761662
     },
     {
       "stage": "RSS after symbol extraction",
-      "rss_mb": 2197.53125,
-      "timestamp": 1786570181.3242922
+      "rss_mb": 3935.59375,
+      "timestamp": 1786734697.736064,
+      "source_files_reachable": 30899,
+      "source_bytes_reachable": 396761662
     },
     {
       "stage": "RSS after endpoint extraction",
-      "rss_mb": 741.21875,
-      "timestamp": 1786571687.1087208
+      "rss_mb": 4323.84375,
+      "timestamp": 1786734698.964854,
+      "source_files_reachable": 30899,
+      "source_bytes_reachable": 396761662
     },
     {
       "stage": "RSS after dependency/relationship extraction",
-      "rss_mb": 3103.203125,
-      "timestamp": 1786571702.465635
+      "rss_mb": 4280.1875,
+      "timestamp": 1786734699.999087,
+      "source_files_reachable": 30899,
+      "source_bytes_reachable": 396761662
     },
     {
       "stage": "RSS after base graph compilation",
-      "rss_mb": 3110.28125,
-      "timestamp": 1786586347.360852
+      "rss_mb": 3755.296875,
+      "timestamp": 1786734877.2076318,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
     },
     {
       "stage": "RSS after base RepositoryModel",
-      "rss_mb": 2428.71875,
-      "timestamp": 1786591050.246203
+      "rss_mb": 2690.484375,
+      "timestamp": 1786734950.228071,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
     },
     {
       "stage": "RSS after head source load",
-      "rss_mb": 2040.421875,
-      "timestamp": 1786597299.5789828
+      "rss_mb": 2457.53125,
+      "timestamp": 1786735023.4602711,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
     },
     {
       "stage": "RSS immediately before graph clone",
-      "rss_mb": 3320.859375,
-      "timestamp": 1786597325.10196
+      "rss_mb": 2759.578125,
+      "timestamp": 1786735033.5604281,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
     },
     {
       "stage": "RSS after graph clone",
-      "rss_mb": 2865.96875,
-      "timestamp": 1786611957.2653172
+      "rss_mb": 3776.28125,
+      "timestamp": 1786735119.373065,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
     },
     {
       "stage": "RSS after GraphPatcher",
-      "rss_mb": 2717.109375,
-      "timestamp": 1786626547.914596
+      "rss_mb": 3649.828125,
+      "timestamp": 1786735392.024873,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
     },
     {
       "stage": "RSS after head RepositoryModel",
-      "rss_mb": 3089.234375,
-      "timestamp": 1786626586.793657
+      "rss_mb": 2742.015625,
+      "timestamp": 1786735427.300292,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
     },
     {
       "stage": "RSS after head RepositoryModel",
-      "rss_mb": 2792.515625,
-      "timestamp": 1786627772.7007911
+      "rss_mb": 3167.5,
+      "timestamp": 1786735459.1785972,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
     },
     {
       "stage": "RSS after Change Compiler",
-      "rss_mb": 3003.984375,
-      "timestamp": 1786627806.319248
+      "rss_mb": 4017.296875,
+      "timestamp": 1786735478.404673,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
     },
     {
       "stage": "After Behavior Compiler",
-      "rss_mb": 3584.046875,
-      "timestamp": 1786627905.087199
+      "rss_mb": 3902.828125,
+      "timestamp": 1786735517.367628,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
     },
     {
       "stage": "After Operational Compiler",
-      "rss_mb": 3304.09375,
-      "timestamp": 1786628007.541035
+      "rss_mb": 4080.40625,
+      "timestamp": 1786735554.272654,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
     },
     {
       "stage": "After Engineering Discovery Compiler",
-      "rss_mb": 3299.5,
-      "timestamp": 1786628105.327314
+      "rss_mb": 4388.296875,
+      "timestamp": 1786735586.8239691,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
     },
     {
       "stage": "After Discovery IR Compiler",
-      "rss_mb": 3206.234375,
-      "timestamp": 1786628203.949377
+      "rss_mb": 4013.578125,
+      "timestamp": 1786735620.984004,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
     },
     {
       "stage": "After ReviewContext Compiler",
-      "rss_mb": 2904.8125,
-      "timestamp": 1786628308.576211
+      "rss_mb": 3919.90625,
+      "timestamp": 1786735654.138749,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
     },
     {
       "stage": "After LLMContext Compiler",
-      "rss_mb": 2940.46875,
-      "timestamp": 1786628407.984989
+      "rss_mb": 4041.46875,
+      "timestamp": 1786735686.731575,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
     },
     {
       "stage": "before LLM request",
-      "rss_mb": 3651.921875,
-      "timestamp": 1786628442.787316
+      "rss_mb": 4251.359375,
+      "timestamp": 1786735705.758743,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
     },
     {
       "stage": "after LLM request",
-      "rss_mb": 3335.265625,
-      "timestamp": 1786628488.784888
+      "rss_mb": 4272.125,
+      "timestamp": 1786735736.493603,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
     }
   ],
   "metrics": {
@@ -176,44 +222,44 @@
       "pickle_byte_size": 389743809,
       "base_graph_retained_size": 1223149059,
       "patched_graph_retained_size": 1257677893,
-      "rss_before_dumps": 1256.296875,
-      "rss_after_dumps": 3196.09375,
-      "rss_after_loads": 3362.640625,
-      "rss_after_serialized_bytes_deleted": 3278.546875,
+      "rss_before_dumps": 2761.0625,
+      "rss_after_dumps": 2447.609375,
+      "rss_after_loads": 2940.328125,
+      "rss_after_serialized_bytes_deleted": 3659.015625,
       "ratio_pickle_base": 0.3186396671217159,
       "ratio_clone_base": 1.028229457191611,
-      "peak_delta_mb": 2106.34375
+      "peak_delta_mb": 179.265625
     },
     "downstream_compilers": {
       "Behavior Compiler": {
-        "rss_before": 3459.65625,
-        "rss_after": 3107.25,
-        "delta_rss_mb": -352.40625
+        "rss_before": 3248.21875,
+        "rss_after": 3902.828125,
+        "delta_rss_mb": 654.609375
       },
       "Operational Compiler": {
-        "rss_before": 2538.6875,
-        "rss_after": 3292.078125,
-        "delta_rss_mb": 753.390625
+        "rss_before": 4024.015625,
+        "rss_after": 4080.34375,
+        "delta_rss_mb": 56.328125
       },
       "Engineering Discovery Compiler": {
-        "rss_before": 3104.359375,
-        "rss_after": 3102.828125,
-        "delta_rss_mb": -1.53125
+        "rss_before": 4390.6875,
+        "rss_after": 4388.296875,
+        "delta_rss_mb": -2.390625
       },
       "Discovery IR Compiler": {
-        "rss_before": 3147.40625,
-        "rss_after": 3233.078125,
-        "delta_rss_mb": 85.671875
+        "rss_before": 4136.8125,
+        "rss_after": 4133.65625,
+        "delta_rss_mb": -3.15625
       },
       "ReviewContext Compiler": {
-        "rss_before": 2277.84375,
-        "rss_after": 2402.109375,
-        "delta_rss_mb": 124.265625
+        "rss_before": 4163.921875,
+        "rss_after": 3919.90625,
+        "delta_rss_mb": -244.015625
       },
       "LLMContext Compiler": {
-        "rss_before": 2604.078125,
-        "rss_after": 3005.203125,
-        "delta_rss_mb": 401.125
+        "rss_before": 4041.328125,
+        "rss_after": 4041.5,
+        "delta_rss_mb": 0.171875
       }
     },
     "files_breakdown": {
@@ -119167,9 +119213,9 @@
       }
     },
     "cleanup_rss_drop": {
-      "before_cleanup_rss": 2231.625,
-      "after_cleanup_rss": 3400.5,
-      "reclaimed_mb": -1168.875
+      "before_cleanup_rss": 3971.078125,
+      "after_cleanup_rss": 3648.515625,
+      "reclaimed_mb": 322.5625
     }
   }
 }

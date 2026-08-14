@@ -6,9 +6,9 @@
 
 | Repository | File Count | Source Bytes | Symbol Count | Call Edges | Reference Edges | Duration (s) | Peak RSS (MB) |
 |---|---|---|---|---|---|---|---|
-| pallets/click | 0 | 0 | 2167 | 3902 | 237 | 17.70 | 185.6 |
-| polarsource/polar | 0 | 0 | 18849 | 25066 | 6155 | 123.56 | 649.9 |
-| PostHog/posthog | 0 | 0 | 262908 | 617117 | 262003 | 2151.79 | 4040.8 |
+| pallets/click | 0 | 0 | 2167 | 3902 | 237 | 25.16 | 210.4 |
+| polarsource/polar | 0 | 0 | 18849 | 25066 | 6155 | 99.76 | 848.5 |
+| PostHog/posthog | 0 | 0 | 262908 | 617117 | 262003 | 1914.97 | 2940.5 |
 
 ## Checkpoint Details (RSS / Peak RSS in MB)
 
@@ -16,82 +16,82 @@
 
 | Checkpoint | Current RSS (MB) | Peak RSS (MB) |
 |---|---|---|
-| request start | 67.6 | 67.6 |
-| After base repository download | 72.3 | 72.3 |
-| After parsing | 147.7 | 147.7 |
-| After symbol extraction | 135.1 | 154.8 |
-| After endpoint extraction | 135.2 | 154.8 |
-| After dependency/relationship extraction | 135.2 | 154.8 |
-| After base graph compilation | 184.0 | 184.0 |
-| After base RepositoryModel | 184.1 | 184.1 |
-| After head source load | 183.6 | 185.6 |
-| Before graph clone | 183.6 | 185.6 |
-| peak during graph clone | 177.1 | 185.5 |
-| After graph clone | 177.1 | 185.6 |
-| After GraphPatcher | 175.4 | 185.6 |
-| After head RepositoryModel | 175.5 | 185.6 |
-| After Change Compiler | 175.7 | 185.6 |
-| After Behavior Compiler | 175.8 | 185.6 |
-| After Operational Compiler | 175.9 | 185.6 |
-| After Engineering Discovery Compiler | 175.9 | 185.6 |
-| After Discovery IR Compiler | 175.9 | 185.6 |
-| After ReviewContext Compiler | 175.9 | 185.6 |
-| After LLMContext Compiler | 175.9 | 185.6 |
-| before LLM request | 172.6 | 185.6 |
-| after LLM request | 60.4 | 185.6 |
+| request start | 78.9 | 78.9 |
+| After base repository download | 83.9 | 83.9 |
+| After parsing | 158.3 | 158.3 |
+| After symbol extraction | 169.0 | 169.0 |
+| After endpoint extraction | 169.0 | 169.0 |
+| After dependency/relationship extraction | 169.0 | 169.0 |
+| After base graph compilation | 193.9 | 193.9 |
+| After base RepositoryModel | 193.9 | 193.9 |
+| After head source load | 194.0 | 194.0 |
+| Before graph clone | 194.0 | 194.0 |
+| peak during graph clone | 202.0 | 202.0 |
+| After graph clone | 202.0 | 202.0 |
+| After GraphPatcher | 202.1 | 202.1 |
+| After head RepositoryModel | 202.2 | 202.2 |
+| After Change Compiler | 202.2 | 202.2 |
+| After Behavior Compiler | 202.2 | 202.2 |
+| After Operational Compiler | 202.2 | 202.2 |
+| After Engineering Discovery Compiler | 202.2 | 202.2 |
+| After Discovery IR Compiler | 202.2 | 202.2 |
+| After ReviewContext Compiler | 202.2 | 202.2 |
+| After LLMContext Compiler | 202.2 | 202.2 |
+| before LLM request | 202.2 | 202.2 |
+| after LLM request | 200.5 | 210.4 |
 
 ### polarsource/polar (PR #9204)
 
 | Checkpoint | Current RSS (MB) | Peak RSS (MB) |
 |---|---|---|
-| request start | 105.5 | 105.5 |
-| After base repository download | 226.3 | 226.3 |
-| After parsing | 592.8 | 596.8 |
-| After symbol extraction | 438.0 | 596.8 |
-| After endpoint extraction | 438.1 | 596.8 |
-| After dependency/relationship extraction | 438.1 | 596.8 |
-| After base graph compilation | 546.7 | 649.9 |
-| After base RepositoryModel | 546.8 | 649.9 |
-| After head source load | 528.2 | 649.9 |
-| Before graph clone | 528.2 | 649.9 |
-| peak during graph clone | 439.7 | 548.8 |
-| After graph clone | 439.8 | 649.9 |
-| After GraphPatcher | 175.9 | 649.9 |
-| After head RepositoryModel | 178.7 | 649.9 |
-| After Change Compiler | 370.2 | 649.9 |
-| After Behavior Compiler | 376.5 | 649.9 |
-| After Operational Compiler | 379.2 | 649.9 |
-| After Engineering Discovery Compiler | 379.4 | 649.9 |
-| After Discovery IR Compiler | 380.2 | 649.9 |
-| After ReviewContext Compiler | 380.8 | 649.9 |
-| After LLMContext Compiler | 381.4 | 649.9 |
-| before LLM request | 384.1 | 649.9 |
-| after LLM request | 45.2 | 649.9 |
+| request start | 183.6 | 183.6 |
+| After base repository download | 337.0 | 337.0 |
+| After parsing | 720.0 | 720.0 |
+| After symbol extraction | 799.5 | 799.5 |
+| After endpoint extraction | 799.5 | 799.5 |
+| After dependency/relationship extraction | 799.5 | 799.5 |
+| After base graph compilation | 816.0 | 816.0 |
+| After base RepositoryModel | 816.0 | 816.0 |
+| After head source load | 816.1 | 816.1 |
+| Before graph clone | 816.1 | 816.1 |
+| peak during graph clone | 765.1 | 848.5 |
+| After graph clone | 765.1 | 848.5 |
+| After GraphPatcher | 669.4 | 848.5 |
+| After head RepositoryModel | 669.4 | 848.5 |
+| After Change Compiler | 669.4 | 848.5 |
+| After Behavior Compiler | 669.4 | 848.5 |
+| After Operational Compiler | 669.4 | 848.5 |
+| After Engineering Discovery Compiler | 669.4 | 848.5 |
+| After Discovery IR Compiler | 669.4 | 848.5 |
+| After ReviewContext Compiler | 669.4 | 848.5 |
+| After LLMContext Compiler | 669.4 | 848.5 |
+| before LLM request | 669.4 | 848.5 |
+| after LLM request | 669.4 | 848.5 |
 
 ### PostHog/posthog (PR #72474)
 
 | Checkpoint | Current RSS (MB) | Peak RSS (MB) |
 |---|---|---|
-| request start | 353.9 | 353.9 |
-| After base repository download | 730.9 | 744.6 |
-| After parsing | 1970.0 | 2758.0 |
-| After symbol extraction | 95.3 | 2758.0 |
-| After endpoint extraction | 95.5 | 2758.0 |
-| After dependency/relationship extraction | 95.5 | 2758.0 |
-| After base graph compilation | 1442.4 | 2758.0 |
-| After base RepositoryModel | 1461.4 | 2758.0 |
-| After head source load | 54.6 | 2758.0 |
-| Before graph clone | 54.6 | 2758.0 |
-| peak during graph clone | 2818.4 | 3008.8 |
-| After graph clone | 2818.7 | 3008.8 |
-| After GraphPatcher | 2489.2 | 4040.8 |
-| After head RepositoryModel | 2521.5 | 4040.8 |
-| After Change Compiler | 3174.0 | 4040.8 |
-| After Behavior Compiler | 3121.0 | 4040.8 |
-| After Operational Compiler | 2672.8 | 4040.8 |
-| After Engineering Discovery Compiler | 2673.8 | 4040.8 |
-| After Discovery IR Compiler | 2665.1 | 4040.8 |
-| After ReviewContext Compiler | 2621.0 | 4040.8 |
-| After LLMContext Compiler | 2622.5 | 4040.8 |
-| before LLM request | 2572.0 | 4040.8 |
-| after LLM request | 1396.2 | 4040.8 |
+| request start | 639.5 | 639.5 |
+| After base repository download | 1513.4 | 1513.4 |
+| After parsing | 492.9 | 2940.5 |
+| After symbol extraction | 1098.7 | 2940.5 |
+| After endpoint extraction | 1098.9 | 2940.5 |
+| After dependency/relationship extraction | 1098.9 | 2940.5 |
+| After base graph compilation | 688.3 | 2940.5 |
+| After base RepositoryModel | 555.0 | 2940.5 |
+| After head source load | 71.9 | 2940.5 |
+| Before graph clone | 71.9 | 2940.5 |
+| peak during graph clone | 1930.2 | 2222.9 |
+| After graph clone | 1930.5 | 2940.5 |
+| After GraphPatcher | 698.3 | 2940.5 |
+| After head RepositoryModel | 718.5 | 2940.5 |
+| After Change Compiler | 1244.0 | 2940.5 |
+| After Behavior Compiler | 951.6 | 2940.5 |
+| After Operational Compiler | 1399.4 | 2940.5 |
+| After Engineering Discovery Compiler | 1402.9 | 2940.5 |
+| After Discovery IR Compiler | 1428.6 | 2940.5 |
+| After ReviewContext Compiler | 1226.9 | 2940.5 |
+| After LLMContext Compiler | 1182.5 | 2940.5 |
+| before LLM request | 1102.4 | 2940.5 |
+| after LLM request | 45.6 | 2940.5 |

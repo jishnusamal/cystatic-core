@@ -449,6 +449,11 @@ class Pipeline:
                     if profiler:
                         profiler.log_memory("After base repository download")
                     base_graph = adapter.compile_graph(repository_input)
+                    # Release base raw source strings early to save memory
+                    if "snapshot" in locals():
+                        del snapshot
+                    if "repository_input" in locals():
+                        del repository_input
                     if profiler:
                         profiler.log_memory("After base graph compilation")
                 except Exception as exc:
@@ -562,6 +567,11 @@ class Pipeline:
             try:
                 with timer.timed("Incremental Compilation"):
                     patched_graph = adapter.compile_incremental(patched_graph, repository_input)
+                    # Release head raw source changes early to save memory
+                    if "changed_files_dict" in locals():
+                        del changed_files_dict
+                    if "repository_input" in locals():
+                        del repository_input
             except Exception as exc:
                 raise RepositoryCompilationFailed(
                     f"Incremental compilation failed: {exc}",
@@ -1407,6 +1417,7 @@ class Pipeline:
         repository: str = "",
         pr_number: str = "",
         language: str = "",
+        llm_context_compressed: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Generate engineering briefing from LLMContext via LLM.
@@ -1435,10 +1446,13 @@ class Pipeline:
             
             settings = get_settings()
             
-            # Serialize the LLMContext
-            llm_context_serialized = self.serialize_llm_context(context)
-                
-            llm_context_json = json.dumps(llm_context_serialized, indent=2)
+            # Serialize the LLMContext or use provided compressed context
+            if llm_context_compressed is not None:
+                llm_context_serialized = llm_context_compressed
+                llm_context_json = json.dumps(llm_context_compressed, indent=2)
+            else:
+                llm_context_serialized = self.serialize_llm_context(context)
+                llm_context_json = json.dumps(llm_context_serialized, indent=2)
             
             # Build the Presentation Compiler prompt
             system_prompt = (

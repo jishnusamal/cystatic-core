@@ -36,14 +36,55 @@ class DiagnosticProfiler:
         gc.collect()
         return self.process.memory_info().rss / (1024 * 1024)
 
+    def count_reachable_source(self) -> tuple[int, int]:
+        import gc
+        from models.core import RepositorySnapshot
+        from engine.language.base.file_context import FileContext
+        
+        snapshots = [obj for obj in gc.get_objects() if isinstance(obj, RepositorySnapshot)]
+        file_contexts = [obj for obj in gc.get_objects() if isinstance(obj, FileContext)]
+        
+        source_strings = set()
+        
+        for s in snapshots:
+            for content in s.files.values():
+                if isinstance(content, str):
+                    source_strings.add(content)
+                    
+        for fc in file_contexts:
+            if hasattr(fc, 'source') and isinstance(fc.source, str):
+                source_strings.add(fc.source)
+                
+        # Also check for dictionary objects that look like files dict
+        for obj in gc.get_objects():
+            if isinstance(obj, dict) and len(obj) > 0:
+                try:
+                    # check if it looks like a files dictionary: string keys, string values, and keys ending in code extensions
+                    sample_keys = list(obj.keys())[:3]
+                    if all(isinstance(k, str) and any(k.endswith(ext) for ext in ['.py', '.java', '.ts', '.json', '.go', '.cpp', '.h']) for k in sample_keys):
+                        # check values are strings
+                        if all(isinstance(obj[k], str) for k in list(obj.keys())[:3]):
+                            for content in obj.values():
+                                if isinstance(content, str):
+                                    source_strings.add(content)
+                except Exception:
+                    pass
+                                
+        total_files = len(source_strings)
+        total_bytes = sum(len(s.encode('utf-8')) for s in source_strings)
+        return total_files, total_bytes
+
     def record_checkpoint(self, stage: str, context: Any = None):
         rss = self.get_rss()
+        files, bytes_size = self.count_reachable_source()
         checkpoint_data = {
             "stage": stage,
             "rss_mb": rss,
-            "timestamp": time.time()
+            "timestamp": time.time(),
+            "source_files_reachable": files,
+            "source_bytes_reachable": bytes_size,
         }
-        print(f"[DIAGNOSTIC] Checkpoint: {stage:<45} RSS: {rss:8.2f} MB")
+        print(f"[DIAGNOSTIC] Checkpoint: {stage:<45} RSS: {rss:8.2f} MB | Source Reachable: {files} files ({bytes_size / (1024*1024):.2f} MB)")
         self.checkpoints.append(checkpoint_data)
         return rss
 
@@ -133,6 +174,8 @@ class DiagnosticProfiler:
             "num_ast_roots": len(asts),
             "retained_memory_bytes": ast_retained_mem
         }
+        del asts
+        gc.collect()
 
         # Step C: Index / Symbol Extraction
         print("[DIAGNOSTIC] Extracting symbols & structural facts (IndexCompiler)...")
@@ -165,6 +208,9 @@ class DiagnosticProfiler:
             "commit_sha": base_sha
         }
         base_graph = adapter.compile_graph(repository_input)
+        del snapshot
+        del repository_input
+        gc.collect()
         self.record_checkpoint("RSS after base graph compilation")
 
         # Measure base_graph retained memory and details
@@ -281,6 +327,9 @@ class DiagnosticProfiler:
             else:
                 changed_contribs[path] = None
 
+        del changed_files_dict
+        gc.collect()
+
         from engine.language.base.graph_patcher import GraphPatcher
         patcher = GraphPatcher()
         patcher.patch(patched_graph, changed_contribs, "python")
@@ -292,7 +341,7 @@ class DiagnosticProfiler:
         self.record_checkpoint("RSS after head RepositoryModel")
 
         # Set up PipelineContext for downstream compilers
-        context.base_repository_snapshot = snapshot
+        context.base_repository_snapshot = None
         context.base_repository_model = base_repository_model
         context.head_repository_model = head_repository_model
         context.language = "python"
@@ -377,11 +426,16 @@ class DiagnosticProfiler:
         before_cleanup_rss = self.get_rss()
         
         # Delete large objects
-        del snapshot
-        del asts
-        del base_graph
-        del patched_graph
-        del context
+        if "snapshot" in locals():
+            del snapshot
+        if "asts" in locals():
+            del asts
+        if "base_graph" in locals():
+            del base_graph
+        if "patched_graph" in locals():
+            del patched_graph
+        if "context" in locals():
+            del context
         
         gc.collect()
         after_cleanup_rss = self.get_rss()
