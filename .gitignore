@@ -10,3 +10,4 @@ migrations/
 *_cache/
 logs/
 *.db*
+*.db
