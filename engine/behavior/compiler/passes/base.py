@@ -20,6 +20,7 @@ class BehaviorPassContext:
 
     This is a mutable container that accumulates state as passes execute.
     """
+
     # Pass 1 output: Discovered behaviors
     behaviors: list = field(default_factory=list)
 

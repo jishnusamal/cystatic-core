@@ -41,7 +41,9 @@ class PythonConfigurationIndexPass(BaseIndexPass):
                 if config:
                     builder["configurations"].append(config)
 
-    def visit_Call(self, node: ast.Call, context: FileContext, builder: dict[str, Any]) -> None:
+    def visit_Call(
+        self, node: ast.Call, context: FileContext, builder: dict[str, Any]
+    ) -> None:
         """Handle function call node from visitor."""
         config = self._extract_config(node, context.path)
         if config:

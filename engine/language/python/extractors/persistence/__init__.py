@@ -21,10 +21,10 @@ class PythonPersistenceExtractor(BaseExtractor):
     """
 
     # SQLAlchemy base class patterns
-    SA_BASES = {'declarative_base', 'Base', 'Model'}
+    SA_BASES = {"declarative_base", "Base", "Model"}
 
     # Django base class patterns
-    DJANGO_BASE = 'models.Model'
+    DJANGO_BASE = "models.Model"
 
     def extract(self, tree: ast.AST, file_path: str) -> list[dict[str, Any]]:
         """
@@ -47,7 +47,9 @@ class PythonPersistenceExtractor(BaseExtractor):
 
         return constructs
 
-    def _extract_model(self, node: ast.ClassDef, file_path: str) -> dict[str, Any] | None:
+    def _extract_model(
+        self, node: ast.ClassDef, file_path: str
+    ) -> dict[str, Any] | None:
         """Extract a persistence model from a class definition."""
         framework = self._detect_framework(node)
         if not framework:
@@ -63,21 +65,23 @@ class PythonPersistenceExtractor(BaseExtractor):
             if isinstance(child, ast.Assign):
                 for target in child.targets:
                     if isinstance(target, ast.Name):
-                        field_info = self._extract_field(target.id, child.value, framework)
+                        field_info = self._extract_field(
+                            target.id, child.value, framework
+                        )
                         if field_info:
-                            if field_info.get('is_relationship'):
+                            if field_info.get("is_relationship"):
                                 relationships.append(field_info)
                             else:
                                 fields.append(field_info)
 
         return {
-            'type': 'persistence_model',
-            'symbol_id': symbol_id,
-            'name': node.name,
-            'table_name': table_name,
-            'framework': framework,
-            'fields': fields,
-            'relationships': relationships,
+            "type": "persistence_model",
+            "symbol_id": symbol_id,
+            "name": node.name,
+            "table_name": table_name,
+            "framework": framework,
+            "fields": fields,
+            "relationships": relationships,
         }
 
     def _detect_framework(self, node: ast.ClassDef) -> str | None:
@@ -85,12 +89,12 @@ class PythonPersistenceExtractor(BaseExtractor):
         for base in node.bases:
             base_str = self._base_to_string(base)
             if base_str == self.DJANGO_BASE:
-                return 'django'
-            if base_str in self.SA_BASES or 'Base' in base_str:
-                return 'sqlalchemy'
+                return "django"
+            if base_str in self.SA_BASES or "Base" in base_str:
+                return "sqlalchemy"
             # Tortoise ORM
-            if 'Model' in base_str and 'tortoise' in base_str.lower():
-                return 'tortoise'
+            if "Model" in base_str and "tortoise" in base_str.lower():
+                return "tortoise"
         return None
 
     def _base_to_string(self, node: ast.AST) -> str:
@@ -105,60 +109,65 @@ class PythonPersistenceExtractor(BaseExtractor):
                 current = current.value
             if isinstance(current, ast.Name):
                 parts.append(current.id)
-            return '.'.join(reversed(parts))
-        return ''
+            return ".".join(reversed(parts))
+        return ""
 
     def _extract_table_name(self, node: ast.ClassDef) -> str:
         """Extract the table/collection name from a model class."""
         for child in node.body:
             if isinstance(child, ast.Assign):
                 for target in child.targets:
-                    if isinstance(target, ast.Name) and target.id in ('__tablename__', 'Meta'):
+                    if isinstance(target, ast.Name) and target.id in (
+                        "__tablename__",
+                        "Meta",
+                    ):
                         if isinstance(child.value, ast.Constant):
                             return str(child.value.value)
             # Django Meta class
-            if isinstance(child, ast.ClassDef) and child.name == 'Meta':
+            if isinstance(child, ast.ClassDef) and child.name == "Meta":
                 for meta_child in child.body:
                     if isinstance(meta_child, ast.Assign):
                         for target in meta_child.targets:
-                            if isinstance(target, ast.Name) and target.id == 'db_table':
+                            if isinstance(target, ast.Name) and target.id == "db_table":
                                 if isinstance(meta_child.value, ast.Constant):
                                     return str(meta_child.value.value)
-        return ''
+        return ""
 
-    def _extract_field(self, name: str, value: ast.AST, framework: str) -> dict[str, Any] | None:
+    def _extract_field(
+        self, name: str, value: ast.AST, framework: str
+    ) -> dict[str, Any] | None:
         """Extract a field definition from an assignment."""
         field_info = {
-            'name': name,
-            'field_type': 'unknown',
-            'is_relationship': False,
-            'nullable': False,
-            'unique': False,
-            'index': False,
+            "name": name,
+            "field_type": "unknown",
+            "is_relationship": False,
+            "nullable": False,
+            "unique": False,
+            "index": False,
         }
 
         if isinstance(value, ast.Call):
             func_name = self._base_to_string(value.func)
-            field_info['field_type'] = func_name
+            field_info["field_type"] = func_name
 
             # Detect relationship fields
-            if 'relationship' in func_name.lower() or 'ForeignKey' in func_name:
-                field_info['is_relationship'] = True
+            if "relationship" in func_name.lower() or "ForeignKey" in func_name:
+                field_info["is_relationship"] = True
                 # Extract the related model from ForeignKey/relationship args
                 if value.args:
                     first_arg = value.args[0]
                     if isinstance(first_arg, ast.Constant):
-                        field_info['related_model'] = str(first_arg.value)
+                        field_info["related_model"] = str(first_arg.value)
                     elif isinstance(first_arg, ast.Name):
-                        field_info['related_model'] = first_arg.id
+                        field_info["related_model"] = first_arg.id
 
             # Extract keyword arguments
             for kw in value.keywords:
-                if kw.arg == 'nullable' and isinstance(kw.value, ast.Constant):
-                    field_info['nullable'] = bool(kw.value.value)
-                elif kw.arg == 'unique' and isinstance(kw.value, ast.Constant):
-                    field_info['unique'] = bool(kw.value.value)
-                elif kw.arg == 'index' and isinstance(kw.value, ast.Constant):
-                    field_info['index'] = bool(kw.value.value)
+                if kw.arg == "nullable" and isinstance(kw.value, ast.Constant):
+                    field_info["nullable"] = bool(kw.value.value)
+                elif kw.arg == "unique" and isinstance(kw.value, ast.Constant):
+                    field_info["unique"] = bool(kw.value.value)
+                elif kw.arg == "index" and isinstance(kw.value, ast.Constant):
+                    field_info["index"] = bool(kw.value.value)
 
         return field_info

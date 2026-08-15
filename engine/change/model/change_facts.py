@@ -3,7 +3,14 @@
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
-from engine.repository.facts import Call, Reference, Import, Symbol, SymbolKind, SymbolVisibility
+from engine.repository.facts import (
+    Call,
+    Reference,
+    Import,
+    Symbol,
+    SymbolKind,
+    SymbolVisibility,
+)
 
 
 class ChangeKind(str, Enum):
@@ -21,17 +28,19 @@ class ChangeKind(str, Enum):
 @dataclass(frozen=True, slots=True)
 class ChangedSymbol:
     """Represents a change to a symbol identifier."""
+
     symbol_id: str
     change_type: str  # "ADDED", "REMOVED", "MODIFIED"
-    file_id: str      # file path/id
+    file_id: str  # file path/id
 
 
 @dataclass(frozen=True, slots=True)
 class ContractChange:
     """Represents a change to a system contract boundary (API, DB, Events)."""
+
     symbol_id: str
     contract_type: str  # "api", "database", "event_publish", "event_subscribe", "signature", "visibility", "decorators", "body"
-    change_kind: str    # "added", "removed", "modified"
+    change_kind: str  # "added", "removed", "modified"
     details: dict[str, Any] = field(default_factory=dict)
 
 
@@ -39,9 +48,10 @@ class ContractChange:
 class ChangeFacts:
     """
     Lightweight set of change facts driving Factor's impact analysis.
-    
+
     Contains references to facts rather than copies of complete symbols.
     """
+
     changed_symbols: tuple[ChangedSymbol, ...] = field(default_factory=tuple)
     added_calls: tuple[Call, ...] = field(default_factory=tuple)
     removed_calls: tuple[Call, ...] = field(default_factory=tuple)
@@ -65,8 +75,10 @@ class ChangeFacts:
                 self.language = "python"
                 self.range = (1, 1)
                 self.properties = {}
+
             def __hash__(self):
                 return hash(self.id)
+
             def __eq__(self, other):
                 return isinstance(other, CompatSymbol) and self.id == other.id
 
@@ -88,8 +100,10 @@ class ChangeFacts:
                 self.language = "python"
                 self.range = (1, 1)
                 self.properties = {}
+
             def __hash__(self):
                 return hash(self.id)
+
             def __eq__(self, other):
                 return isinstance(other, CompatSymbol) and self.id == other.id
 
@@ -111,8 +125,10 @@ class ChangeFacts:
                 self.language = "python"
                 self.range = (1, 1)
                 self.properties = {}
+
             def __hash__(self):
                 return hash(self.id)
+
             def __eq__(self, other):
                 return isinstance(other, CompatSymbol) and self.id == other.id
 
@@ -120,10 +136,15 @@ class ChangeFacts:
             def __init__(self, symbol_id: str, file_id: str, changes: tuple[Any, ...]):
                 self.symbol = CompatSymbol(symbol_id, file_id)
                 self.changes = changes
+
             def __hash__(self):
                 return hash(self.symbol.id)
+
             def __eq__(self, other):
-                return isinstance(other, CompatModifiedSymbol) and self.symbol.id == other.symbol.id
+                return (
+                    isinstance(other, CompatModifiedSymbol)
+                    and self.symbol.id == other.symbol.id
+                )
 
         result = []
         for cs in self.changed_symbols:
@@ -134,53 +155,81 @@ class ChangeFacts:
                     if cc.symbol_id == cs.symbol_id:
                         if cc.contract_type == "signature":
                             from engine.change.model.changes import SignatureChange
-                            changes_list.append(SignatureChange(
-                                old_signature=cc.details.get("old_signature", ""),
-                                new_signature=cc.details.get("new_signature", "")
-                            ))
+
+                            changes_list.append(
+                                SignatureChange(
+                                    old_signature=cc.details.get("old_signature", ""),
+                                    new_signature=cc.details.get("new_signature", ""),
+                                )
+                            )
                             has_any_change = True
                         elif cc.contract_type == "api":
-                            from engine.change.model.changes import EndpointAnnotationChange
-                            changes_list.append(EndpointAnnotationChange(
-                                old_endpoint=cc.details.get("old_endpoint"),
-                                new_endpoint=cc.details.get("new_endpoint"),
-                                old_method=cc.details.get("old_method"),
-                                new_method=cc.details.get("new_method"),
-                            ))
+                            from engine.change.model.changes import (
+                                EndpointAnnotationChange,
+                            )
+
+                            changes_list.append(
+                                EndpointAnnotationChange(
+                                    old_endpoint=cc.details.get("old_endpoint"),
+                                    new_endpoint=cc.details.get("new_endpoint"),
+                                    old_method=cc.details.get("old_method"),
+                                    new_method=cc.details.get("new_method"),
+                                )
+                            )
                             has_any_change = True
                         elif cc.contract_type == "visibility":
                             from engine.change.model.changes import VisibilityChange
-                            changes_list.append(VisibilityChange(
-                                old_visibility=cc.details.get("old_visibility", ""),
-                                new_visibility=cc.details.get("new_visibility", "")
-                            ))
+
+                            changes_list.append(
+                                VisibilityChange(
+                                    old_visibility=cc.details.get("old_visibility", ""),
+                                    new_visibility=cc.details.get("new_visibility", ""),
+                                )
+                            )
                             has_any_change = True
                         elif cc.contract_type == "decorators":
                             from engine.change.model.changes import DecoratorChange
-                            changes_list.append(DecoratorChange(
-                                old_decorators=cc.details.get("old_decorators", ()),
-                                new_decorators=cc.details.get("new_decorators", ())
-                            ))
+
+                            changes_list.append(
+                                DecoratorChange(
+                                    old_decorators=cc.details.get("old_decorators", ()),
+                                    new_decorators=cc.details.get("new_decorators", ()),
+                                )
+                            )
                             has_any_change = True
                         elif cc.contract_type == "body":
                             from engine.change.model.changes import FunctionBodyChange
-                            changes_list.append(FunctionBodyChange(
-                                old_body_hash=cc.details.get("old_body_hash", ""),
-                                new_body_hash=cc.details.get("new_body_hash", "")
-                            ))
+
+                            changes_list.append(
+                                FunctionBodyChange(
+                                    old_body_hash=cc.details.get("old_body_hash", ""),
+                                    new_body_hash=cc.details.get("new_body_hash", ""),
+                                )
+                            )
                             has_any_change = True
-                
+
                 if not has_any_change:
                     from engine.change.model.changes import FunctionBodyChange
-                    changes_list.append(FunctionBodyChange(old_body_hash="", new_body_hash=""))
-                    
-                result.append(CompatModifiedSymbol(cs.symbol_id, cs.file_id, tuple(changes_list)))
+
+                    changes_list.append(
+                        FunctionBodyChange(old_body_hash="", new_body_hash="")
+                    )
+
+                result.append(
+                    CompatModifiedSymbol(cs.symbol_id, cs.file_id, tuple(changes_list))
+                )
         return tuple(result)
 
     @property
     def changed_imports(self) -> tuple[Any, ...]:
         class CompatImportChange:
-            def __init__(self, file: str, old_import: str | None, new_import: str | None, change_type: str):
+            def __init__(
+                self,
+                file: str,
+                old_import: str | None,
+                new_import: str | None,
+                change_type: str,
+            ):
                 self.file = file
                 self.old_import = old_import
                 self.new_import = new_import
@@ -188,15 +237,27 @@ class ChangeFacts:
 
         result = []
         for imp in self.added_imports:
-            result.append(CompatImportChange(str(imp.source_file_id), None, imp.module, "added"))
+            result.append(
+                CompatImportChange(str(imp.source_file_id), None, imp.module, "added")
+            )
         for imp in self.removed_imports:
-            result.append(CompatImportChange(str(imp.source_file_id), imp.module, None, "removed"))
+            result.append(
+                CompatImportChange(str(imp.source_file_id), imp.module, None, "removed")
+            )
         return tuple(result)
 
     @property
     def changed_endpoints(self) -> tuple[Any, ...]:
         class CompatEndpointChange:
-            def __init__(self, symbol_id: str, old_endpoint: str | None, new_endpoint: str | None, old_method: str | None, new_method: str | None, change_type: str):
+            def __init__(
+                self,
+                symbol_id: str,
+                old_endpoint: str | None,
+                new_endpoint: str | None,
+                old_method: str | None,
+                new_method: str | None,
+                change_type: str,
+            ):
                 self.symbol_id = symbol_id
                 self.old_endpoint = old_endpoint
                 self.new_endpoint = new_endpoint
@@ -207,19 +268,25 @@ class ChangeFacts:
         result = []
         for cc in self.contract_changes:
             if cc.contract_type == "api":
-                result.append(CompatEndpointChange(
-                    cc.symbol_id,
-                    cc.details.get("old_endpoint"),
-                    cc.details.get("new_endpoint"),
-                    cc.details.get("old_method"),
-                    cc.details.get("new_method"),
-                    cc.change_kind
-                ))
+                result.append(
+                    CompatEndpointChange(
+                        cc.symbol_id,
+                        cc.details.get("old_endpoint"),
+                        cc.details.get("new_endpoint"),
+                        cc.details.get("old_method"),
+                        cc.details.get("new_method"),
+                        cc.change_kind,
+                    )
+                )
         return tuple(result)
 
     def get_added_symbols_by_kind(self, kind: str) -> tuple[Any, ...]:
         """Get all added symbols of a specific kind (mock for compat)."""
-        return tuple(s for s in self.added_symbols if s.kind == kind or kind == "class" and "Class" in s.name)
+        return tuple(
+            s
+            for s in self.added_symbols
+            if s.kind == kind or kind == "class" and "Class" in s.name
+        )
 
     def get_removed_symbols_by_kind(self, kind: str) -> tuple[Any, ...]:
         """Get all removed symbols of a specific kind (mock for compat)."""

@@ -3,6 +3,7 @@
 This is the canonical artifact that renderers and AI consume.
 It is a composition of all deterministic models produced by the compilation pipeline.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -82,17 +83,17 @@ class EngineeringDiscoveryModel:
     def __post_init__(self):
         """Validate and convert mutable defaults to immutable types."""
         if isinstance(self.execution_units, list):
-            object.__setattr__(self, 'execution_units', tuple(self.execution_units))
+            object.__setattr__(self, "execution_units", tuple(self.execution_units))
         if isinstance(self.execution_chains, list):
-            object.__setattr__(self, 'execution_chains', tuple(self.execution_chains))
+            object.__setattr__(self, "execution_chains", tuple(self.execution_chains))
         if isinstance(self.entry_points, list):
-            object.__setattr__(self, 'entry_points', tuple(self.entry_points))
+            object.__setattr__(self, "entry_points", tuple(self.entry_points))
         if isinstance(self.terminal_points, list):
-            object.__setattr__(self, 'terminal_points', tuple(self.terminal_points))
+            object.__setattr__(self, "terminal_points", tuple(self.terminal_points))
         if isinstance(self.shared_executions, list):
-            object.__setattr__(self, 'shared_executions', tuple(self.shared_executions))
+            object.__setattr__(self, "shared_executions", tuple(self.shared_executions))
         if isinstance(self.reachable_units, list):
-            object.__setattr__(self, 'reachable_units', tuple(self.reachable_units))
+            object.__setattr__(self, "reachable_units", tuple(self.reachable_units))
         # Validate core models are present
         if self.repository is None:
             raise ValueError("repository model is required")
@@ -161,17 +162,21 @@ class EngineeringDiscoveryModel:
         """Get all behaviors from the behavior model."""
         return self.behavior.behaviors
 
-    def get_execution_units_for_behavior(self, behavior_id: str) -> tuple[ExecutionUnit, ...]:
+    def get_execution_units_for_behavior(
+        self, behavior_id: str
+    ) -> tuple[ExecutionUnit, ...]:
         """Get all execution units for a specific behavior."""
         return tuple(
-            u for u in self.execution_units
-            if u.id.startswith(f"unit://{behavior_id}")
+            u for u in self.execution_units if u.id.startswith(f"unit://{behavior_id}")
         )
 
-    def get_reachable_units_for_behavior(self, behavior_id: str) -> tuple[ExecutionUnit, ...]:
+    def get_reachable_units_for_behavior(
+        self, behavior_id: str
+    ) -> tuple[ExecutionUnit, ...]:
         """Get all reachable units for a specific behavior."""
         return tuple(
-            u for u in self.reachable_units
+            u
+            for u in self.reachable_units
             if u.id.startswith(f"reachable://{behavior_id}")
         )
 

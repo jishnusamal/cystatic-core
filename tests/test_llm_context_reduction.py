@@ -1,6 +1,7 @@
 """Additional tests for LLMContext Reduction: §4 Dead-String Elimination,
 §9 Chain Compression, §10-11 Discovery-Centred Filtering, §12 Validation.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -84,8 +85,8 @@ def _collect_live_indices(result: LLMContext) -> set[int]:
 # Dead-String Elimination (§4)
 # ---------------------------------------------------------------------------
 
-class TestDeadStringElimination:
 
+class TestDeadStringElimination:
     def test_all_string_indices_are_live(self):
         """Every index 0..n-1 must be referenced by at least one emitted object."""
         step = TestHelper.create_execution_step(
@@ -98,8 +99,10 @@ class TestDeadStringElimination:
             reaches_module="payment.core",
         )
         ep = TestHelper.create_entry_point(
-            method="POST", path="/pay",
-            execution_chain=(step,), terminal="database_write",
+            method="POST",
+            path="/pay",
+            execution_chain=(step,),
+            terminal="database_write",
         )
         change = TestHelper.create_change(
             symbol_id="sym://domain/pay",
@@ -117,11 +120,15 @@ class TestDeadStringElimination:
         live = _collect_live_indices(result)
         n = len(result.st.entries)
         dead = set(range(n)) - live
-        assert dead == set(), f"Dead indices: {dead}, strings: {[result.st[i] for i in dead]}"
+        assert dead == set(), (
+            f"Dead indices: {dead}, strings: {[result.st[i] for i in dead]}"
+        )
 
     def test_no_duplicates_after_elimination(self):
         change = TestHelper.create_change(
-            symbol_id="sym://app/fn", symbol_name="fn", symbol_kind="function",
+            symbol_id="sym://app/fn",
+            symbol_name="fn",
+            symbol_kind="function",
         )
         file_change = TestHelper.create_file_change(changes=(change,))
         rc = TestHelper.create_review_context(
@@ -150,10 +157,15 @@ class TestDeadStringElimination:
             reaches_module="my.module",
         )
         ep = TestHelper.create_entry_point(
-            method="POST", path="/x", execution_chain=(step,), terminal="db_write",
+            method="POST",
+            path="/x",
+            execution_chain=(step,),
+            terminal="db_write",
         )
         change = TestHelper.create_change(
-            symbol_id="sym://domain/svc", symbol_name="SvcClass", symbol_kind="class",
+            symbol_id="sym://domain/svc",
+            symbol_name="SvcClass",
+            symbol_kind="class",
         )
         file_change = TestHelper.create_file_change(changes=(change,))
         rc = TestHelper.create_review_context(
@@ -178,8 +190,8 @@ class TestDeadStringElimination:
 # Chain Compression (§9)
 # ---------------------------------------------------------------------------
 
-class TestChainCompression:
 
+class TestChainCompression:
     def test_short_chain_not_compressed(self):
         """Chain ≤ 3 steps returned unchanged."""
         steps = [
@@ -188,12 +200,14 @@ class TestChainCompression:
             _make_step("sym://c", "C", 2),
         ]
         from engine.llm_context.compiler import _compress_chain
+
         assert _compress_chain(steps, {"sym://a"}) == steps
 
     def test_long_chain_first_last_retained(self):
         """Chain of 6 helpers: first and last always kept."""
         steps = [_make_step(f"sym://{c}", c, i) for i, c in enumerate("ABCDEF")]
         from engine.llm_context.compiler import _compress_chain
+
         result = _compress_chain(steps, set())
         assert result[0].symbol.id == "sym://A"
         assert result[-1].symbol.id == "sym://F"
@@ -209,6 +223,7 @@ class TestChainCompression:
             _make_step("sym://f", "F", 5),
         ]
         from engine.llm_context.compiler import _compress_chain
+
         result = _compress_chain(steps, set())
         assert "sym://c" in [s.symbol.id for s in result]
 
@@ -222,24 +237,32 @@ class TestChainCompression:
             _make_step("sym://f", "F", 5),
         ]
         from engine.llm_context.compiler import _compress_chain
+
         result = _compress_chain(steps, set())
         assert "sym://c" in [s.symbol.id for s in result]
 
     def test_e2e_compressed_in_dag(self):
         """Long chain produces fewer DAG nodes than original steps."""
-        steps = tuple([
-            _make_step("sym://svc/a", "EntryHandler", 0, changed=True),
-            _make_step("sym://svc/b", "HelperB", 1),
-            _make_step("sym://svc/c", "HelperC", 2),
-            _make_step("sym://svc/d", "HelperD", 3),
-            _make_step("sym://svc/e", "HelperE", 4),
-            _make_step("sym://svc/f", "Terminal", 5),
-        ])
+        steps = tuple(
+            [
+                _make_step("sym://svc/a", "EntryHandler", 0, changed=True),
+                _make_step("sym://svc/b", "HelperB", 1),
+                _make_step("sym://svc/c", "HelperC", 2),
+                _make_step("sym://svc/d", "HelperD", 3),
+                _make_step("sym://svc/e", "HelperE", 4),
+                _make_step("sym://svc/f", "Terminal", 5),
+            ]
+        )
         ep = TestHelper.create_entry_point(
-            method="POST", path="/action", execution_chain=steps, max_depth=5,
+            method="POST",
+            path="/action",
+            execution_chain=steps,
+            max_depth=5,
         )
         change = TestHelper.create_change(
-            symbol_id="sym://svc/a", symbol_name="EntryHandler", symbol_kind="function",
+            symbol_id="sym://svc/a",
+            symbol_name="EntryHandler",
+            symbol_kind="function",
         )
         file_change = TestHelper.create_file_change(changes=(change,))
         rc = TestHelper.create_review_context(
@@ -255,11 +278,13 @@ class TestChainCompression:
 # Discovery-Centred Filtering (§10, §11)
 # ---------------------------------------------------------------------------
 
-class TestDiscoveryCentredFiltering:
 
+class TestDiscoveryCentredFiltering:
     def test_only_changed_symbol_in_table(self):
         change = TestHelper.create_change(
-            symbol_id="sym://app/fn", symbol_name="fn", symbol_kind="function",
+            symbol_id="sym://app/fn",
+            symbol_name="fn",
+            symbol_kind="function",
         )
         file_change = TestHelper.create_file_change(path="app.py", changes=(change,))
         rc = TestHelper.create_review_context(
@@ -278,7 +303,9 @@ class TestDiscoveryCentredFiltering:
             changed=False,
         )
         ep = TestHelper.create_entry_point(
-            method="GET", path="/noise", execution_chain=(step_noise,),
+            method="GET",
+            path="/noise",
+            execution_chain=(step_noise,),
         )
         rc = TestHelper.create_review_context(
             execution=TestHelper.create_execution_context(entry_points=(ep,)),
@@ -296,10 +323,16 @@ class TestDiscoveryCentredFiltering:
             depth=0,
             changed=True,
         )
-        ep1 = TestHelper.create_entry_point(method="POST", path="/same", execution_chain=(step,))
-        ep2 = TestHelper.create_entry_point(method="POST", path="/same", execution_chain=(step,))
+        ep1 = TestHelper.create_entry_point(
+            method="POST", path="/same", execution_chain=(step,)
+        )
+        ep2 = TestHelper.create_entry_point(
+            method="POST", path="/same", execution_chain=(step,)
+        )
         change = TestHelper.create_change(
-            symbol_id="sym://app/handler", symbol_name="handler", symbol_kind="function",
+            symbol_id="sym://app/handler",
+            symbol_name="handler",
+            symbol_kind="function",
         )
         file_change = TestHelper.create_file_change(changes=(change,))
         rc = TestHelper.create_review_context(
@@ -321,30 +354,45 @@ class TestDiscoveryCentredFiltering:
 # Validation Invariants (§12)
 # ---------------------------------------------------------------------------
 
-class TestValidationInvariants:
 
+class TestValidationInvariants:
     @pytest.fixture
     def multi_ep_rc(self):
         step1 = TestHelper.create_execution_step(
-            symbol_id="sym://test/func1", symbol_name="func1",
-            kind="function", depth=0, changed=True,
+            symbol_id="sym://test/func1",
+            symbol_name="func1",
+            kind="function",
+            depth=0,
+            changed=True,
         )
         step2 = TestHelper.create_execution_step(
-            symbol_id="sym://test/func2", symbol_name="func2",
-            kind="function", depth=1, changed=False,
+            symbol_id="sym://test/func2",
+            symbol_name="func2",
+            kind="function",
+            depth=1,
+            changed=False,
         )
         step3 = TestHelper.create_execution_step(
-            symbol_id="sym://test/func1", symbol_name="func1",
-            kind="function", depth=0, changed=True,
+            symbol_id="sym://test/func1",
+            symbol_name="func1",
+            kind="function",
+            depth=0,
+            changed=True,
         )
         ep1 = TestHelper.create_entry_point(
-            method="POST", path="/test1", execution_chain=(step1, step2),
+            method="POST",
+            path="/test1",
+            execution_chain=(step1, step2),
         )
         ep2 = TestHelper.create_entry_point(
-            method="GET", path="/test2", execution_chain=(step3,),
+            method="GET",
+            path="/test2",
+            execution_chain=(step3,),
         )
         change = TestHelper.create_change(
-            symbol_id="sym://test/func1", symbol_name="func1", symbol_kind="function",
+            symbol_id="sym://test/func1",
+            symbol_name="func1",
+            symbol_kind="function",
         )
         file_change = TestHelper.create_file_change(changes=(change,))
         return TestHelper.create_review_context(
@@ -390,15 +438,23 @@ class TestValidationInvariants:
 
     def test_all_string_indices_in_bounds(self):
         step = TestHelper.create_execution_step(
-            symbol_id="sym://app/fn", symbol_name="fn",
-            depth=0, changed=True,
-            reaches_service="svc", reaches_module="mod",
+            symbol_id="sym://app/fn",
+            symbol_name="fn",
+            depth=0,
+            changed=True,
+            reaches_service="svc",
+            reaches_module="mod",
         )
         ep = TestHelper.create_entry_point(
-            method="POST", path="/p", execution_chain=(step,), terminal="end",
+            method="POST",
+            path="/p",
+            execution_chain=(step,),
+            terminal="end",
         )
         change = TestHelper.create_change(
-            symbol_id="sym://app/fn", symbol_name="fn", symbol_kind="function",
+            symbol_id="sym://app/fn",
+            symbol_name="fn",
+            symbol_kind="function",
         )
         file_change = TestHelper.create_file_change(changes=(change,))
         rc = TestHelper.create_review_context(
@@ -425,8 +481,8 @@ class TestValidationInvariants:
 # LLM Context Token Reduction Tests
 # ---------------------------------------------------------------------------
 
-class TestLLMContextTokenReduction:
 
+class TestLLMContextTokenReduction:
     def test_symbol_table_deduplication(self):
         """Test that different symbol IDs mapping to the same (file_id, name_idx, kind_id) are deduplicated."""
         # Create two symbol changes in the same file with different IDs but same name and kind
@@ -449,7 +505,7 @@ class TestLLMContextTokenReduction:
         )
         compiler = LLMContextCompiler()
         result = compiler.compile(rc)
-        
+
         # Check that only one symbol entry is stored in result.sym
         assert len(result.sym) == 1
 
@@ -471,10 +527,14 @@ class TestLLMContextTokenReduction:
             changed=True,
             behavior="behavior://process",
         )
-        
-        ep1 = TestHelper.create_entry_point(method="POST", path="/endpoint1", execution_chain=(step1,))
-        ep2 = TestHelper.create_entry_point(method="POST", path="/endpoint2", execution_chain=(step2,))
-        
+
+        ep1 = TestHelper.create_entry_point(
+            method="POST", path="/endpoint1", execution_chain=(step1,)
+        )
+        ep2 = TestHelper.create_entry_point(
+            method="POST", path="/endpoint2", execution_chain=(step2,)
+        )
+
         change = TestHelper.create_change(
             symbol_id="sym://app/process",
             symbol_name="process",
@@ -485,10 +545,10 @@ class TestLLMContextTokenReduction:
             change=TestHelper.create_change_context(files=(file_change,)),
             execution=TestHelper.create_execution_context(entry_points=(ep1, ep2)),
         )
-        
+
         compiler = LLMContextCompiler()
         result = compiler.compile(rc)
-        
+
         # Check that they merged into a single node in result.eg.nodes
         assert len(result.eg.nodes) == 1
         # The node should store the depth of the first occurrence (minimum depth)
@@ -512,8 +572,10 @@ class TestLLMContextTokenReduction:
             changed=True,
             behavior="behavior://helper",
         )
-        
-        ep = TestHelper.create_entry_point(method="POST", path="/path", execution_chain=(step1, step2))
+
+        ep = TestHelper.create_entry_point(
+            method="POST", path="/path", execution_chain=(step1, step2)
+        )
         change = TestHelper.create_change(
             symbol_id="sym://app/helper",
             symbol_name="helper",
@@ -524,10 +586,10 @@ class TestLLMContextTokenReduction:
             change=TestHelper.create_change_context(files=(file_change,)),
             execution=TestHelper.create_execution_context(entry_points=(ep,)),
         )
-        
+
         compiler = LLMContextCompiler()
         result = compiler.compile(rc)
-        
+
         # Should merge into 1 node, and the EP chain_nodes list should have length 1 (no consecutive duplicates)
         assert len(result.eg.nodes) == 1
         assert len(result.epts[0][1]) == 1
@@ -535,15 +597,25 @@ class TestLLMContextTokenReduction:
     def _compile_old(self, rc):
         """Runs the old (baseline) LLMContext compilation logic to measure token baseline."""
         from engine.llm_context.compiler import (
-            build_review_scope, _collect_discovery_references, _parse_location,
-            _StringBuilder, _enum_id, _resolve_symbol_name_from_uri, _is_noise_string,
-            _collect_live_string_indices
+            build_review_scope,
+            _collect_discovery_references,
+            _parse_location,
+            _StringBuilder,
+            _enum_id,
+            _resolve_symbol_name_from_uri,
+            _is_noise_string,
+            _collect_live_string_indices,
         )
-        from engine.llm_context.model import LLMContext, StringTable, ExecutionGraph, ENUM_METHOD
-        
+        from engine.llm_context.model import (
+            LLMContext,
+            StringTable,
+            ExecutionGraph,
+            ENUM_METHOD,
+        )
+
         compiler = LLMContextCompiler()
         pruned_context = build_review_scope(rc, settings=compiler._settings)
-        
+
         changed_symbol_ids = set()
         changed_file_paths = set()
         if pruned_context.change and pruned_context.change.files:
@@ -553,8 +625,8 @@ class TestLLMContextTokenReduction:
                     if c.symbol and c.symbol.id:
                         changed_symbol_ids.add(c.symbol.id)
 
-        disc_symbol_ids, disc_behavior_ids, disc_endpoint_keys = _collect_discovery_references(
-            pruned_context.discoveries
+        disc_symbol_ids, disc_behavior_ids, disc_endpoint_keys = (
+            _collect_discovery_references(pruned_context.discoveries)
         )
 
         retained_eps = compiler._filter_entry_points(
@@ -651,8 +723,10 @@ class TestLLMContextTokenReduction:
             path_str = sb.get_string(path_idx)
             endpoint_idx_map[(method_str, path_str)] = i
 
-        change_summary = compiler._build_change_summary(pruned_context.change.summary, sb)
-        
+        change_summary = compiler._build_change_summary(
+            pruned_context.change.summary, sb
+        )
+
         # Build changes for change_files remapping
         change_files = []
         for file_entry in file_table:
@@ -664,7 +738,11 @@ class TestLLMContextTokenReduction:
                         sym_idx = seen.get(c.symbol.id, -1)
                         if sym_idx >= 0 and sym_idx not in changed_sym_idxs:
                             changed_sym_idxs.append(sym_idx)
-                    file_idx = next(i for i, entry in enumerate(file_table) if sb.get_string(entry[0]) == path)
+                    file_idx = next(
+                        i
+                        for i, entry in enumerate(file_table)
+                        if sb.get_string(entry[0]) == path
+                    )
                     change_files.append((file_idx, tuple(changed_sym_idxs)))
 
         # Baseline execution building: node_key has depth, no node merging, no chain deduplication
@@ -684,8 +762,12 @@ class TestLLMContextTokenReduction:
                     node_idx = len(nodes)
                     node_map[node_key] = node_idx
                     sym_idx = seen.get(step.symbol.id, 0)
-                    reaches_svc_idx = sb.add(step.reaches.service) if step.reaches.service else 0
-                    reaches_mod_idx = sb.add(step.reaches.module) if step.reaches.module else 0
+                    reaches_svc_idx = (
+                        sb.add(step.reaches.service) if step.reaches.service else 0
+                    )
+                    reaches_mod_idx = (
+                        sb.add(step.reaches.module) if step.reaches.module else 0
+                    )
                     node = (sym_idx, step.depth, reaches_svc_idx, reaches_mod_idx)
                     nodes.append(node)
                 else:
@@ -698,7 +780,12 @@ class TestLLMContextTokenReduction:
                 prev_node_idx = node_idx
             endpoint_idx = endpoint_idx_map[key]
             terminal_idx = sb.add(ep.terminal) if ep.terminal else 0
-            ep_tuple = (endpoint_idx, tuple(chain_node_idxs), terminal_idx, ep.max_depth)
+            ep_tuple = (
+                endpoint_idx,
+                tuple(chain_node_idxs),
+                terminal_idx,
+                ep.max_depth,
+            )
             entry_point_data.append(ep_tuple)
 
         discoveries = compiler._build_discoveries(pruned_context.discoveries, sb)
@@ -723,11 +810,25 @@ class TestLLMContextTokenReduction:
                 new_strings.append(sb.strings[old_idx])
                 old_to_new[old_idx] = new_idx
 
-        remapped_file_table = [(old_to_new.get(path_idx, 0), ct_id) for path_idx, ct_id in file_table]
-        remapped_symbol_table = [(file_id, old_to_new.get(name_idx, 0), kind_id) for file_id, name_idx, kind_id in symbol_table]
-        remapped_endpoint_table = [(method_id, old_to_new.get(path_idx, 0)) for method_id, path_idx in endpoint_table]
-        remapped_nodes = tuple((sym_idx, depth, old_to_new.get(svc_idx, 0), old_to_new.get(mod_idx, 0)) for sym_idx, depth, svc_idx, mod_idx in nodes)
-        remapped_epts = tuple((ep_idx, chain_nodes, old_to_new.get(term_idx, 0), max_depth) for ep_idx, chain_nodes, term_idx, max_depth in entry_point_data)
+        remapped_file_table = [
+            (old_to_new.get(path_idx, 0), ct_id) for path_idx, ct_id in file_table
+        ]
+        remapped_symbol_table = [
+            (file_id, old_to_new.get(name_idx, 0), kind_id)
+            for file_id, name_idx, kind_id in symbol_table
+        ]
+        remapped_endpoint_table = [
+            (method_id, old_to_new.get(path_idx, 0))
+            for method_id, path_idx in endpoint_table
+        ]
+        remapped_nodes = tuple(
+            (sym_idx, depth, old_to_new.get(svc_idx, 0), old_to_new.get(mod_idx, 0))
+            for sym_idx, depth, svc_idx, mod_idx in nodes
+        )
+        remapped_epts = tuple(
+            (ep_idx, chain_nodes, old_to_new.get(term_idx, 0), max_depth)
+            for ep_idx, chain_nodes, term_idx, max_depth in entry_point_data
+        )
         compact_st = StringTable(entries=tuple(new_strings))
 
         return LLMContext(
@@ -746,7 +847,7 @@ class TestLLMContextTokenReduction:
         """Build a mock large ReviewContext simulating the large PR stats, and measure token count."""
         entry_points = []
         changes = []
-        
+
         # Generate 150 entry points with varying steps to simulate a large PR context
         # (This will be pruned down to 50 in selected_eps)
         for i in range(150):
@@ -764,15 +865,17 @@ class TestLLMContextTokenReduction:
                     behavior=f"behavior://file_{i % 10}/func_{d % 3}",
                 )
                 steps.append(step)
-                
+
                 # Add changes
                 if i < 20 and d % 2 == 0:
-                    changes.append(TestHelper.create_change(
-                        symbol_id=sym_id,
-                        symbol_name=f"func_{d % 3}",
-                        symbol_kind="function",
-                    ))
-            
+                    changes.append(
+                        TestHelper.create_change(
+                            symbol_id=sym_id,
+                            symbol_name=f"func_{d % 3}",
+                            symbol_kind="function",
+                        )
+                    )
+
             ep = TestHelper.create_entry_point(
                 method="POST",
                 path=f"/route_{i}",
@@ -781,12 +884,12 @@ class TestLLMContextTokenReduction:
                 max_depth=9,
             )
             entry_points.append(ep)
-            
+
         file_change = TestHelper.create_file_change(
             path="large_service.py",
             changes=tuple(changes),
         )
-        
+
         rc = TestHelper.create_review_context(
             change=TestHelper.create_change_context(
                 classification="modification",
@@ -795,37 +898,40 @@ class TestLLMContextTokenReduction:
                 symbol_count=len(changes),
                 files=(file_change,),
             ),
-            execution=TestHelper.create_execution_context(entry_points=tuple(entry_points)),
+            execution=TestHelper.create_execution_context(
+                entry_points=tuple(entry_points)
+            ),
         )
-        
+
         from engine.pipeline.pipeline import PipelineContext, Pipeline
+
         pipeline = Pipeline()
-        
+
         context_old = PipelineContext(run_context=None, repository="test/repo")
         context_old.review_context = rc
-        
+
         # Compile old
         context_old.llm_context = self._compile_old(rc)
         serialized_old = pipeline.serialize_llm_context(context_old)
         token_counts_old = pipeline.calculate_llm_context_tokens(serialized_old)
-        
+
         context_new = PipelineContext(run_context=None, repository="test/repo")
         context_new.review_context = rc
-        
+
         # Compile new
         compiler = LLMContextCompiler()
         context_new.llm_context = compiler.compile(rc)
         serialized_new = pipeline.serialize_llm_context(context_new)
         token_counts_new = pipeline.calculate_llm_context_tokens(serialized_new)
-        
+
         assert token_counts_old is not None
         assert token_counts_new is not None
-        
-        old_total = token_counts_old.get('total', 1)
-        new_total = token_counts_new.get('total', 1)
+
+        old_total = token_counts_old.get("total", 1)
+        new_total = token_counts_new.get("total", 1)
         reduction = old_total - new_total
         percent = (reduction / old_total) * 100
-        
+
         print("\n=== COMPARISON OF TOKEN COUNTS ===")
         print("BEFORE (Baseline)")
         print(f"sym:   {token_counts_old.get('sym')}")
@@ -843,38 +949,39 @@ class TestLLMContextTokenReduction:
         print(f"Absolute: {reduction} tokens")
         print(f"Percentage: {percent:.2f}%")
         print("==================================")
-        
+
         assert percent > 50.0
 
     def test_generate_llm_comment_with_compressed_context(self):
         """Test that generate_llm_comment accepts and uses llm_context_compressed."""
         change = TestHelper.create_change(
-            symbol_id="sym://app/fn", symbol_name="fn", symbol_kind="function",
+            symbol_id="sym://app/fn",
+            symbol_name="fn",
+            symbol_kind="function",
         )
         file_change = TestHelper.create_file_change(path="app.py", changes=(change,))
         rc = TestHelper.create_review_context(
             change=TestHelper.create_change_context(files=(file_change,)),
         )
-        
+
         from engine.pipeline.pipeline import PipelineContext, Pipeline
+
         pipeline = Pipeline()
         context = PipelineContext(run_context=None, repository="test/repo")
         context.review_context = rc
-        
+
         compiler = LLMContextCompiler()
         context.llm_context = compiler.compile(rc)
-        
+
         # Create a mock compressed context
-        mock_compressed = {
-            "st": ["", "custom_compressed_string"],
-            "sym": [[0, 1, 2]]
-        }
-        
+        mock_compressed = {"st": ["", "custom_compressed_string"], "sym": [[0, 1, 2]]}
+
         # Mock the OpenAI client so it doesn't make a real network call
         class MockChoices:
             def __init__(self):
                 class MockMessage:
                     content = "Mock briefing content"
+
                 self.message = MockMessage()
 
         class MockResponse:
@@ -900,27 +1007,27 @@ class TestLLMContextTokenReduction:
 
             def __enter__(self):
                 return self
-            
+
             def __exit__(self, exc_type, exc_val, exc_tb):
                 pass
-                
+
         import sys
         import core.config
-        
+
         class MockSettings:
             AI_API_KEY = "mock-key"
             AI_API_BASE_URL = "http://mock-url"
             AI_MODEL = "mock-model"
-            
+
         orig_get_settings = core.config.get_settings
         core.config.get_settings = lambda: MockSettings()
-        
-        orig_openai = sys.modules.get('openai')
-        
+
+        orig_openai = sys.modules.get("openai")
+
         class FakeOpenAIModule:
             OpenAI = MockOpenAI
-            
-        sys.modules['openai'] = FakeOpenAIModule
+
+        sys.modules["openai"] = FakeOpenAIModule
 
         try:
             res = pipeline.generate_llm_comment(
@@ -935,6 +1042,6 @@ class TestLLMContextTokenReduction:
         finally:
             core.config.get_settings = orig_get_settings
             if orig_openai is not None:
-                sys.modules['openai'] = orig_openai
+                sys.modules["openai"] = orig_openai
             else:
-                del sys.modules['openai']
+                del sys.modules["openai"]

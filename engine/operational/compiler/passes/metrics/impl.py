@@ -112,7 +112,6 @@ class MetricsCompilationPass(OperationalCompilerPass):
         else:
             behaviors = 0
 
-
         # 2. Service count (from dependency model)
         services = 0
         if model.dependency is not None:
@@ -178,10 +177,7 @@ class MetricsCompilationPass(OperationalCompilerPass):
         traversal_size = 0
         if model.dependency is not None:
             dependency = cast(DependencyModel, model.dependency)
-            traversal_size = (
-                len(dependency.callers)
-                + len(dependency.dependents)
-            )
+            traversal_size = len(dependency.callers) + len(dependency.dependents)
         if hasattr(model.repository, "symbols"):
             traversal_size += len(model.repository.symbols)
 
@@ -206,7 +202,7 @@ class MetricsCompilationPass(OperationalCompilerPass):
             data=model.data,
             event=model.event,
             validation=model.validation,
-            api=model.api if hasattr(model, 'api') else None,
+            api=model.api if hasattr(model, "api") else None,
             metrics=metrics,
         )
 

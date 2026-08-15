@@ -79,24 +79,33 @@ class RepositoryGraph:
     Maintains file contributions and compiled global indexes. It serves
     as a long-lived serializable database that can be patched with diffs.
     """
+
     files: dict[str, FileContribution] = field(default_factory=dict)
     symbols: dict[str, Symbol] = field(default_factory=dict)
     imports: dict[str, Symbol] = field(default_factory=dict)
     call_graph: CallGraph = field(default_factory=lambda: CallGraph())
     reference_graph: ReferenceGraph = field(default_factory=lambda: ReferenceGraph())
-    type_relationship_graph: TypeRelationshipGraph = field(default_factory=lambda: TypeRelationshipGraph())
+    type_relationship_graph: TypeRelationshipGraph = field(
+        default_factory=lambda: TypeRelationshipGraph()
+    )
     entry_points: tuple[EntryPoint, ...] = field(default_factory=tuple)
     async_entry_points: tuple[AsyncEntryPoint, ...] = field(default_factory=tuple)
     persistence_models: tuple[PersistenceModel, ...] = field(default_factory=tuple)
     repository_methods: tuple[RepositoryMethod, ...] = field(default_factory=tuple)
     event_constructs: tuple[EventConstruct, ...] = field(default_factory=tuple)
     test_definitions: tuple[TestDefinition, ...] = field(default_factory=tuple)
-    configuration_references: tuple[ConfigurationReference, ...] = field(default_factory=tuple)
+    configuration_references: tuple[ConfigurationReference, ...] = field(
+        default_factory=tuple
+    )
     metadata: dict[str, Any] = field(default_factory=dict)
 
     # In-memory only cache and stats
-    _indexes: DerivedIndexCache = field(default_factory=DerivedIndexCache, init=False, repr=False, compare=False)
-    _index_stats: dict[str, IndexStats] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _indexes: DerivedIndexCache = field(
+        default_factory=DerivedIndexCache, init=False, repr=False, compare=False
+    )
+    _index_stats: dict[str, IndexStats] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         """Guard: fail loudly if created in a new-architecture-only context."""
@@ -227,9 +236,16 @@ class RepositoryGraph:
     def clear_file_indexes(self, file_path: str) -> None:
         """Clear all per-file index entries for a file."""
         for name in [
-            "file_to_call_edges", "file_to_reference_edges", "file_to_type_edges",
-            "file_to_entry_points", "file_to_async_entry_points", "file_to_persistence",
-            "file_to_methods", "file_to_events", "file_to_tests", "file_to_configs"
+            "file_to_call_edges",
+            "file_to_reference_edges",
+            "file_to_type_edges",
+            "file_to_entry_points",
+            "file_to_async_entry_points",
+            "file_to_persistence",
+            "file_to_methods",
+            "file_to_events",
+            "file_to_tests",
+            "file_to_configs",
         ]:
             dct = getattr(self, name)
             dct.pop(file_path, None)
@@ -246,7 +262,9 @@ class RepositoryGraph:
     def set_file_entry_points(self, file_path: str, entry_points: list[Any]) -> None:
         self.file_to_entry_points[file_path] = entry_points
 
-    def set_file_async_entry_points(self, file_path: str, async_entry_points: list[Any]) -> None:
+    def set_file_async_entry_points(
+        self, file_path: str, async_entry_points: list[Any]
+    ) -> None:
         self.file_to_async_entry_points[file_path] = async_entry_points
 
     def set_file_persistence(self, file_path: str, persistence: list[Any]) -> None:
@@ -276,14 +294,21 @@ class RepositoryGraph:
         """Convert to the immutable RepositoryModel expected by downstream compilers."""
         import time
         from core.logging import pipeline_logger
+
         start = time.perf_counter()
         pipeline_logger.log_pipeline(
             f"[to_model] Converting RepositoryGraph → RepositoryModel ({len(self.files)} files, {len(self.symbols)} symbols, {len(self.imports)} imports)...",
             to_terminal=True,
         )
-        pipeline_logger.log_pipeline("[to_model] Building symbol list...", to_terminal=True)
-        all_symbols = frozenset(self.symbols.values()) | frozenset(self.imports.values())
-        pipeline_logger.log_pipeline("[to_model] Constructing RepositoryModel...", to_terminal=True)
+        pipeline_logger.log_pipeline(
+            "[to_model] Building symbol list...", to_terminal=True
+        )
+        all_symbols = frozenset(self.symbols.values()) | frozenset(
+            self.imports.values()
+        )
+        pipeline_logger.log_pipeline(
+            "[to_model] Constructing RepositoryModel...", to_terminal=True
+        )
         model = RepositoryModel(
             symbols=all_symbols,
             call_graph=self.call_graph,
@@ -299,7 +324,9 @@ class RepositoryGraph:
             metadata=self.metadata,
         )
         elapsed = time.perf_counter() - start
-        pipeline_logger.log_pipeline(f"[to_model] Done ({elapsed:.3f}s)", to_terminal=True)
+        pipeline_logger.log_pipeline(
+            f"[to_model] Done ({elapsed:.3f}s)", to_terminal=True
+        )
         return model
 
     def to_bytes(self) -> bytes:
@@ -310,6 +337,7 @@ class RepositoryGraph:
     def from_bytes(cls, data: bytes) -> "RepositoryGraph":
         """Deserialize the RepositoryGraph using pickle."""
         from typing import cast
+
         return cast("RepositoryGraph", pickle.loads(data))
 
     def save_to_file(self, file_path: str) -> None:
@@ -334,21 +362,30 @@ class RepositoryGraph:
         if cache.unresolved_symbol_to_waiting_files is not None:
             return
 
-        stats = self._index_stats.setdefault("unresolved_symbol_to_waiting_files", IndexStats())
+        stats = self._index_stats.setdefault(
+            "unresolved_symbol_to_waiting_files", IndexStats()
+        )
         stats.materializations += 1
 
         cache.unresolved_symbol_to_waiting_files = {}
         for f_path, contrib in self.files.items():
             for call in contrib.calls:
                 if call.callee:
-                    cache.unresolved_symbol_to_waiting_files.setdefault(call.callee, set()).add(f_path)
+                    cache.unresolved_symbol_to_waiting_files.setdefault(
+                        call.callee, set()
+                    ).add(f_path)
             for ref in contrib.references:
                 if ref.name:
-                    cache.unresolved_symbol_to_waiting_files.setdefault(ref.name, set()).add(f_path)
+                    cache.unresolved_symbol_to_waiting_files.setdefault(
+                        ref.name, set()
+                    ).add(f_path)
 
         from benchmark.size_estimator import get_retained_size
+
         stats.unique_keys = len(cache.unresolved_symbol_to_waiting_files)
-        stats.materialized_size = get_retained_size(cache.unresolved_symbol_to_waiting_files)
+        stats.materialized_size = get_retained_size(
+            cache.unresolved_symbol_to_waiting_files
+        )
 
     def rebuild_reverse_indexes(self) -> None:
         """Rebuild all reverse dependency indexes and per-file edge buckets from current graphs."""
@@ -362,10 +399,18 @@ class RepositoryGraph:
 
         # Record materializations
         for name in [
-            "symbol_to_callers", "symbol_to_importers",
-            "file_to_call_edges", "file_to_reference_edges", "file_to_type_edges",
-            "file_to_entry_points", "file_to_async_entry_points", "file_to_persistence",
-            "file_to_methods", "file_to_events", "file_to_tests", "file_to_configs"
+            "symbol_to_callers",
+            "symbol_to_importers",
+            "file_to_call_edges",
+            "file_to_reference_edges",
+            "file_to_type_edges",
+            "file_to_entry_points",
+            "file_to_async_entry_points",
+            "file_to_persistence",
+            "file_to_methods",
+            "file_to_events",
+            "file_to_tests",
+            "file_to_configs",
         ]:
             stats = self._index_stats.setdefault(name, IndexStats())
             stats.materializations += 1
@@ -390,7 +435,9 @@ class RepositoryGraph:
         for edge in self.call_graph.edges:
             caller_file = edge.file
             if not caller_file and "://" in edge.caller_id:
-                caller_file = edge.caller_id.split("://")[1].split("::")[0].split("#")[0]
+                caller_file = (
+                    edge.caller_id.split("://")[1].split("::")[0].split("#")[0]
+                )
             if caller_file:
                 cache.file_to_call_edges.setdefault(caller_file, []).append(edge)
             cache.symbol_to_callers.setdefault(edge.callee_id, set()).add(caller_file)
@@ -399,15 +446,23 @@ class RepositoryGraph:
         for ref_edge in self.reference_graph.edges:
             src_file = ""
             if "://" in ref_edge.source_id:
-                src_file = ref_edge.source_id.split("://")[1].split("::")[0].split("#")[0]
+                src_file = (
+                    ref_edge.source_id.split("://")[1].split("::")[0].split("#")[0]
+                )
             if src_file:
                 cache.file_to_reference_edges.setdefault(src_file, []).append(ref_edge)
-            cache.symbol_to_importers.setdefault(ref_edge.target_id, set()).add(src_file)
+            cache.symbol_to_importers.setdefault(ref_edge.target_id, set()).add(
+                src_file
+            )
 
         # Build per-file type edges
         for t_edge in self.type_relationship_graph.edges:
             src_file = ""
-            if hasattr(t_edge, "evidence") and t_edge.evidence and t_edge.evidence.file_location:
+            if (
+                hasattr(t_edge, "evidence")
+                and t_edge.evidence
+                and t_edge.evidence.file_location
+            ):
                 src_file = str(t_edge.evidence.file_location.file)
             elif "://" in t_edge.source_id:
                 src_file = t_edge.source_id.split("://")[1].split("::")[0].split("#")[0]
@@ -418,7 +473,11 @@ class RepositoryGraph:
         def _get_file(item: Any) -> str:
             if hasattr(item, "file") and item.file:
                 return str(item.file)
-            if hasattr(item, "evidence") and item.evidence and item.evidence.file_location:
+            if (
+                hasattr(item, "evidence")
+                and item.evidence
+                and item.evidence.file_location
+            ):
                 return str(item.evidence.file_location.file)
             if hasattr(item, "handler_id") and "://" in str(item.handler_id):
                 return str(item.handler_id).split("://")[1].split("::")[0].split("#")[0]
@@ -428,33 +487,49 @@ class RepositoryGraph:
 
         for ep in self.entry_points:
             f = _get_file(ep)
-            if f: cache.file_to_entry_points.setdefault(f, []).append(ep)
+            if f:
+                cache.file_to_entry_points.setdefault(f, []).append(ep)
         for aep in self.async_entry_points:
             f = _get_file(aep)
-            if f: cache.file_to_async_entry_points.setdefault(f, []).append(aep)
+            if f:
+                cache.file_to_async_entry_points.setdefault(f, []).append(aep)
         for pm in self.persistence_models:
             f = _get_file(pm)
-            if f: cache.file_to_persistence.setdefault(f, []).append(pm)
+            if f:
+                cache.file_to_persistence.setdefault(f, []).append(pm)
         for rm in self.repository_methods:
             f = _get_file(rm)
-            if f: cache.file_to_methods.setdefault(f, []).append(rm)
+            if f:
+                cache.file_to_methods.setdefault(f, []).append(rm)
         for ev in self.event_constructs:
             f = _get_file(ev)
-            if f: cache.file_to_events.setdefault(f, []).append(ev)
+            if f:
+                cache.file_to_events.setdefault(f, []).append(ev)
         for td in self.test_definitions:
             f = _get_file(td)
-            if f: cache.file_to_tests.setdefault(f, []).append(td)
+            if f:
+                cache.file_to_tests.setdefault(f, []).append(td)
         for cr in self.configuration_references:
             f = _get_file(cr)
-            if f: cache.file_to_configs.setdefault(f, []).append(cr)
+            if f:
+                cache.file_to_configs.setdefault(f, []).append(cr)
 
         # Set stats sizes
         from benchmark.size_estimator import get_retained_size
+
         for name in [
-            "symbol_to_callers", "symbol_to_importers",
-            "file_to_call_edges", "file_to_reference_edges", "file_to_type_edges",
-            "file_to_entry_points", "file_to_async_entry_points", "file_to_persistence",
-            "file_to_methods", "file_to_events", "file_to_tests", "file_to_configs"
+            "symbol_to_callers",
+            "symbol_to_importers",
+            "file_to_call_edges",
+            "file_to_reference_edges",
+            "file_to_type_edges",
+            "file_to_entry_points",
+            "file_to_async_entry_points",
+            "file_to_persistence",
+            "file_to_methods",
+            "file_to_events",
+            "file_to_tests",
+            "file_to_configs",
         ]:
             val = getattr(cache, name)
             stats = self._index_stats[name]
@@ -464,7 +539,7 @@ class RepositoryGraph:
     def index_memory_report(self) -> dict[str, Any]:
         """Return a memory size breakdown report for the indexes."""
         from benchmark.size_estimator import get_retained_size
-        
+
         cache = self._indexes
         return {
             "CallGraph": {
@@ -483,13 +558,27 @@ class RepositoryGraph:
                 "incoming": get_retained_size(self.type_relationship_graph.incoming),
             },
             "RepositoryGraph_indexes": {
-                "callers": get_retained_size(cache.symbol_to_callers) if cache.symbol_to_callers is not None else 0,
-                "importers": get_retained_size(cache.symbol_to_importers) if cache.symbol_to_importers is not None else 0,
-                "unresolved": get_retained_size(cache.unresolved_symbol_to_waiting_files) if cache.unresolved_symbol_to_waiting_files is not None else 0,
-                "file_calls": get_retained_size(cache.file_to_call_edges) if cache.file_to_call_edges is not None else 0,
-                "file_refs": get_retained_size(cache.file_to_reference_edges) if cache.file_to_reference_edges is not None else 0,
-                "file_types": get_retained_size(cache.file_to_type_edges) if cache.file_to_type_edges is not None else 0,
-            }
+                "callers": get_retained_size(cache.symbol_to_callers)
+                if cache.symbol_to_callers is not None
+                else 0,
+                "importers": get_retained_size(cache.symbol_to_importers)
+                if cache.symbol_to_importers is not None
+                else 0,
+                "unresolved": get_retained_size(
+                    cache.unresolved_symbol_to_waiting_files
+                )
+                if cache.unresolved_symbol_to_waiting_files is not None
+                else 0,
+                "file_calls": get_retained_size(cache.file_to_call_edges)
+                if cache.file_to_call_edges is not None
+                else 0,
+                "file_refs": get_retained_size(cache.file_to_reference_edges)
+                if cache.file_to_reference_edges is not None
+                else 0,
+                "file_types": get_retained_size(cache.file_to_type_edges)
+                if cache.file_to_type_edges is not None
+                else 0,
+            },
         }
 
     def __getstate__(self) -> dict[str, Any]:

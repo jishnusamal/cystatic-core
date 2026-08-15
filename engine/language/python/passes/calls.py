@@ -48,12 +48,14 @@ class PythonCallIndexPass(BaseIndexPass):
                         )
                     )
 
-    def visit_Call(self, node: ast.Call, context: FileContext, builder: dict[str, Any]) -> None:
+    def visit_Call(
+        self, node: ast.Call, context: FileContext, builder: dict[str, Any]
+    ) -> None:
         """Handle function call node from visitor."""
         inst = get_instrumentation()
         tree = context.ast
         file_path = context.path
-        
+
         # Time the entire visit_Call
         start = time.perf_counter()
         try:
@@ -77,7 +79,9 @@ class PythonCallIndexPass(BaseIndexPass):
             elapsed = time.perf_counter() - start
             inst.record_method_time("PythonCallIndexPass", "visit_Call", elapsed)
 
-    def visit_ClassDef(self, node: ast.ClassDef, context: FileContext, builder: dict[str, Any]) -> None:
+    def visit_ClassDef(
+        self, node: ast.ClassDef, context: FileContext, builder: dict[str, Any]
+    ) -> None:
         """Handle calls inside class methods by walking the class body."""
         for child in ast.walk(node):
             if isinstance(child, ast.Call):
@@ -91,15 +95,19 @@ class PythonCallIndexPass(BaseIndexPass):
                     return node.name
         return None
 
-    def _get_caller_name_optimized(self, call_node: ast.Call, tree: ast.AST) -> str | None:
+    def _get_caller_name_optimized(
+        self, call_node: ast.Call, tree: ast.AST
+    ) -> str | None:
         """Get the name of the function containing this call."""
         caller_name, _ = self._get_caller_info_optimized(call_node, tree)
         return caller_name
 
-    def _get_caller_info_optimized(self, call_node: ast.Call, tree: ast.AST) -> tuple[str | None, str]:
+    def _get_caller_info_optimized(
+        self, call_node: ast.Call, tree: ast.AST
+    ) -> tuple[str | None, str]:
         """Get caller function name and optional enclosing class name."""
         inst = get_instrumentation()
-        
+
         start = time.perf_counter()
         try:
             parent_map = self._get_parent_map(tree)
@@ -111,19 +119,25 @@ class PythonCallIndexPass(BaseIndexPass):
                 parent = parent_map.get(id(current))
                 if parent is None:
                     break
-                if caller_name is None and isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if caller_name is None and isinstance(
+                    parent, (ast.FunctionDef, ast.AsyncFunctionDef)
+                ):
                     caller_name = parent.name
                 elif caller_name is not None and isinstance(parent, ast.ClassDef):
                     caller_parent = parent.name
                     break
-                elif caller_name is not None and isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                elif caller_name is not None and isinstance(
+                    parent, (ast.FunctionDef, ast.AsyncFunctionDef)
+                ):
                     break
                 current = parent
 
             return caller_name, caller_parent
         finally:
             elapsed = time.perf_counter() - start
-            inst.record_method_time("PythonCallIndexPass", "_get_caller_name_optimized", elapsed)
+            inst.record_method_time(
+                "PythonCallIndexPass", "_get_caller_name_optimized", elapsed
+            )
 
     def _get_callee_name(self, call_node: ast.Call) -> str | None:
         """Get the raw name of the called function."""
@@ -133,7 +147,7 @@ class PythonCallIndexPass(BaseIndexPass):
     def _get_callee_info(self, call_node: ast.Call) -> tuple[str | None, str]:
         """Get callee name and receiver expression string."""
         inst = get_instrumentation()
-        
+
         start = time.perf_counter()
         try:
             if isinstance(call_node.func, ast.Name):
@@ -144,8 +158,9 @@ class PythonCallIndexPass(BaseIndexPass):
             return None, ""
         finally:
             elapsed = time.perf_counter() - start
-            inst.record_internal_op("PythonCallIndexPass", "visit_Call", 
-                                  "_get_callee_name", elapsed)
+            inst.record_internal_op(
+                "PythonCallIndexPass", "visit_Call", "_get_callee_name", elapsed
+            )
 
     def _get_receiver_string(self, node: ast.AST) -> str:
         """Convert a receiver AST node to a dot-separated string."""
@@ -158,22 +173,22 @@ class PythonCallIndexPass(BaseIndexPass):
 
     def _get_parent_map(self, tree: ast.AST) -> dict[int, ast.AST]:
         """Build a parent map for the AST.
-        
+
         Maps each node's id() to its parent node.
         This is cached on the tree object to avoid rebuilding.
-        
+
         Returns:
             Dictionary mapping node id to parent node
         """
         # Cache parent map on tree object to avoid rebuilding
-        pm: dict[int, ast.AST] | None = getattr(tree, '_parent_map', None)
+        pm: dict[int, ast.AST] | None = getattr(tree, "_parent_map", None)
         if pm is None:
             pm = {}
             for node in ast.walk(tree):
                 for child in ast.iter_child_nodes(node):
                     pm[id(child)] = node
-            setattr(tree, '_parent_map', pm)
-        
+            setattr(tree, "_parent_map", pm)
+
         return pm
 
     def _node_contains(self, inner: ast.AST, outer: ast.AST) -> bool:

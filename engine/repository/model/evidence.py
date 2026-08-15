@@ -21,6 +21,7 @@ class FileLocation:
         start_column: Start column number (1-based, optional)
         end_column: End column number (1-based, optional)
     """
+
     file: str
     start_line: int
     end_line: int
@@ -37,7 +38,7 @@ class FileLocation:
             raise ValueError(
                 f"End line ({self.end_line}) must be >= start line ({self.start_line})"
             )
-        object.__setattr__(self, 'file', sys.intern(self.file))
+        object.__setattr__(self, "file", sys.intern(self.file))
 
 
 @dataclass(slots=True, frozen=True)
@@ -49,6 +50,7 @@ class SymbolReference:
         symbol_id: The stable identifier of the referenced symbol
         location: File location where the reference occurs
     """
+
     symbol_id: str
     location: FileLocation
 
@@ -56,7 +58,7 @@ class SymbolReference:
         """Validate symbol reference after initialization."""
         if not self.symbol_id:
             raise ValueError("Symbol id cannot be empty")
-        object.__setattr__(self, 'symbol_id', sys.intern(self.symbol_id))
+        object.__setattr__(self, "symbol_id", sys.intern(self.symbol_id))
 
 
 @dataclass(slots=True, frozen=True)
@@ -70,6 +72,7 @@ class CallReference:
         location: File location where the call occurs
         call_type: Type of call (direct, indirect, dynamic)
     """
+
     caller_symbol_id: str
     callee_name: str
     location: FileLocation
@@ -81,9 +84,9 @@ class CallReference:
             raise ValueError("Caller symbol id cannot be empty")
         if not self.callee_name:
             raise ValueError("Callee name cannot be empty")
-        object.__setattr__(self, 'caller_symbol_id', sys.intern(self.caller_symbol_id))
-        object.__setattr__(self, 'callee_name', sys.intern(self.callee_name))
-        object.__setattr__(self, 'call_type', sys.intern(self.call_type))
+        object.__setattr__(self, "caller_symbol_id", sys.intern(self.caller_symbol_id))
+        object.__setattr__(self, "callee_name", sys.intern(self.callee_name))
+        object.__setattr__(self, "call_type", sys.intern(self.call_type))
 
 
 @dataclass(slots=True, frozen=True)
@@ -97,6 +100,7 @@ class ImportReference:
         location: File location where the import occurs
         import_type: Type of import (import, from_import, etc.)
     """
+
     module: str
     names: tuple[str, ...]
     location: FileLocation
@@ -108,12 +112,12 @@ class ImportReference:
             raise ValueError("Module cannot be empty")
         names_tuple = tuple(self.names) if isinstance(self.names, list) else self.names
         # Intern strings
-        object.__setattr__(self, 'module', sys.intern(self.module))
-        object.__setattr__(self, 'import_type', sys.intern(self.import_type))
+        object.__setattr__(self, "module", sys.intern(self.module))
+        object.__setattr__(self, "import_type", sys.intern(self.import_type))
         if names_tuple:
-            object.__setattr__(self, 'names', tuple(sys.intern(n) for n in names_tuple))
+            object.__setattr__(self, "names", tuple(sys.intern(n) for n in names_tuple))
         else:
-            object.__setattr__(self, 'names', names_tuple)
+            object.__setattr__(self, "names", names_tuple)
 
 
 @dataclass(slots=True, frozen=True)
@@ -126,6 +130,7 @@ class AnnotationReference:
         location: File location where the annotation occurs
         arguments: Annotation arguments if available
     """
+
     annotation_name: str
     location: FileLocation
     arguments: dict[str, Any] = field(default_factory=dict)
@@ -134,9 +139,9 @@ class AnnotationReference:
         """Validate annotation reference after initialization."""
         if not self.annotation_name:
             raise ValueError("Annotation name cannot be empty")
-        object.__setattr__(self, 'annotation_name', sys.intern(self.annotation_name))
+        object.__setattr__(self, "annotation_name", sys.intern(self.annotation_name))
         if isinstance(self.arguments, dict):
-            object.__setattr__(self, 'arguments', dict(self.arguments))
+            object.__setattr__(self, "arguments", dict(self.arguments))
 
 
 @dataclass(slots=True, frozen=True)
@@ -156,28 +161,33 @@ class Evidence:
         annotation_references: References to related annotations
         source: Raw source text or description of the evidence
     """
+
     file_location: FileLocation
     symbol_references: tuple[SymbolReference, ...] = field(default_factory=tuple)
     call_references: tuple[CallReference, ...] = field(default_factory=tuple)
     import_references: tuple[ImportReference, ...] = field(default_factory=tuple)
-    annotation_references: tuple[AnnotationReference, ...] = field(default_factory=tuple)
+    annotation_references: tuple[AnnotationReference, ...] = field(
+        default_factory=tuple
+    )
     source: str = ""
 
     def __post_init__(self):
         """Validate evidence after initialization."""
         if isinstance(self.symbol_references, list):
-            object.__setattr__(self, 'symbol_references', tuple(self.symbol_references))
+            object.__setattr__(self, "symbol_references", tuple(self.symbol_references))
         if isinstance(self.call_references, list):
-            object.__setattr__(self, 'call_references', tuple(self.call_references))
+            object.__setattr__(self, "call_references", tuple(self.call_references))
         if isinstance(self.import_references, list):
-            object.__setattr__(self, 'import_references', tuple(self.import_references))
+            object.__setattr__(self, "import_references", tuple(self.import_references))
         if isinstance(self.annotation_references, list):
-            object.__setattr__(self, 'annotation_references', tuple(self.annotation_references))
+            object.__setattr__(
+                self, "annotation_references", tuple(self.annotation_references)
+            )
         if self.source:
-            object.__setattr__(self, 'source', sys.intern(self.source))
+            object.__setattr__(self, "source", sys.intern(self.source))
 
     @staticmethod
-    def from_file(file: str, start_line: int, end_line: int) -> 'Evidence':
+    def from_file(file: str, start_line: int, end_line: int) -> "Evidence":
         """
         Create evidence from a simple file location.
 
@@ -203,7 +213,7 @@ class Evidence:
         start_line: int,
         end_line: int,
         symbol_id: str,
-    ) -> 'Evidence':
+    ) -> "Evidence":
         """
         Create evidence from a symbol reference.
 

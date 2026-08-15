@@ -16,6 +16,7 @@ from core.runtime import assert_new_architecture
 
 class EntryPointKind(str, Enum):
     """Type of entry point."""
+
     REST_ENDPOINT = "rest_endpoint"
     GRAPHQL_RESOLVER = "graphql_resolver"
     RPC_HANDLER = "rpc_handler"
@@ -43,6 +44,7 @@ class EntryPoint:
         evidence: Provenance evidence for this entry point
         metadata: Additional framework-specific metadata
     """
+
     kind: EntryPointKind
     route: str
     handler_id: str
@@ -58,20 +60,21 @@ class EntryPoint:
         if not self.handler_id:
             raise ValueError("Entry point handler id cannot be empty")
         if isinstance(self.metadata, dict):
-            object.__setattr__(self, 'metadata', dict(self.metadata))
+            object.__setattr__(self, "metadata", dict(self.metadata))
 
         # Convert string kind to EntryPointKind if needed
         if isinstance(self.kind, str):
-            object.__setattr__(self, 'kind', EntryPointKind(self.kind))
+            object.__setattr__(self, "kind", EntryPointKind(self.kind))
 
         if self.evidence is None:
             object.__setattr__(
                 self,
-                'evidence',
+                "evidence",
                 Evidence(
                     file_location=FileLocation(
-                        file=self.handler_id.split('://')[1].split('::')[0]
-                        if '://' in self.handler_id else '',
+                        file=self.handler_id.split("://")[1].split("::")[0]
+                        if "://" in self.handler_id
+                        else "",
                         start_line=1,
                         end_line=1,
                     ),
@@ -97,6 +100,7 @@ class AsyncEntryPoint:
         evidence: Provenance evidence for this async entry point
         metadata: Additional framework-specific metadata
     """
+
     kind: EntryPointKind
     handler_id: str
     trigger: str
@@ -111,17 +115,18 @@ class AsyncEntryPoint:
         if not self.handler_id:
             raise ValueError("Handler id cannot be empty")
         if isinstance(self.kind, str):
-            object.__setattr__(self, 'kind', EntryPointKind(self.kind))
+            object.__setattr__(self, "kind", EntryPointKind(self.kind))
         if isinstance(self.metadata, dict):
-            object.__setattr__(self, 'metadata', dict(self.metadata))
+            object.__setattr__(self, "metadata", dict(self.metadata))
         if self.evidence is None:
             object.__setattr__(
                 self,
-                'evidence',
+                "evidence",
                 Evidence(
                     file_location=FileLocation(
-                        file=self.handler_id.split('://')[1].split('::')[0]
-                        if '://' in self.handler_id else '',
+                        file=self.handler_id.split("://")[1].split("::")[0]
+                        if "://" in self.handler_id
+                        else "",
                         start_line=1,
                         end_line=1,
                     ),
@@ -154,45 +159,60 @@ class RepositoryModel:
         configuration_references: Discovered config references (env vars, etc.)
         metadata: Additional repository-level metadata
     """
+
     symbols: frozenset[Symbol]
     call_graph: CallGraph
     reference_graph: ReferenceGraph
-    type_relationship_graph: TypeRelationshipGraph = field(default_factory=lambda: TypeRelationshipGraph())
+    type_relationship_graph: TypeRelationshipGraph = field(
+        default_factory=lambda: TypeRelationshipGraph()
+    )
     entry_points: tuple[EntryPoint, ...] = field(default_factory=tuple)
     async_entry_points: tuple[AsyncEntryPoint, ...] = field(default_factory=tuple)
     persistence_models: tuple[PersistenceModel, ...] = field(default_factory=tuple)
     repository_methods: tuple[RepositoryMethod, ...] = field(default_factory=tuple)
     event_constructs: tuple[EventConstruct, ...] = field(default_factory=tuple)
     test_definitions: tuple[TestDefinition, ...] = field(default_factory=tuple)
-    configuration_references: tuple[ConfigurationReference, ...] = field(default_factory=tuple)
+    configuration_references: tuple[ConfigurationReference, ...] = field(
+        default_factory=tuple
+    )
     metadata: dict[str, Any] = field(default_factory=dict)
-    _symbol_map: dict[str, Symbol] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _symbol_map: dict[str, Symbol] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self):
         """Validate repository model after initialization."""
         # Guard: fail loudly if created in a new-architecture-only context.
         assert_new_architecture("RepositoryModel")
         if not isinstance(self.symbols, frozenset):
-            object.__setattr__(self, 'symbols', frozenset(self.symbols))
+            object.__setattr__(self, "symbols", frozenset(self.symbols))
         if not isinstance(self.entry_points, tuple):
-            object.__setattr__(self, 'entry_points', tuple(self.entry_points))
+            object.__setattr__(self, "entry_points", tuple(self.entry_points))
         if not isinstance(self.async_entry_points, tuple):
-            object.__setattr__(self, 'async_entry_points', tuple(self.async_entry_points))
+            object.__setattr__(
+                self, "async_entry_points", tuple(self.async_entry_points)
+            )
         if not isinstance(self.persistence_models, tuple):
-            object.__setattr__(self, 'persistence_models', tuple(self.persistence_models))
+            object.__setattr__(
+                self, "persistence_models", tuple(self.persistence_models)
+            )
         if not isinstance(self.repository_methods, tuple):
-            object.__setattr__(self, 'repository_methods', tuple(self.repository_methods))
+            object.__setattr__(
+                self, "repository_methods", tuple(self.repository_methods)
+            )
         if not isinstance(self.event_constructs, tuple):
-            object.__setattr__(self, 'event_constructs', tuple(self.event_constructs))
+            object.__setattr__(self, "event_constructs", tuple(self.event_constructs))
         if not isinstance(self.test_definitions, tuple):
-            object.__setattr__(self, 'test_definitions', tuple(self.test_definitions))
+            object.__setattr__(self, "test_definitions", tuple(self.test_definitions))
         if not isinstance(self.configuration_references, tuple):
-            object.__setattr__(self, 'configuration_references', tuple(self.configuration_references))
+            object.__setattr__(
+                self, "configuration_references", tuple(self.configuration_references)
+            )
         if isinstance(self.metadata, dict):
-            object.__setattr__(self, 'metadata', dict(self.metadata))
+            object.__setattr__(self, "metadata", dict(self.metadata))
 
         # Build O(1) symbol map
-        object.__setattr__(self, '_symbol_map', {s.id: s for s in self.symbols})
+        object.__setattr__(self, "_symbol_map", {s.id: s for s in self.symbols})
 
     def get_symbol_by_id(self, symbol_id: str) -> Symbol | None:
         """Get a symbol by its identifier."""
@@ -218,9 +238,13 @@ class RepositoryModel:
         """Get all entry points that reference this symbol."""
         return tuple(ep for ep in self.entry_points if ep.handler_id == symbol_id)
 
-    def get_async_entry_points_for_symbol(self, symbol_id: str) -> tuple[AsyncEntryPoint, ...]:
+    def get_async_entry_points_for_symbol(
+        self, symbol_id: str
+    ) -> tuple[AsyncEntryPoint, ...]:
         """Get all async entry points that reference this symbol."""
-        return tuple(aep for aep in self.async_entry_points if aep.handler_id == symbol_id)
+        return tuple(
+            aep for aep in self.async_entry_points if aep.handler_id == symbol_id
+        )
 
     def get_references_for(self, symbol_id: str) -> tuple:
         """Get all reference edges where this symbol is the source."""

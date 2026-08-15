@@ -49,6 +49,7 @@ from engine.operational.compiler import EngineeringDiscoveryCompiler
 # Test helpers
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class TestHelper:
     """Helper for creating test fixtures."""
@@ -135,6 +136,7 @@ class TestHelper:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def sample_symbols():
@@ -232,7 +234,9 @@ def sample_terminal_points():
 
 
 @pytest.fixture
-def sample_behavior_model(sample_symbols, sample_execution_units, sample_entry_points, sample_terminal_points):
+def sample_behavior_model(
+    sample_symbols, sample_execution_units, sample_entry_points, sample_terminal_points
+):
     """Create a sample behavior model with full execution context."""
     return TestHelper.create_behavior_model(
         behaviors=[
@@ -277,10 +281,13 @@ def sample_operational_model(
 # Tests: EngineeringDiscoveryModel
 # ---------------------------------------------------------------------------
 
+
 class TestEngineeringDiscoveryModel:
     """Tests for the EngineeringDiscoveryModel dataclass."""
 
-    def test_creation(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_creation(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test creating an EngineeringDiscoveryModel."""
         model = EngineeringDiscoveryModel(
             repository=sample_repository_model,
@@ -290,7 +297,9 @@ class TestEngineeringDiscoveryModel:
         assert model.has_all_required_models()
         assert model.populated_optional_models == ()
 
-    def test_required_models_present(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_required_models_present(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test that has_all_required_models returns True when all set."""
         model = EngineeringDiscoveryModel(
             repository=sample_repository_model,
@@ -299,7 +308,9 @@ class TestEngineeringDiscoveryModel:
         )
         assert model.has_all_required_models()
 
-    def test_missing_repository_raises(self, sample_change_model, sample_behavior_model):
+    def test_missing_repository_raises(
+        self, sample_change_model, sample_behavior_model
+    ):
         """Test that missing repository raises ValueError."""
         with pytest.raises(ValueError, match="repository model is required"):
             EngineeringDiscoveryModel(
@@ -308,7 +319,9 @@ class TestEngineeringDiscoveryModel:
                 behavior=sample_behavior_model,
             )
 
-    def test_missing_change_raises(self, sample_repository_model, sample_behavior_model):
+    def test_missing_change_raises(
+        self, sample_repository_model, sample_behavior_model
+    ):
         """Test that missing change model raises ValueError."""
         with pytest.raises(ValueError, match="change model is required"):
             EngineeringDiscoveryModel(
@@ -317,7 +330,9 @@ class TestEngineeringDiscoveryModel:
                 behavior=sample_behavior_model,
             )
 
-    def test_missing_behavior_raises(self, sample_repository_model, sample_change_model):
+    def test_missing_behavior_raises(
+        self, sample_repository_model, sample_change_model
+    ):
         """Test that missing behavior model raises ValueError."""
         with pytest.raises(ValueError, match="behavior model is required"):
             EngineeringDiscoveryModel(
@@ -326,7 +341,9 @@ class TestEngineeringDiscoveryModel:
                 behavior=None,  # type: ignore
             )
 
-    def test_immutable(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_immutable(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test that the model is immutable."""
         model = EngineeringDiscoveryModel(
             repository=sample_repository_model,
@@ -360,7 +377,9 @@ class TestEngineeringDiscoveryModel:
         assert len(model.terminal_points) == 1
         assert model.execution_depth == 2
 
-    def test_get_behaviors(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_get_behaviors(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test get_behaviors method."""
         model = EngineeringDiscoveryModel(
             repository=sample_repository_model,
@@ -371,7 +390,9 @@ class TestEngineeringDiscoveryModel:
         assert len(behaviors) == 1
         assert behaviors[0].id == "behavior://test"
 
-    def test_repr(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_repr(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test string representation."""
         model = EngineeringDiscoveryModel(
             repository=sample_repository_model,
@@ -386,12 +407,14 @@ class TestEngineeringDiscoveryModel:
     def test_backward_compatibility_alias(self):
         """Test that EngineeringDiscoveryArtifact is an alias."""
         from engine.operational.model import EngineeringDiscoveryArtifact
+
         assert EngineeringDiscoveryArtifact is EngineeringDiscoveryModel
 
 
 # ---------------------------------------------------------------------------
 # Tests: EngineeringDiscoveryCompiler
 # ---------------------------------------------------------------------------
+
 
 class TestEngineeringDiscoveryCompiler:
     """Tests for the EngineeringDiscoveryCompiler."""
@@ -427,10 +450,18 @@ class TestEngineeringDiscoveryCompiler:
         compiler = EngineeringDiscoveryCompiler()
         edm = compiler.from_operational_model(sample_operational_model)
 
-        assert len(edm.execution_chains) == len(sample_operational_model.behavior.execution_chains)
-        assert len(edm.entry_points) == len(sample_operational_model.behavior.entry_points)
-        assert len(edm.terminal_points) == len(sample_operational_model.behavior.terminal_points)
-        assert len(edm.reachable_units) == len(sample_operational_model.behavior.reachable_units)
+        assert len(edm.execution_chains) == len(
+            sample_operational_model.behavior.execution_chains
+        )
+        assert len(edm.entry_points) == len(
+            sample_operational_model.behavior.entry_points
+        )
+        assert len(edm.terminal_points) == len(
+            sample_operational_model.behavior.terminal_points
+        )
+        assert len(edm.reachable_units) == len(
+            sample_operational_model.behavior.reachable_units
+        )
         assert edm.execution_depth == sample_operational_model.behavior.execution_depth
 
     def test_from_operational_model_missing_models(self):
@@ -463,7 +494,9 @@ class TestEngineeringDiscoveryCompiler:
         assert isinstance(edm, EngineeringDiscoveryModel)
         assert edm.has_all_required_models()
 
-    def test_compile_missing_repository(self, sample_change_model, sample_behavior_model):
+    def test_compile_missing_repository(
+        self, sample_change_model, sample_behavior_model
+    ):
         """Test that missing repository raises ValueError."""
         compiler = EngineeringDiscoveryCompiler()
 
@@ -474,7 +507,9 @@ class TestEngineeringDiscoveryCompiler:
                 behavior_model=sample_behavior_model,
             )
 
-    def test_compile_missing_change(self, sample_repository_model, sample_behavior_model):
+    def test_compile_missing_change(
+        self, sample_repository_model, sample_behavior_model
+    ):
         """Test that missing change model raises ValueError."""
         compiler = EngineeringDiscoveryCompiler()
 
@@ -485,7 +520,9 @@ class TestEngineeringDiscoveryCompiler:
                 behavior_model=sample_behavior_model,
             )
 
-    def test_compile_missing_behavior(self, sample_repository_model, sample_change_model):
+    def test_compile_missing_behavior(
+        self, sample_repository_model, sample_change_model
+    ):
         """Test that missing behavior model raises ValueError."""
         compiler = EngineeringDiscoveryCompiler()
 
@@ -560,7 +597,9 @@ class TestEngineeringDiscoveryCompiler:
         compiler = EngineeringDiscoveryCompiler()
         edm = compiler.from_operational_model(sample_operational_model)
 
-        assert len(edm.shared_executions) == len(sample_operational_model.behavior.shared_executions)
+        assert len(edm.shared_executions) == len(
+            sample_operational_model.behavior.shared_executions
+        )
 
     def test_get_execution_units_for_behavior(self, sample_operational_model):
         """Test filtering execution units by behavior."""

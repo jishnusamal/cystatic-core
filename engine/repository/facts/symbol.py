@@ -2,8 +2,10 @@ from dataclasses import dataclass
 from enum import Enum
 from .ids import FileId, SymbolId
 
+
 class SymbolKind(str, Enum):
     """Supported kinds of code symbols."""
+
     MODULE = "module"
     CLASS = "class"
     FUNCTION = "function"
@@ -19,6 +21,7 @@ class SymbolKind(str, Enum):
 
 class SymbolVisibility(str, Enum):
     """Access visibility modifiers."""
+
     PUBLIC = "public"
     PRIVATE = "private"
     PROTECTED = "protected"
@@ -29,6 +32,7 @@ class SymbolVisibility(str, Enum):
 @dataclass(frozen=True, slots=True)
 class Symbol:
     """Represents a code symbol fact."""
+
     id: SymbolId
     name: str
     file_id: FileId

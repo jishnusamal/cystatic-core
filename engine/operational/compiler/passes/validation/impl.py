@@ -55,8 +55,14 @@ class ValidationModel:
 
     def __post_init__(self):
         """Convert mutable defaults to immutable types."""
-        for attr in ("unit_tests", "integration_tests", "e2e_tests", "benchmarks",
-                     "production_replays", "coverage_links"):
+        for attr in (
+            "unit_tests",
+            "integration_tests",
+            "e2e_tests",
+            "benchmarks",
+            "production_replays",
+            "coverage_links",
+        ):
             val = getattr(self, attr)
             if isinstance(val, list):
                 object.__setattr__(self, attr, tuple(val))
@@ -71,24 +77,41 @@ _TEST_FILE_PATTERNS = {
 }
 
 _INTEGRATION_PATTERNS = {
-    "integration", "integrate", "e2e", "functional",
+    "integration",
+    "integrate",
+    "e2e",
+    "functional",
 }
 
 _E2E_PATTERNS = {
-    "e2e", "end_to_end", "endtoend", "smoke", "acceptance",
+    "e2e",
+    "end_to_end",
+    "endtoend",
+    "smoke",
+    "acceptance",
 }
 
 _BENCHMARK_PATTERNS = {
-    "benchmark", "bench", "perf_test", "performance",
+    "benchmark",
+    "bench",
+    "perf_test",
+    "performance",
 }
 
 _REPLAY_PATTERNS = {
-    "replay", "record_replay", "production_replay",
+    "replay",
+    "record_replay",
+    "production_replay",
 }
 
 _COVERAGE_PATTERNS = {
-    "coverage", "coveragerc", "codecov", "coveralls",
-    "lcov", "nyc_output", "jacoco",
+    "coverage",
+    "coveragerc",
+    "codecov",
+    "coveralls",
+    "lcov",
+    "nyc_output",
+    "jacoco",
 }
 
 
@@ -123,10 +146,8 @@ class ValidationCompilationPass(OperationalCompilerPass):
         model = context.composed_model
         if model is None:
             return context
-        
+
         repo = model.repository
-        behavior = model.behavior
-        change = model.change
 
         # Use cached values from context
         affected_symbol_ids = context.get_affected_symbol_ids()
@@ -134,15 +155,19 @@ class ValidationCompilationPass(OperationalCompilerPass):
 
         # Build index/lookup tables for references and call graph
         from collections import defaultdict
+
         ref_by_target: dict[str, set[str]] = defaultdict(set)
-        if hasattr(repo, "reference_graph") and repo.reference_graph and repo.reference_graph.edges:
+        if (
+            hasattr(repo, "reference_graph")
+            and repo.reference_graph
+            and repo.reference_graph.edges
+        ):
             for edge in repo.reference_graph.edges:
                 ref_by_target[edge.target_id].add(edge.source_id)
         elif hasattr(repo, "get_references_to"):
             for affected_id in affected_symbol_ids:
                 for ref in repo.get_references_to(affected_id):
                     ref_by_target[ref.target_id].add(ref.source_id)
-
 
         callees_of = context.get_callees_of()
         callers_of = context.get_callers_of()
@@ -168,34 +193,88 @@ class ValidationCompilationPass(OperationalCompilerPass):
         production_replays: list[str] = []
         coverage_links: list[str] = []
 
-        # Perform pass over symbols for tests, replays, and coverage
-        symbols_to_scan = repo.symbols if hasattr(repo, "symbols") else symbol_map.values()
-        for sym in symbols_to_scan:
-            # 1. Test classification
-            if sym.kind == SymbolKind.FUNCTION or sym.kind == SymbolKind.METHOD:
-                test_category = self._classify_test(sym)
-                if test_category is not None:
-                    # Check if this test references any affected symbols via our O(1) index check
-                    if sym.id in references_affected_set:
-                        if test_category == "unit":
-                            unit_tests.append(sym)
+        # Strategy 1: If repo implements get_tests() (RepositoryQuery / RepositoryView),
+        # use it directly per affected symbol. This is the primary path for the new architecture.
+        if hasattr(repo, "get_tests"):
+            seen_test_sym_ids: set = set()
+            for affected_id in affected_symbol_ids:
+                for test_rel in repo.get_tests(affected_id):
+                    test_sym_id = test_rel.test_symbol_id
+                    if test_sym_id in seen_test_sym_ids:
+                        continue
+                    seen_test_sym_ids.add(test_sym_id)
 
-                        elif test_category == "integration":
-                            integration_tests.append(sym)
+                    # Resolve the test symbol for classification
+                    test_sym = None
+                    if hasattr(repo, "get_symbol"):
+                        test_sym = repo.get_symbol(test_sym_id)
+                    if test_sym is None:
+                        test_sym = symbol_map.get(str(test_sym_id)) or symbol_map.get(
+                            test_sym_id
+                        )
+                    if test_sym is None:
+                        continue
+
+                    rel_type_str = (
+                        test_rel.relationship_type.value
+                        if hasattr(test_rel.relationship_type, "value")
+                        else str(test_rel.relationship_type)
+                    )
+                    if rel_type_str == "e2e":
+                        e2e_tests.append(test_sym)
+                    elif rel_type_str == "integration":
+                        integration_tests.append(test_sym)
+                    else:
+                        # Fall back to name/file classification for unit/benchmark
+                        test_category = self._classify_test(test_sym)
+                        if test_category == "benchmark":
+                            benchmarks.append(test_sym)
                         elif test_category == "e2e":
-                            e2e_tests.append(sym)
-                        elif test_category == "benchmark":
-                            benchmarks.append(sym)
+                            e2e_tests.append(test_sym)
+                        elif test_category == "integration":
+                            integration_tests.append(test_sym)
+                        else:
+                            unit_tests.append(test_sym)
 
-            # 2. Production replay detection
-            replay_ref = self._detect_replay(sym)
-            if replay_ref:
-                production_replays.append(replay_ref)
+        # Strategy 2: Fallback — scan all available symbols.
+        # Used when: no get_tests() method (legacy RepositoryModel) OR no test rels were found.
+        if (
+            not unit_tests
+            and not integration_tests
+            and not e2e_tests
+            and not benchmarks
+        ):
+            symbols_to_scan = (
+                repo.symbols if hasattr(repo, "symbols") else symbol_map.values()
+            )
+            for sym in symbols_to_scan:
+                # 1. Test classification
+                if sym.kind == SymbolKind.FUNCTION or sym.kind == SymbolKind.METHOD:
+                    test_category = self._classify_test(sym)
+                    if test_category is not None:
+                        sym_id_str = str(sym.id)
+                        if (
+                            sym_id_str in references_affected_set
+                            or sym.id in references_affected_set
+                        ):
+                            if test_category == "unit":
+                                unit_tests.append(sym)
+                            elif test_category == "integration":
+                                integration_tests.append(sym)
+                            elif test_category == "e2e":
+                                e2e_tests.append(sym)
+                            elif test_category == "benchmark":
+                                benchmarks.append(sym)
 
-            # 3. Coverage detection
-            cov_ref = self._detect_coverage(sym)
-            if cov_ref:
-                coverage_links.append(cov_ref)
+                # 2. Production replay detection
+                replay_ref = self._detect_replay(sym)
+                if replay_ref:
+                    production_replays.append(replay_ref)
+
+                # 3. Coverage detection
+                cov_ref = self._detect_coverage(sym)
+                if cov_ref:
+                    coverage_links.append(cov_ref)
 
         # Add affected files that are coverage configs
         for file_path in affected_files:
@@ -203,10 +282,10 @@ class ValidationCompilationPass(OperationalCompilerPass):
                 coverage_links.append(file_path)
 
         validation_model = ValidationModel(
-            unit_tests=tuple(sorted(unit_tests, key=lambda s: s.id)),
-            integration_tests=tuple(sorted(integration_tests, key=lambda s: s.id)),
-            e2e_tests=tuple(sorted(e2e_tests, key=lambda s: s.id)),
-            benchmarks=tuple(sorted(benchmarks, key=lambda s: s.id)),
+            unit_tests=tuple(sorted(unit_tests, key=lambda s: str(s.id))),
+            integration_tests=tuple(sorted(integration_tests, key=lambda s: str(s.id))),
+            e2e_tests=tuple(sorted(e2e_tests, key=lambda s: str(s.id))),
+            benchmarks=tuple(sorted(benchmarks, key=lambda s: str(s.id))),
             production_replays=tuple(sorted(set(production_replays))),
             coverage_links=tuple(sorted(set(coverage_links))),
         )
@@ -220,8 +299,8 @@ class ValidationCompilationPass(OperationalCompilerPass):
             data=model.data,
             event=model.event,
             validation=validation_model,
-            api=model.api if hasattr(model, 'api') else None,
-            metrics=model.metrics if hasattr(model, 'metrics') else None,
+            api=model.api if hasattr(model, "api") else None,
+            metrics=model.metrics if hasattr(model, "metrics") else None,
         )
 
         return context

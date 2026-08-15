@@ -33,11 +33,21 @@ class PythonEntrypointIndexPass(BaseIndexPass):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 self._check_and_add_entrypoint(node, file_path, builder)
 
-    def visit_FunctionDef(self, node: ast.FunctionDef | ast.AsyncFunctionDef, context: FileContext, builder: dict[str, Any]) -> None:
+    def visit_FunctionDef(
+        self,
+        node: ast.FunctionDef | ast.AsyncFunctionDef,
+        context: FileContext,
+        builder: dict[str, Any],
+    ) -> None:
         """Handle function definition node from visitor."""
         self._check_and_add_entrypoint(node, context.path, builder)
 
-    def _check_and_add_entrypoint(self, node: ast.FunctionDef | ast.AsyncFunctionDef, file_path: str, builder: dict[str, Any]) -> None:
+    def _check_and_add_entrypoint(
+        self,
+        node: ast.FunctionDef | ast.AsyncFunctionDef,
+        file_path: str,
+        builder: dict[str, Any],
+    ) -> None:
         """Check if a function has endpoint decorators and add entrypoint if found."""
         for dec in node.decorator_list:
             if isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute):

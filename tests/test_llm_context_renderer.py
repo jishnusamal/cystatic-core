@@ -48,6 +48,7 @@ from integrations.github.renderers.llm_context_renderer import LLMContextRendere
 # Test helpers
 # ---------------------------------------------------------------------------
 
+
 class TestHelper:
     """Helper for creating test fixtures."""
 
@@ -108,7 +109,7 @@ class TestHelper:
         )
         # Add changed_files attribute if provided
         if changed_files is not None:
-            object.__setattr__(change, 'changed_files', tuple(changed_files))
+            object.__setattr__(change, "changed_files", tuple(changed_files))
         return change
 
     @staticmethod
@@ -138,6 +139,7 @@ class TestHelper:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def sample_symbols():
@@ -307,6 +309,7 @@ def sample_engineering_discovery_model(
 # Tests: LLMContextRenderer
 # ---------------------------------------------------------------------------
 
+
 class TestLLMContextRenderer:
     """Tests for the LLMContextRenderer."""
 
@@ -320,7 +323,7 @@ class TestLLMContextRenderer:
         """Test that render output has all required sections."""
         renderer = LLMContextRenderer()
         result = renderer.render(sample_engineering_discovery_model)
-        
+
         assert "summary" in result
         assert "discoveries" in result
         assert "evidence" in result
@@ -330,7 +333,7 @@ class TestLLMContextRenderer:
         """Test that summary section is correctly populated."""
         renderer = LLMContextRenderer()
         result = renderer.render(sample_engineering_discovery_model)
-        
+
         summary = result["summary"]
         assert "changed_files" in summary
         assert "changed_symbols" in summary
@@ -342,7 +345,7 @@ class TestLLMContextRenderer:
         """Test that discoveries section is correctly populated."""
         renderer = LLMContextRenderer()
         result = renderer.render(sample_engineering_discovery_model)
-        
+
         discoveries = result["discoveries"]
         assert isinstance(discoveries, list)
         assert len(discoveries) > 0
@@ -351,7 +354,7 @@ class TestLLMContextRenderer:
         """Test that each discovery has the correct structure."""
         renderer = LLMContextRenderer()
         result = renderer.render(sample_engineering_discovery_model)
-        
+
         for discovery in result["discoveries"]:
             assert "id" in discovery
             assert "title" in discovery
@@ -361,31 +364,33 @@ class TestLLMContextRenderer:
         """Test that reachable_units discovery is present when applicable."""
         renderer = LLMContextRenderer()
         result = renderer.render(sample_engineering_discovery_model)
-        
+
         # Find reachable_units discovery
         reachable_discovery = None
         for discovery in result["discoveries"]:
             if discovery["id"] == "reachable_units":
                 reachable_discovery = discovery
                 break
-        
+
         assert reachable_discovery is not None
         assert "metrics" in reachable_discovery
         assert "examples" in reachable_discovery
         assert isinstance(reachable_discovery["examples"], list)
 
-    def test_render_shared_execution_discovery(self, sample_engineering_discovery_model):
+    def test_render_shared_execution_discovery(
+        self, sample_engineering_discovery_model
+    ):
         """Test that shared_execution discovery is present when applicable."""
         renderer = LLMContextRenderer()
         result = renderer.render(sample_engineering_discovery_model)
-        
+
         # Find shared_execution discovery
         shared_discovery = None
         for discovery in result["discoveries"]:
             if discovery["id"] == "shared_execution":
                 shared_discovery = discovery
                 break
-        
+
         assert shared_discovery is not None
         assert "shared_symbols" in shared_discovery
         assert "affected_domains" in shared_discovery
@@ -394,7 +399,7 @@ class TestLLMContextRenderer:
         """Test that evidence section is correctly populated."""
         renderer = LLMContextRenderer()
         result = renderer.render(sample_engineering_discovery_model)
-        
+
         evidence = result["evidence"]
         assert "total" in evidence
         assert "confidence" in evidence
@@ -406,7 +411,7 @@ class TestLLMContextRenderer:
         """Test that constraints section is correctly populated."""
         renderer = LLMContextRenderer()
         result = renderer.render(sample_engineering_discovery_model)
-        
+
         constraints = result["constraints"]
         assert isinstance(constraints, list)
         assert len(constraints) > 0
@@ -416,7 +421,7 @@ class TestLLMContextRenderer:
     def test_render_with_settings(self, sample_engineering_discovery_model):
         """Test that render accepts optional settings parameter."""
         renderer = LLMContextRenderer()
-        
+
         # Should not raise even with settings provided
         result = renderer.render(sample_engineering_discovery_model, settings={})
         assert isinstance(result, dict)
@@ -424,17 +429,17 @@ class TestLLMContextRenderer:
     def test_render_deterministic(self, sample_engineering_discovery_model):
         """Test that render is deterministic (same input = same output)."""
         renderer = LLMContextRenderer()
-        
+
         result1 = renderer.render(sample_engineering_discovery_model)
         result2 = renderer.render(sample_engineering_discovery_model)
-        
+
         assert result1 == result2
 
     def test_render_yaml_serializable(self, sample_engineering_discovery_model):
         """Test that render output is YAML-serializable."""
         renderer = LLMContextRenderer()
         result = renderer.render(sample_engineering_discovery_model)
-        
+
         # Should not raise
         yaml_str = yaml.dump(result, default_flow_style=False)
         assert isinstance(yaml_str, str)
@@ -443,38 +448,40 @@ class TestLLMContextRenderer:
     def test_render_empty_model(self):
         """Test rendering with minimal model."""
         renderer = LLMContextRenderer()
-        
+
         # Create minimal model
         repository = TestHelper.create_repository_model(symbols=[])
         change = TestHelper.create_change_model()
         behavior = TestHelper.create_behavior_model()
-        
+
         artifact = EngineeringDiscoveryModel(
             repository=repository,
             change=change,
             behavior=behavior,
         )
-        
+
         result = renderer.render(artifact)
-        
+
         assert isinstance(result, dict)
         assert "summary" in result
         assert "discoveries" in result
         assert "evidence" in result
         assert "constraints" in result
 
-    def test_render_execution_chains_discovery(self, sample_engineering_discovery_model):
+    def test_render_execution_chains_discovery(
+        self, sample_engineering_discovery_model
+    ):
         """Test that execution_chains discovery is present when applicable."""
         renderer = LLMContextRenderer()
         result = renderer.render(sample_engineering_discovery_model)
-        
+
         # Find execution_chains discovery
         chains_discovery = None
         for discovery in result["discoveries"]:
             if discovery["id"] == "execution_chains":
                 chains_discovery = discovery
                 break
-        
+
         if chains_discovery:  # Only test if present
             assert "chain_count" in chains_discovery
             assert "representative_paths" in chains_discovery
@@ -483,14 +490,14 @@ class TestLLMContextRenderer:
         """Test that metrics in reachable_units discovery have correct structure."""
         renderer = LLMContextRenderer()
         result = renderer.render(sample_engineering_discovery_model)
-        
+
         # Find reachable_units discovery
         reachable_discovery = None
         for discovery in result["discoveries"]:
             if discovery["id"] == "reachable_units":
                 reachable_discovery = discovery
                 break
-        
+
         if reachable_discovery:
             metrics = reachable_discovery["metrics"]
             assert "execution_paths" in metrics
@@ -502,14 +509,14 @@ class TestLLMContextRenderer:
         """Test that examples are limited to 5."""
         renderer = LLMContextRenderer()
         result = renderer.render(sample_engineering_discovery_model)
-        
+
         # Find reachable_units discovery
         reachable_discovery = None
         for discovery in result["discoveries"]:
             if discovery["id"] == "reachable_units":
                 reachable_discovery = discovery
                 break
-        
+
         if reachable_discovery:
             assert len(reachable_discovery["examples"]) <= 5
 
@@ -517,14 +524,14 @@ class TestLLMContextRenderer:
         """Test that shared_symbols are limited to 5."""
         renderer = LLMContextRenderer()
         result = renderer.render(sample_engineering_discovery_model)
-        
+
         # Find shared_execution discovery
         shared_discovery = None
         for discovery in result["discoveries"]:
             if discovery["id"] == "shared_execution":
                 shared_discovery = discovery
                 break
-        
+
         if shared_discovery:
             assert len(shared_discovery["shared_symbols"]) <= 5
 
@@ -532,29 +539,31 @@ class TestLLMContextRenderer:
         """Test that affected_domains are sorted."""
         renderer = LLMContextRenderer()
         result = renderer.render(sample_engineering_discovery_model)
-        
+
         # Find shared_execution discovery
         shared_discovery = None
         for discovery in result["discoveries"]:
             if discovery["id"] == "shared_execution":
                 shared_discovery = discovery
                 break
-        
+
         if shared_discovery:
             domains = shared_discovery["affected_domains"]
             assert domains == sorted(domains)
 
-    def test_render_representative_paths_limited(self, sample_engineering_discovery_model):
+    def test_render_representative_paths_limited(
+        self, sample_engineering_discovery_model
+    ):
         """Test that representative_paths are limited to 3."""
         renderer = LLMContextRenderer()
         result = renderer.render(sample_engineering_discovery_model)
-        
+
         # Find execution_chains discovery
         chains_discovery = None
         for discovery in result["discoveries"]:
             if discovery["id"] == "execution_chains":
                 chains_discovery = discovery
                 break
-        
+
         if chains_discovery:
             assert len(chains_discovery["representative_paths"]) <= 3

@@ -42,6 +42,7 @@ class SymbolEntry:
         parent: Parent symbol name (e.g., class name for methods), empty if none
         properties: Additional metadata key-value pairs
     """
+
     name: str
     kind: str
     file: str
@@ -63,6 +64,7 @@ class ImportEntry:
         file: Source file path
         line: 0-based line number
     """
+
     module: str
     names: tuple[str, ...] = field(default_factory=tuple)
     import_type: str = "import"
@@ -83,6 +85,7 @@ class RawReference:
         line: 0-based line number
         parent_symbol: Name of the enclosing symbol, if any
     """
+
     name: str
     kind: str = "call"
     file: str = ""
@@ -103,6 +106,7 @@ class EntrypointEntry:
         line: 0-based line number
         metadata: Additional framework-specific key-value pairs
     """
+
     route: str
     handler: str
     kind: str = "rest_endpoint"
@@ -127,6 +131,7 @@ class PersistenceEntry:
         relationships: List of relationship definitions
         metadata: Additional key-value pairs
     """
+
     name: str
     kind: str = "table"
     table_name: str = ""
@@ -151,6 +156,7 @@ class EventEntry:
         line: 0-based line number
         metadata: Additional key-value pairs
     """
+
     symbol_name: str
     operation_kind: str = "publish"
     event_name: str = ""
@@ -174,6 +180,7 @@ class ConfigEntry:
         default_value: Default value if any
         metadata: Additional key-value pairs
     """
+
     symbol_name: str
     config_key: str = ""
     kind: str = "environment_variable"
@@ -199,6 +206,7 @@ class TestEntry:
         test_methods: Nested test methods (for test classes)
         metadata: Additional key-value pairs
     """
+
     name: str
     kind: str = "function"
     framework: str = "other"
@@ -222,6 +230,7 @@ class TypeRelationshipEntry:
         line: 0-based line number
         metadata: Additional key-value pairs
     """
+
     source: str
     target: str
     relation_type: str = "extends"
@@ -241,6 +250,7 @@ class CallEntry:
         file: Source file path
         line: 0-based line number
     """
+
     caller: str
     callee: str
     call_type: str = "direct"
@@ -264,6 +274,7 @@ class RepositoryMethodEntry:
         line: 0-based line number
         metadata: Additional key-value pairs
     """
+
     symbol_name: str
     kind: str = "custom"
     model_name: str = ""
@@ -281,6 +292,7 @@ class FileIndex:
     This is the per-file indexing result fed into the RepositoryIndex.
     Each file is parsed exactly once and its facts are captured here.
     """
+
     path: str
     language: str
     symbols: tuple[SymbolEntry, ...] = field(default_factory=tuple)
@@ -318,16 +330,16 @@ class RepositoryIndex:
     Use the methods below to identify which symbols need compilation:
 
         index = adapter.build_index(files)
-        
+
         # Get all symbols
         all_symbols = index.all_symbols
-        
+
         # Get symbols in a specific file
         file_symbols = index.get_symbols_for_file("src/main.py")
-        
+
         # Get symbols by kind
         functions = index.get_symbols_by_kind("function")
-        
+
         # Future: compile only changed symbols
         changed = index.get_changed_symbols(base_index)
         neighborhood = index.get_reachable_neighborhood(changed)
@@ -340,9 +352,9 @@ class RepositoryIndex:
     def __post_init__(self):
         """Ensure metadata is a plain dict."""
         if isinstance(self.metadata, dict):
-            object.__setattr__(self, 'metadata', dict(self.metadata))
+            object.__setattr__(self, "metadata", dict(self.metadata))
         if isinstance(self.files, list):
-            object.__setattr__(self, 'files', tuple(self.files))
+            object.__setattr__(self, "files", tuple(self.files))
 
     # ------------------------------------------------------------------
     # Aggregation properties (convenience accessors)
@@ -499,7 +511,9 @@ class RepositoryIndex:
         """
         return tuple(c for c in self.all_calls if c.callee == symbol_name)
 
-    def get_entrypoints_for_symbol(self, symbol_name: str) -> tuple[EntrypointEntry, ...]:
+    def get_entrypoints_for_symbol(
+        self, symbol_name: str
+    ) -> tuple[EntrypointEntry, ...]:
         """Get all entry points that reference this symbol as handler.
 
         Args:
@@ -547,7 +561,9 @@ class RepositoryIndex:
         filtered_files = tuple(f for f in self.files if f.path in file_paths)
         return RepositoryIndex(files=filtered_files, metadata=dict(self.metadata))
 
-    def get_changed_symbols(self, base_index: "RepositoryIndex") -> tuple[SymbolEntry, ...]:
+    def get_changed_symbols(
+        self, base_index: "RepositoryIndex"
+    ) -> tuple[SymbolEntry, ...]:
         """Compare with a base index and return symbols that changed.
 
         This is a structural comparison — it detects added, removed,
@@ -570,7 +586,10 @@ class RepositoryIndex:
                 changed.append(symbol)
             else:
                 base_sym = base_symbols[name]
-                if (symbol.start_line, symbol.end_line) != (base_sym.start_line, base_sym.end_line):
+                if (symbol.start_line, symbol.end_line) != (
+                    base_sym.start_line,
+                    base_sym.end_line,
+                ):
                     changed.append(symbol)
 
         return tuple(changed)

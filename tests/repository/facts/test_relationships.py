@@ -39,7 +39,7 @@ def test_repository_facts_lookup_apis():
     file_a = File(id=FileId(1), path="service.py", language="python")
     file_b = File(id=FileId(2), path="handler.py", language="python")
     file_t = File(id=FileId(3), path="test_service.py", language="python")
-    
+
     # 2. Define symbols
     # A class in service.py
     symbol_class_a = Symbol(
@@ -92,7 +92,7 @@ def test_repository_facts_lookup_apis():
         imported_name="PaymentService",
         import_type=ImportType.FROM,
     )
-    
+
     # Call: CheckoutHandler calls PaymentService.process
     call = Call(
         caller_id=symbol_handler_b.id,
@@ -178,15 +178,15 @@ def test_repository_facts_lookup_apis():
     assert facts.references_to(symbol_class_a.id) == (ref,)
 
     assert facts.imports_from(file_b.id) == (imp,)
-    
+
     assert facts.type_relationships_from(symbol_class_a.id) == (tr,)
-    
+
     assert facts.endpoints_for(symbol_handler_b.id) == (endpoint,)
-    
+
     assert facts.database_relationships_for(symbol_method_a.id) == (db_rel,)
-    
+
     assert facts.publications_for(symbol_method_a.id) == (pub,)
-    
+
     assert facts.subscriptions_for(EventId(1001)) == (sub,)
-    
+
     assert facts.tests_for(symbol_handler_b.id) == (test_rel,)

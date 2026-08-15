@@ -51,7 +51,9 @@ class PythonImportIndexPass(BaseIndexPass):
                         )
                     )
 
-    def visit_Import(self, node: ast.Import, context: FileContext, builder: dict[str, Any]) -> None:
+    def visit_Import(
+        self, node: ast.Import, context: FileContext, builder: dict[str, Any]
+    ) -> None:
         """Handle import statement from visitor."""
         file_path = context.path
         for alias in node.names:
@@ -65,7 +67,9 @@ class PythonImportIndexPass(BaseIndexPass):
                 )
             )
 
-    def visit_ImportFrom(self, node: ast.ImportFrom, context: FileContext, builder: dict[str, Any]) -> None:
+    def visit_ImportFrom(
+        self, node: ast.ImportFrom, context: FileContext, builder: dict[str, Any]
+    ) -> None:
         """Handle from-import statement from visitor."""
         file_path = context.path
         module = node.module or "."

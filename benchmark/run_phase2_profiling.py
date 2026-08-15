@@ -25,6 +25,7 @@ from engine.repository.model.file_contribution import FileContribution
 # Diagnostic outputs target directories
 os.makedirs("profiling/phase2", exist_ok=True)
 
+
 class DiagnosticProfiler:
     def __init__(self, pr_url: str):
         self.pr_url = pr_url
@@ -40,28 +41,47 @@ class DiagnosticProfiler:
         import gc
         from models.core import RepositorySnapshot
         from engine.language.base.file_context import FileContext
-        
-        snapshots = [obj for obj in gc.get_objects() if isinstance(obj, RepositorySnapshot)]
-        file_contexts = [obj for obj in gc.get_objects() if isinstance(obj, FileContext)]
-        
+
+        snapshots = [
+            obj for obj in gc.get_objects() if isinstance(obj, RepositorySnapshot)
+        ]
+        file_contexts = [
+            obj for obj in gc.get_objects() if isinstance(obj, FileContext)
+        ]
+
         source_strings = set()
-        
+
         for s in snapshots:
             for content in s.files.values():
                 if isinstance(content, str):
                     source_strings.add(content)
-                    
+
         for fc in file_contexts:
-            if hasattr(fc, 'source') and isinstance(fc.source, str):
+            if hasattr(fc, "source") and isinstance(fc.source, str):
                 source_strings.add(fc.source)
-                
+
         # Also check for dictionary objects that look like files dict
         for obj in gc.get_objects():
             if isinstance(obj, dict) and len(obj) > 0:
                 try:
                     # check if it looks like a files dictionary: string keys, string values, and keys ending in code extensions
                     sample_keys = list(obj.keys())[:3]
-                    if all(isinstance(k, str) and any(k.endswith(ext) for ext in ['.py', '.java', '.ts', '.json', '.go', '.cpp', '.h']) for k in sample_keys):
+                    if all(
+                        isinstance(k, str)
+                        and any(
+                            k.endswith(ext)
+                            for ext in [
+                                ".py",
+                                ".java",
+                                ".ts",
+                                ".json",
+                                ".go",
+                                ".cpp",
+                                ".h",
+                            ]
+                        )
+                        for k in sample_keys
+                    ):
                         # check values are strings
                         if all(isinstance(obj[k], str) for k in list(obj.keys())[:3]):
                             for content in obj.values():
@@ -69,9 +89,9 @@ class DiagnosticProfiler:
                                     source_strings.add(content)
                 except Exception:
                     pass
-                                
+
         total_files = len(source_strings)
-        total_bytes = sum(len(s.encode('utf-8')) for s in source_strings)
+        total_bytes = sum(len(s.encode("utf-8")) for s in source_strings)
         return total_files, total_bytes
 
     def record_checkpoint(self, stage: str, context: Any = None):
@@ -84,7 +104,9 @@ class DiagnosticProfiler:
             "source_files_reachable": files,
             "source_bytes_reachable": bytes_size,
         }
-        print(f"[DIAGNOSTIC] Checkpoint: {stage:<45} RSS: {rss:8.2f} MB | Source Reachable: {files} files ({bytes_size / (1024*1024):.2f} MB)")
+        print(
+            f"[DIAGNOSTIC] Checkpoint: {stage:<45} RSS: {rss:8.2f} MB | Source Reachable: {files} files ({bytes_size / (1024 * 1024):.2f} MB)"
+        )
         self.checkpoints.append(checkpoint_data)
         return rss
 
@@ -102,7 +124,7 @@ class DiagnosticProfiler:
         # Build pipeline and request objects
         from integrations.base.registry import get_registry
         from integrations.github.provider import GitHubIntegration
-        
+
         registry = get_registry()
         settings = get_settings()
         github_integration = GitHubIntegration(
@@ -112,7 +134,7 @@ class DiagnosticProfiler:
             webhook_secret=settings.GITHUB_APP_WEBHOOK_SECRET,
         )
         github_integration.register(registry)
-        
+
         repository_provider = registry.get_repository_provider("github")
         output_provider = registry.get_output_provider("github")
         pipeline = Pipeline(
@@ -126,14 +148,14 @@ class DiagnosticProfiler:
             repository=repo_name.split("/")[1],
             default_branch=base_sha or "main",
         )
-        
+
         pr_ref = PullRequestReference(
             number=pr_number,
             base_sha=base_sha or "main",
             head_sha=head_sha or "main",
             title="",
         )
-        
+
         analysis_request_obj = AnalysisRequest(
             repository=repo_ref,
             pull_request=pr_ref,
@@ -149,7 +171,9 @@ class DiagnosticProfiler:
         # Measure snapshot details
         num_files = len(snapshot.files)
         total_chars = sum(len(content) for content in snapshot.files.values())
-        total_bytes = sum(len(content.encode('utf-8')) for content in snapshot.files.values())
+        total_bytes = sum(
+            len(content.encode("utf-8")) for content in snapshot.files.values()
+        )
         self.metrics["source_snapshot"] = {
             "num_files": num_files,
             "total_chars": total_chars,
@@ -160,7 +184,7 @@ class DiagnosticProfiler:
         print("[DIAGNOSTIC] Parsing source files into ASTs...")
         asts = {}
         for path, content in snapshot.files.items():
-            if path.endswith('.py'):
+            if path.endswith(".py"):
                 try:
                     asts[path] = ast.parse(content, filename=path)
                 except SyntaxError:
@@ -172,7 +196,7 @@ class DiagnosticProfiler:
         self.metrics["ast"] = {
             "num_files": len(asts),
             "num_ast_roots": len(asts),
-            "retained_memory_bytes": ast_retained_mem
+            "retained_memory_bytes": ast_retained_mem,
         }
         del asts
         gc.collect()
@@ -180,6 +204,7 @@ class DiagnosticProfiler:
         # Step C: Index / Symbol Extraction
         print("[DIAGNOSTIC] Extracting symbols & structural facts (IndexCompiler)...")
         from engine.language.python.adapter import PythonLanguageAdapter
+
         adapter = PythonLanguageAdapter()
         index = adapter.build_index({"files": snapshot.files, "language": "python"})
         self.record_checkpoint("RSS after symbol extraction")
@@ -196,7 +221,7 @@ class DiagnosticProfiler:
             "calls": calls_count,
             "imports": imports_count,
             "type_relationships": type_rels_count,
-            "retained_size_bytes": get_retained_size(index)
+            "retained_size_bytes": get_retained_size(index),
         }
 
         # Step D: Compile RepositoryGraph (SemanticCompiler)
@@ -205,7 +230,7 @@ class DiagnosticProfiler:
             "root_directory": repo_name,
             "language": "python",
             "files": snapshot.files,
-            "commit_sha": base_sha
+            "commit_sha": base_sha,
         }
         base_graph = adapter.compile_graph(repository_input)
         del snapshot
@@ -237,17 +262,29 @@ class DiagnosticProfiler:
                 "incoming": get_retained_size(base_graph.reference_graph._incoming),
             },
             "type_relationship_graph": {
-                "edges_tuple": get_retained_size(base_graph.type_relationship_graph.edges),
-                "outgoing": get_retained_size(base_graph.type_relationship_graph._outgoing),
-                "incoming": get_retained_size(base_graph.type_relationship_graph._incoming),
+                "edges_tuple": get_retained_size(
+                    base_graph.type_relationship_graph.edges
+                ),
+                "outgoing": get_retained_size(
+                    base_graph.type_relationship_graph._outgoing
+                ),
+                "incoming": get_retained_size(
+                    base_graph.type_relationship_graph._incoming
+                ),
             },
             "repository_graph_reverse_indexes": {
                 "symbol_to_callers": get_retained_size(base_graph.symbol_to_callers),
-                "symbol_to_importers": get_retained_size(base_graph.symbol_to_importers),
-                "unresolved_symbol_to_waiting_files": get_retained_size(base_graph.unresolved_symbol_to_waiting_files),
+                "symbol_to_importers": get_retained_size(
+                    base_graph.symbol_to_importers
+                ),
+                "unresolved_symbol_to_waiting_files": get_retained_size(
+                    base_graph.unresolved_symbol_to_waiting_files
+                ),
                 "file_to_call_edges": get_retained_size(base_graph.file_to_call_edges),
-                "file_to_reference_edges": get_retained_size(base_graph.file_to_reference_edges),
-            }
+                "file_to_reference_edges": get_retained_size(
+                    base_graph.file_to_reference_edges
+                ),
+            },
         }
 
         # Step E: Export base RepositoryModel
@@ -258,8 +295,10 @@ class DiagnosticProfiler:
         # Measure RepositoryModel retention
         self.metrics["base_repository_model"] = {
             "retained_size_bytes": get_retained_size(base_repository_model),
-            "symbol_map_size_bytes": get_retained_size(base_repository_model._symbol_map),
-            "symbols_count": len(base_repository_model.symbols)
+            "symbol_map_size_bytes": get_retained_size(
+                base_repository_model._symbol_map
+            ),
+            "symbols_count": len(base_repository_model.symbols),
         }
 
         # Step F: Head source load (changed files)
@@ -270,13 +309,15 @@ class DiagnosticProfiler:
             head_sha=head_sha,
         )
         await pipeline._fetch_diff(context, analysis_request_obj)
-        
+
         changed_files_dict = {}
         if context.diff_data and "files" in context.diff_data:
             for file_info in context.diff_data["files"]:
                 file_path = file_info["file_path"]
                 try:
-                    content = await repository_provider.fetch_file(repo_ref, file_path, head_sha)
+                    content = await repository_provider.fetch_file(
+                        repo_ref, file_path, head_sha
+                    )
                     changed_files_dict[file_path] = content
                 except Exception:
                     changed_files_dict[file_path] = None
@@ -285,7 +326,7 @@ class DiagnosticProfiler:
 
         # Step G: Pickle clone measurement
         self.record_checkpoint("RSS immediately before graph clone")
-        
+
         # Profile Pickle Clone Separately
         pickle_start_rss = self.get_rss()
         serialized = pickle.dumps(base_graph)
@@ -311,9 +352,13 @@ class DiagnosticProfiler:
             "rss_after_dumps": pickle_dumps_rss,
             "rss_after_loads": pickle_loads_rss,
             "rss_after_serialized_bytes_deleted": pickle_deleted_rss,
-            "ratio_pickle_base": pickle_byte_size / base_graph_size if base_graph_size else 0,
-            "ratio_clone_base": patched_graph_size / base_graph_size if base_graph_size else 0,
-            "peak_delta_mb": pickle_loads_rss - pickle_start_rss
+            "ratio_pickle_base": pickle_byte_size / base_graph_size
+            if base_graph_size
+            else 0,
+            "ratio_clone_base": patched_graph_size / base_graph_size
+            if base_graph_size
+            else 0,
+            "peak_delta_mb": pickle_loads_rss - pickle_start_rss,
         }
 
         # Step H: Incremental Compilation / GraphPatcher
@@ -331,6 +376,7 @@ class DiagnosticProfiler:
         gc.collect()
 
         from engine.language.base.graph_patcher import GraphPatcher
+
         patcher = GraphPatcher()
         patcher.patch(patched_graph, changed_contribs, "python")
         self.record_checkpoint("RSS after GraphPatcher")
@@ -349,7 +395,9 @@ class DiagnosticProfiler:
         # Step J: Change compiler
         print("[DIAGNOSTIC] Running ChangeCompiler...")
         await pipeline._compile_change(context)
-        self.record_checkpoint("RSS after head RepositoryModel") # equivalent check post model conversion
+        self.record_checkpoint(
+            "RSS after head RepositoryModel"
+        )  # equivalent check post model conversion
         self.record_checkpoint("RSS after Change Compiler")
 
         # Step K: Downstream compilers
@@ -359,7 +407,7 @@ class DiagnosticProfiler:
             ("Engineering Discovery Compiler", pipeline._compile_discovery),
             ("Discovery IR Compiler", pipeline._compile_discovery_ir),
             ("ReviewContext Compiler", pipeline._compile_review_context),
-            ("LLMContext Compiler", pipeline._compile_llm_context)
+            ("LLMContext Compiler", pipeline._compile_llm_context),
         ]
 
         self.metrics["downstream_compilers"] = {}
@@ -367,7 +415,7 @@ class DiagnosticProfiler:
             rss_before = self.get_rss()
             await compiler_func(context)
             rss_after = self.get_rss()
-            
+
             # Checkpoint name formatting
             stage_name = f"After {name.replace(' Compiler', '')} Compiler"
             if "IR" in name:
@@ -375,11 +423,11 @@ class DiagnosticProfiler:
             elif "Engineering" in name:
                 stage_name = "After Engineering Discovery Compiler"
             self.record_checkpoint(stage_name)
-            
+
             self.metrics["downstream_compilers"][name] = {
                 "rss_before": rss_before,
                 "rss_after": rss_after,
-                "delta_rss_mb": rss_after - rss_before
+                "delta_rss_mb": rss_after - rss_before,
             }
 
         # Step L: Render and Call LLM context
@@ -396,7 +444,7 @@ class DiagnosticProfiler:
                 context,
                 repository=repo_name,
                 pr_number=str(pr_number),
-                language="python"
+                language="python",
             )
         except Exception as e:
             print(f"[DIAGNOSTIC] LLM request skipped/failed: {e}")
@@ -412,19 +460,21 @@ class DiagnosticProfiler:
                 "calls": len(contrib.calls),
                 "references": len(contrib.references),
                 "type_relationships": len(contrib.type_relationships),
-                "size_bytes": get_retained_size(contrib)
+                "size_bytes": get_retained_size(contrib),
             }
-        
+
         self.metrics["files_breakdown"] = {
             "total_files": len(base_graph.files),
-            "total_retained_size_bytes": sum(f["size_bytes"] for f in files_breakdown.values()),
-            "files": files_breakdown
+            "total_retained_size_bytes": sum(
+                f["size_bytes"] for f in files_breakdown.values()
+            ),
+            "files": files_breakdown,
         }
 
         # Clean up references manually to see where RSS drops
         print("[DIAGNOSTIC] Tracing reference cleanups / GC details...")
         before_cleanup_rss = self.get_rss()
-        
+
         # Delete large objects
         if "snapshot" in locals():
             del snapshot
@@ -436,47 +486,58 @@ class DiagnosticProfiler:
             del patched_graph
         if "context" in locals():
             del context
-        
+
         gc.collect()
         after_cleanup_rss = self.get_rss()
-        print(f"[DIAGNOSTIC] Cleanup RSS drop: {before_cleanup_rss:.2f} MB -> {after_cleanup_rss:.2f} MB")
+        print(
+            f"[DIAGNOSTIC] Cleanup RSS drop: {before_cleanup_rss:.2f} MB -> {after_cleanup_rss:.2f} MB"
+        )
         self.metrics["cleanup_rss_drop"] = {
             "before_cleanup_rss": before_cleanup_rss,
             "after_cleanup_rss": after_cleanup_rss,
-            "reclaimed_mb": before_cleanup_rss - after_cleanup_rss
+            "reclaimed_mb": before_cleanup_rss - after_cleanup_rss,
         }
 
         # Write results
         timestamp = time.strftime("%Y%m%d-%H%M%S")
-        repo_lower = repo_name.split('/')[-1].lower()
+        repo_lower = repo_name.split("/")[-1].lower()
         output_file = f"profiling/phase2/{repo_lower}_{timestamp}.json"
         with open(output_file, "w") as f:
-            json.dump({
-                "pr_url": self.pr_url,
-                "checkpoints": self.checkpoints,
-                "metrics": self.metrics
-            }, f, indent=2)
+            json.dump(
+                {
+                    "pr_url": self.pr_url,
+                    "checkpoints": self.checkpoints,
+                    "metrics": self.metrics,
+                },
+                f,
+                indent=2,
+            )
         print(f"[DIAGNOSTIC] Results successfully written to {output_file}")
 
         # Also write to base file for latest results convenience
         base_output_file = f"profiling/phase2/{repo_lower}.json"
         with open(base_output_file, "w") as f:
-            json.dump({
-                "pr_url": self.pr_url,
-                "checkpoints": self.checkpoints,
-                "metrics": self.metrics
-            }, f, indent=2)
+            json.dump(
+                {
+                    "pr_url": self.pr_url,
+                    "checkpoints": self.checkpoints,
+                    "metrics": self.metrics,
+                },
+                f,
+                indent=2,
+            )
 
 
 async def main():
     prs = [
         "https://github.com/pallets/click/pull/3762",
         "https://github.com/polarsource/polar/pull/9204",
-        "https://github.com/PostHog/posthog/pull/72474"
+        "https://github.com/PostHog/posthog/pull/72474",
     ]
     for pr in prs:
         profiler = DiagnosticProfiler(pr)
         await profiler.run()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

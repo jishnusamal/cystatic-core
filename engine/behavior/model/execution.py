@@ -30,6 +30,7 @@ class ExecutionUnit:
         evidence: Provenance evidence for this unit
         metadata: Additional metadata
     """
+
     id: str
     name: str
     symbol_id: str
@@ -48,7 +49,7 @@ class ExecutionUnit:
         if self.order < 0:
             raise ValueError(f"Order cannot be negative: {self.order}")
         if isinstance(self.metadata, dict):
-            object.__setattr__(self, 'metadata', dict(self.metadata))
+            object.__setattr__(self, "metadata", dict(self.metadata))
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,7 @@ class ExecutionChain:
         units: Ordered execution units in this chain
         evidence: Provenance evidence for this chain
     """
+
     id: str
     behavior_id: str
     units: tuple[ExecutionUnit, ...] = field(default_factory=tuple)
@@ -77,7 +79,7 @@ class ExecutionChain:
         if not self.behavior_id:
             raise ValueError("Behavior id cannot be empty")
         if isinstance(self.units, list):
-            object.__setattr__(self, 'units', tuple(self.units))
+            object.__setattr__(self, "units", tuple(self.units))
 
     def get_unit_ids(self) -> tuple[str, ...]:
         """Get all symbol ids in this execution chain."""
@@ -104,6 +106,7 @@ class EntryPoint:
         route: The route or trigger identifier
         evidence: Provenance evidence for this entry point
     """
+
     id: str
     behavior_id: str
     symbol_id: str
@@ -138,6 +141,7 @@ class TerminalPoint:
         kind: The type of terminal (return, response, error, etc.)
         evidence: Provenance evidence for this terminal point
     """
+
     id: str
     behavior_id: str
     symbol_id: str
@@ -168,6 +172,7 @@ class SharedExecution:
         used_by: List of behavior IDs that use this shared execution
         evidence: Provenance evidence for this shared execution
     """
+
     id: str
     symbol_id: str
     used_by: tuple[str, ...] = field(default_factory=tuple)
@@ -180,4 +185,4 @@ class SharedExecution:
         if not self.symbol_id:
             raise ValueError("Symbol id cannot be empty")
         if isinstance(self.used_by, list):
-            object.__setattr__(self, 'used_by', tuple(self.used_by))
+            object.__setattr__(self, "used_by", tuple(self.used_by))

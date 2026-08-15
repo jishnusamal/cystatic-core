@@ -82,8 +82,10 @@ class OperationalCompiler:
             head_model = repository_query
 
         if head_model is None:
-            raise ValueError("Either repository_delta, repository_model, or repository_query must be provided")
-        
+            raise ValueError(
+                "Either repository_delta, repository_model, or repository_query must be provided"
+            )
+
         # Initialize pass context with models
         context = OperationalPassContext(
             repository_model=head_model,
@@ -91,18 +93,18 @@ class OperationalCompiler:
             change_model=change_model,
             behavior_model=behavior_model,
             metadata={
-                'repository_model': head_model,
-                'repository_delta': repository_delta,
-                'change_model': change_model,
-                'behavior_model': behavior_model,
-                'repository_query': repository_query,
-            }
+                "repository_model": head_model,
+                "repository_delta": repository_delta,
+                "change_model": change_model,
+                "behavior_model": behavior_model,
+                "repository_query": repository_query,
+            },
         )
-
 
         # Execute each pass in sequence
         for compiler_pass in self.passes:
             import time
+
             start_time = time.perf_counter()
             print(f"[timer] START {compiler_pass.name}")
             context = compiler_pass.run(context)
@@ -141,8 +143,10 @@ class OperationalCompiler:
             head_model = repository_query
 
         if head_model is None:
-            raise ValueError("Either repository_delta, repository_model, or repository_query must be provided")
-        
+            raise ValueError(
+                "Either repository_delta, repository_model, or repository_query must be provided"
+            )
+
         context = OperationalPassContext(
             repository_model=head_model,
             repository_delta=repository_delta,
@@ -150,9 +154,9 @@ class OperationalCompiler:
             behavior_model=behavior_model,
         )
 
-
         for compiler_pass in self.passes:
             import time
+
             start_time = time.perf_counter()
             print(f"[timer] START {compiler_pass.name}")
             context = compiler_pass.run(context)

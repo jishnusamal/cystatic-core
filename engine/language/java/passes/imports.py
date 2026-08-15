@@ -21,19 +21,19 @@ class JavaImportIndexPass(BaseIndexPass):
     def process(self, context: FileContext, builder: dict[str, Any]) -> None:
         """Extract imports from a Java file context."""
         file_path = context.path
-        content = '\n'.join(context.ast)
+        content = "\n".join(context.ast)
 
-        import_pattern = r'import\s+(static\s+)?([\w.]+);'
+        import_pattern = r"import\s+(static\s+)?([\w.]+);"
 
         for match in re.finditer(import_pattern, content):
             is_static = match.group(1) is not None
             module = match.group(2)
-            line = content[:match.start()].count('\n') + 1
+            line = content[: match.start()].count("\n") + 1
 
             builder["imports"].append(
                 ImportEntry(
                     module=module,
-                    names=(module.split('.')[-1],),
+                    names=(module.split(".")[-1],),
                     import_type="from_import" if is_static else "import",
                     file=file_path,
                     line=line,

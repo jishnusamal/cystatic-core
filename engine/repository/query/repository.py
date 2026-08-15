@@ -23,6 +23,7 @@ class RepositoryQuery(ABC):
     """
     Abstract interface for querying repository facts.
     """
+
     @abstractmethod
     def get_symbol(self, symbol_id: SymbolId) -> Symbol | None:
         """Fetch a symbol by its ID."""
@@ -64,7 +65,9 @@ class RepositoryQuery(ABC):
         pass
 
     @abstractmethod
-    def get_type_relationships(self, symbol_id: SymbolId) -> tuple[TypeRelationship, ...]:
+    def get_type_relationships(
+        self, symbol_id: SymbolId
+    ) -> tuple[TypeRelationship, ...]:
         """Fetch type relationships where the symbol is the source."""
         pass
 
@@ -79,7 +82,9 @@ class RepositoryQuery(ABC):
         pass
 
     @abstractmethod
-    def get_database_relationships(self, symbol_id: SymbolId) -> tuple[DatabaseRelationship, ...]:
+    def get_database_relationships(
+        self, symbol_id: SymbolId
+    ) -> tuple[DatabaseRelationship, ...]:
         """Fetch database resource relationships associated with the symbol."""
         pass
 

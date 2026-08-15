@@ -28,6 +28,7 @@ from engine.operational.compiler.passes.base import (
 from engine.repository.model import RepositoryModel, Symbol, SymbolKind
 from engine.operational.model import OperationalChangeModel
 
+
 @dataclass(frozen=True)
 class DataModel:
     """
@@ -78,22 +79,50 @@ class DataModel:
 
 # Patterns used to infer data operations from symbol properties
 _READ_PATTERNS = {
-    "get", "fetch", "load", "find", "query", "select", "retrieve",
-    "list", "search", "read", "lookup", "resolve",
+    "get",
+    "fetch",
+    "load",
+    "find",
+    "query",
+    "select",
+    "retrieve",
+    "list",
+    "search",
+    "read",
+    "lookup",
+    "resolve",
 }
 
 _WRITE_PATTERNS = {
-    "save", "create", "update", "delete", "insert", "remove",
-    "store", "persist", "write", "put", "patch", "destroy",
+    "save",
+    "create",
+    "update",
+    "delete",
+    "insert",
+    "remove",
+    "store",
+    "persist",
+    "write",
+    "put",
+    "patch",
+    "destroy",
 }
 
 _TRANSACTION_PATTERNS = {
-    "transaction", "transactional", "atomic", "db_transaction",
+    "transaction",
+    "transactional",
+    "atomic",
+    "db_transaction",
 }
 
 _CACHE_PATTERNS = {
-    "cache", "cached", "cache_result", "cache_key", "redis_cache",
-    "memcached", "ttl",
+    "cache",
+    "cached",
+    "cache_result",
+    "cache_key",
+    "redis_cache",
+    "memcached",
+    "ttl",
 }
 
 _STORAGE_PATTERNS = {
@@ -109,7 +138,17 @@ _STORAGE_PATTERNS = {
 _SQL_EXTENSIONS = {".sql", ".prisma", ".graphql"}
 
 # ORM model naming patterns
-_MODEL_SUFFIXES = {"model", "models", "entity", "entities", "schema", "schema", "dto", "dao", "repository"}
+_MODEL_SUFFIXES = {
+    "model",
+    "models",
+    "entity",
+    "entities",
+    "schema",
+    "schema",
+    "dto",
+    "dao",
+    "repository",
+}
 
 
 class DataCompilationPass(OperationalCompilerPass):
@@ -226,8 +265,8 @@ class DataCompilationPass(OperationalCompilerPass):
             data=data_model,
             event=model.event,
             validation=model.validation,
-            api=model.api if hasattr(model, 'api') else None,
-            metrics=model.metrics if hasattr(model, 'metrics') else None,
+            api=model.api if hasattr(model, "api") else None,
+            metrics=model.metrics if hasattr(model, "metrics") else None,
         )
 
         return context
@@ -244,6 +283,7 @@ class DataCompilationPass(OperationalCompilerPass):
         """
         # Build adjacency: caller -> list of callees
         from collections import deque
+
         adj: dict[str, list[str]] = defaultdict(list)
         if hasattr(repo, "call_graph") and repo.call_graph is not None:
             for edge in repo.call_graph.edges:
@@ -257,7 +297,9 @@ class DataCompilationPass(OperationalCompilerPass):
             if current in reachable:
                 continue
             reachable.add(current)
-            if hasattr(repo, "get_callees") and not (hasattr(repo, "call_graph") and repo.call_graph is not None):
+            if hasattr(repo, "get_callees") and not (
+                hasattr(repo, "call_graph") and repo.call_graph is not None
+            ):
                 for call in repo.get_callees(current):
                     if call.callee_id not in reachable:
                         queue.append(call.callee_id)
@@ -265,7 +307,6 @@ class DataCompilationPass(OperationalCompilerPass):
                 for neighbor in adj.get(current, []):
                     if neighbor not in reachable:
                         queue.append(neighbor)
-
 
         return reachable - seed_ids
 
@@ -283,10 +324,14 @@ class DataCompilationPass(OperationalCompilerPass):
                 decorators = props["decorators"]
                 if isinstance(decorators, (list, tuple)):
                     deco_str = " ".join(str(d).lower() for d in decorators)
-                    if any(p in deco_str for p in ("model", "entity", "table", "document")):
+                    if any(
+                        p in deco_str for p in ("model", "entity", "table", "document")
+                    ):
                         return True
             # Check for database-related properties
-            if any(k in props for k in ("table", "collection", "tablename", "table_name")):
+            if any(
+                k in props for k in ("table", "collection", "tablename", "table_name")
+            ):
                 return True
         return False
 
@@ -318,7 +363,10 @@ class DataCompilationPass(OperationalCompilerPass):
             decorators = props["decorators"]
             if isinstance(decorators, (list, tuple)):
                 deco_str = " ".join(str(d).lower() for d in decorators)
-                if any(p in deco_str for p in ("insert", "update", "delete", "save", "write")):
+                if any(
+                    p in deco_str
+                    for p in ("insert", "update", "delete", "save", "write")
+                ):
                     return True
         return False
 
@@ -351,6 +399,7 @@ class DataCompilationPass(OperationalCompilerPass):
             # Convert CamelCase to snake_case as a convention
             name = sym.name
             import re
+
             snake = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
             # Common pluralization
             if not snake.endswith("s"):

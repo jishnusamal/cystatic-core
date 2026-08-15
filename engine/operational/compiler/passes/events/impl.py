@@ -72,29 +72,62 @@ class EventModel:
 
 # Patterns for event-related symbols
 _EVENT_PUBLISH_PATTERNS = {
-    "publish", "emit", "dispatch", "send", "produce", "fire",
-    "notify", "broadcast", "raise_event", "trigger",
+    "publish",
+    "emit",
+    "dispatch",
+    "send",
+    "produce",
+    "fire",
+    "notify",
+    "broadcast",
+    "raise_event",
+    "trigger",
 }
 
 _EVENT_CONSUME_PATTERNS = {
-    "subscribe", "consume", "handle", "on_event", "listen",
-    "process_event", "receive", "on_message",
+    "subscribe",
+    "consume",
+    "handle",
+    "on_event",
+    "listen",
+    "process_event",
+    "receive",
+    "on_message",
 }
 
 _QUEUE_PATTERNS = {
-    "queue", "message_queue", "task_queue", "job_queue",
-    "rabbitmq", "sqs", "pubsub", "kafka_topic", "nats",
+    "queue",
+    "message_queue",
+    "task_queue",
+    "job_queue",
+    "rabbitmq",
+    "sqs",
+    "pubsub",
+    "kafka_topic",
+    "nats",
 }
 
 _WORKER_PATTERNS = {
-    "worker", "job", "task", "background_job", "scheduled_task",
-    "cron_job", "periodic_task", "async_task",
+    "worker",
+    "job",
+    "task",
+    "background_job",
+    "scheduled_task",
+    "cron_job",
+    "periodic_task",
+    "async_task",
 }
 
 _EVENT_DECORATORS = {
-    "on_event", "event_listener", "subscribe", "kafka_listener",
-    "rabbit_listener", "sqs_listener", "pubsub_listener",
-    "event_handler", "stream_listener",
+    "on_event",
+    "event_listener",
+    "subscribe",
+    "kafka_listener",
+    "rabbit_listener",
+    "sqs_listener",
+    "pubsub_listener",
+    "event_handler",
+    "stream_listener",
 }
 
 
@@ -204,8 +237,8 @@ class EventCompilationPass(OperationalCompilerPass):
             data=model.data,
             event=event_model,
             validation=model.validation,
-            api=model.api if hasattr(model, 'api') else None,
-            metrics=model.metrics if hasattr(model, 'metrics') else None,
+            api=model.api if hasattr(model, "api") else None,
+            metrics=model.metrics if hasattr(model, "metrics") else None,
         )
 
         return context
@@ -217,6 +250,7 @@ class EventCompilationPass(OperationalCompilerPass):
     ) -> set[str]:
         """BFS to find all reachable symbol IDs from seed IDs."""
         from collections import deque
+
         reachable: set[str] = set()
         queue: deque[str] = deque(seed_ids)
         while queue:

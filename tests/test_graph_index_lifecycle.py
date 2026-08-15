@@ -1,6 +1,12 @@
 import time
 import pytest
-from engine.repository.model import CallGraph, CallEdge, ReferenceGraph, ReferenceEdge, RepositoryGraph
+from engine.repository.model import (
+    CallGraph,
+    CallEdge,
+    ReferenceGraph,
+    ReferenceEdge,
+    RepositoryGraph,
+)
 from engine.language.python.adapter import PythonLanguageAdapter
 from engine.language.base.graph_patcher import GraphPatcher
 from engine.repository.model.file_contribution import FileContribution
@@ -13,7 +19,7 @@ def test_lazy_indexes():
         CallEdge(caller_id="bar", callee_id="baz", file="a.py"),
     )
     cg = CallGraph(edges=edges)
-    
+
     # Assert outgoing/incoming not materialized yet
     assert "outgoing" not in cg._indexes
     assert "incoming" not in cg._indexes
@@ -37,7 +43,7 @@ def test_outgoing_correctness():
         CallEdge(caller_id="foo", callee_id="baz", file="a.py"),
     )
     cg = CallGraph(edges=edges)
-    
+
     # Compute eager outgoing manually
     eager_outgoing = {}
     for edge in edges:
@@ -56,7 +62,7 @@ def test_incoming_correctness():
         CallEdge(caller_id="foo", callee_id="baz", file="a.py"),
     )
     cg = CallGraph(edges=edges)
-    
+
     # Compute eager incoming manually
     eager_incoming = {}
     for edge in edges:
@@ -69,11 +75,9 @@ def test_incoming_correctness():
 
 def test_cache_reuse():
     # Test 4 — Cache reuse
-    edges = (
-        CallEdge(caller_id="foo", callee_id="bar", file="a.py"),
-    )
+    edges = (CallEdge(caller_id="foo", callee_id="bar", file="a.py"),)
     cg = CallGraph(edges=edges)
-    
+
     out1 = cg.outgoing
     out2 = cg.outgoing
     out3 = cg.outgoing
@@ -108,7 +112,9 @@ def test_incremental_compiler_equivalence():
     base_graph = adapter.compile_graph({"files": base_source_files})
 
     head_source_files = dict(base_source_files)
-    head_source_files["module_b.py"] = "from module_a import foo\ndef bar(): foo()\n# comment"
+    head_source_files["module_b.py"] = (
+        "from module_a import foo\ndef bar(): foo()\n# comment"
+    )
 
     # Full compilation model
     full_model = adapter.compile({"files": head_source_files})
@@ -132,11 +138,15 @@ def test_performance_guard():
     base_graph = adapter.compile_graph({"files": base_source_files})
 
     head_source_files = dict(base_source_files)
-    head_source_files["module_b.py"] = "from module_a import foo\ndef bar(): foo()\n# comment"
+    head_source_files["module_b.py"] = (
+        "from module_a import foo\ndef bar(): foo()\n# comment"
+    )
 
     t0 = time.perf_counter()
     inc_graph = adapter.compile_incremental(base_graph, {"files": head_source_files})
     duration = time.perf_counter() - t0
 
     # Ensure incremental compile duration is well within threshold (e.g. < 1.0 second)
-    assert duration < 1.0, f"Incremental patching regressed in performance: {duration:.3f}s"
+    assert duration < 1.0, (
+        f"Incremental patching regressed in performance: {duration:.3f}s"
+    )

@@ -50,17 +50,19 @@ class JavaLanguageAdapter(BaseLanguageAdapter):
     def __init__(self):
         """Initialize the adapter with its indexing passes and compilers."""
         self._parser = JavaParser()
-        self._index_compiler = IndexCompiler([
-            JavaSymbolIndexPass(),
-            JavaImportIndexPass(),
-            JavaCallIndexPass(),
-            JavaEntrypointIndexPass(),
-            JavaTypeIndexPass(),
-            JavaPersistenceIndexPass(),
-            JavaEventIndexPass(),
-            JavaTestIndexPass(),
-            JavaConfigurationIndexPass(),
-        ])
+        self._index_compiler = IndexCompiler(
+            [
+                JavaSymbolIndexPass(),
+                JavaImportIndexPass(),
+                JavaCallIndexPass(),
+                JavaEntrypointIndexPass(),
+                JavaTypeIndexPass(),
+                JavaPersistenceIndexPass(),
+                JavaEventIndexPass(),
+                JavaTestIndexPass(),
+                JavaConfigurationIndexPass(),
+            ]
+        )
         self._semantic_compiler = SemanticCompiler()
 
     def get_language(self) -> str:
@@ -99,14 +101,15 @@ class JavaLanguageAdapter(BaseLanguageAdapter):
         Returns:
             RepositoryModel: Language-independent repository representation
         """
-        files = repository_input.get('files', {})
-        language = repository_input.get('language', self.get_language())
+        files = repository_input.get("files", {})
+        language = repository_input.get("language", self.get_language())
 
         # Step 1: Build RepositoryIndex (structural facts only)
         index = self._build_index(files, language)
 
         # Step 2: Compile RepositoryIndex into RepositoryModel (semantic)
         from typing import cast
+
         return cast(RepositoryModel, self._semantic_compiler.compile(index, language))
 
     def build_index(self, repository_input: dict[str, Any]) -> RepositoryIndex:
@@ -121,8 +124,8 @@ class JavaLanguageAdapter(BaseLanguageAdapter):
         Returns:
             RepositoryIndex containing only structural facts
         """
-        files = repository_input.get('files', {})
-        language = repository_input.get('language', self.get_language())
+        files = repository_input.get("files", {})
+        language = repository_input.get("language", self.get_language())
         return self._build_index(files, language)
 
     def _build_index(self, files: dict[str, str], language: str) -> RepositoryIndex:
@@ -138,7 +141,7 @@ class JavaLanguageAdapter(BaseLanguageAdapter):
         Returns:
             RepositoryIndex containing structural facts
         """
-        java_files = [f for f in files.keys() if f.endswith('.java')]
+        java_files = [f for f in files.keys() if f.endswith(".java")]
 
         def generate_contexts():
             for file_path in java_files:
@@ -161,10 +164,11 @@ class JavaLanguageAdapter(BaseLanguageAdapter):
 
     def _index_single_file(self, file_path: str, content: str, language: str) -> Any:
         """Parse and run indexing passes on a single source file."""
-        if not file_path.endswith('.java'):
+        if not file_path.endswith(".java"):
             from engine.repository.model.repository_index import FileIndex
+
             return FileIndex(path=file_path, language=language)
-            
+
         try:
             lines = self._parser.parse(content, file_path)
             context = FileContext(
@@ -177,4 +181,5 @@ class JavaLanguageAdapter(BaseLanguageAdapter):
             return repo_index.files[0]
         except Exception:
             from engine.repository.model.repository_index import FileIndex
+
             return FileIndex(path=file_path, language=language)

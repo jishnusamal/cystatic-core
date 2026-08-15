@@ -43,13 +43,13 @@ print(peak_rss)
     env = os.environ.copy()
     # Add workspace path to pythonpath
     env["PYTHONPATH"] = os.getcwd()
-    
+
     result = subprocess.run(
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
         check=True,
-        env=env
+        env=env,
     )
     return float(result.stdout.strip())
 
@@ -62,20 +62,22 @@ def test_memory_scaling_sublinear():
     """
     sizes = [500, 1000, 2000, 3000]
     rss_values = {}
-    
+
     for size in sizes:
         rss = run_indexing_in_subprocess(size)
         rss_values[size] = rss
         print(f"Repository size {size} files -> Peak RSS: {rss:.2f} MB")
-        
+
     # Assert that memory growth is sub-linear (not increasing proportionally to N)
     # The growth from 500 files to 3000 files should be minimal (typically < 10MB overhead increase).
     rss_500 = rss_values[500]
     rss_3000 = rss_values[3000]
-    
+
     memory_diff = rss_3000 - rss_500
-    
+
     print(f"Memory growth from 500 to 3000 files: {memory_diff:.2f} MB")
-    
+
     # We expect the diff to be small (e.g., less than 15MB) despite size increasing 6x
-    assert memory_diff < 15.0, f"Memory growth ({memory_diff:.2f} MB) is too high, scaling is not memory-independent!"
+    assert memory_diff < 15.0, (
+        f"Memory growth ({memory_diff:.2f} MB) is too high, scaling is not memory-independent!"
+    )

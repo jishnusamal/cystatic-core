@@ -30,13 +30,17 @@ Algorithm:
     Exactly like SQL: ORDER BY external_surface DESC, reach DESC, boundary DESC, ...
     No weights. No tuning. No machine learning.
 """
+
 from __future__ import annotations
 
 from engine.operational.discovery.model import (
     Discovery,
     DiscoverySupport,
 )
-from engine.operational.discovery.passes.base import DiscoveryPassContext, DiscoveryCompilerPass
+from engine.operational.discovery.passes.base import (
+    DiscoveryPassContext,
+    DiscoveryCompilerPass,
+)
 
 
 class RankingPass(DiscoveryCompilerPass):
@@ -59,12 +63,12 @@ class RankingPass(DiscoveryCompilerPass):
             s = d.support
             return (
                 1 if s.external_surface > 0 else 0,  # has_external_surface
-                s.execution_reach,                     # execution_reach
-                s.boundary_crossings,                  # boundary_crossings
-                s.propagation_depth,                   # propagation_depth
-                s.shared_by_count,                     # sharedness
-                1 if s.validation_gaps > 0 else 0,     # has_validation_gap
-                len(d.evidence),                       # evidence_density
+                s.execution_reach,  # execution_reach
+                s.boundary_crossings,  # boundary_crossings
+                s.propagation_depth,  # propagation_depth
+                s.shared_by_count,  # sharedness
+                1 if s.validation_gaps > 0 else 0,  # has_validation_gap
+                len(d.evidence),  # evidence_density
             )
 
         # Sort by ranking key descending (lexicographic)
@@ -76,22 +80,30 @@ class RankingPass(DiscoveryCompilerPass):
             updated: list[Discovery] = []
             for i, d in enumerate(context.discoveries):
                 importance = round(1.0 - (i / (n - 1)), 2)
-                updated.append(Discovery(
-                    id=d.id,
-                    kind=d.kind,
-                    statement=d.statement,
-                    importance=importance,
-                    support=d.support,
-                    evidence=d.evidence,
-                    metadata=d.metadata,
-                ))
+                updated.append(
+                    Discovery(
+                        id=d.id,
+                        kind=d.kind,
+                        statement=d.statement,
+                        importance=importance,
+                        support=d.support,
+                        evidence=d.evidence,
+                        metadata=d.metadata,
+                    )
+                )
             context.discoveries = updated
         elif n == 1:
             d = context.discoveries[0]
-            context.discoveries = [Discovery(
-                id=d.id, kind=d.kind, statement=d.statement,
-                importance=1.0, support=d.support,
-                evidence=d.evidence, metadata=d.metadata,
-            )]
+            context.discoveries = [
+                Discovery(
+                    id=d.id,
+                    kind=d.kind,
+                    statement=d.statement,
+                    importance=1.0,
+                    support=d.support,
+                    evidence=d.evidence,
+                    metadata=d.metadata,
+                )
+            ]
 
         return context

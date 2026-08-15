@@ -68,10 +68,10 @@ class TestIncrementalCompiler:
         assert len(graph.files) == 2
         assert "service.py" in graph.files
         assert "processor.py" in graph.files
-        
+
         # Verify file content hashes are stored
         for path, content in base_source_files.items():
-            expected_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
+            expected_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
             assert graph.files[path].source_hash == expected_hash
 
         # Verify symbol resolution in the graph
@@ -126,7 +126,9 @@ class CheckoutService:
         # Validate that incremental compilation matches full compilation exactly
         assert set(inc_model.symbols) == set(full_model.symbols)
         assert set(inc_model.call_graph.edges) == set(full_model.call_graph.edges)
-        assert set(inc_model.reference_graph.edges) == set(full_model.reference_graph.edges)
+        assert set(inc_model.reference_graph.edges) == set(
+            full_model.reference_graph.edges
+        )
         assert set(inc_model.entry_points) == set(full_model.entry_points)
         assert set(inc_model.persistence_models) == set(full_model.persistence_models)
         assert set(inc_model.repository_methods) == set(full_model.repository_methods)
@@ -139,12 +141,12 @@ class CheckoutService:
         base_graph = adapter.compile_graph({"files": base_source_files})
 
         # Add a new file utils.py that calls charge_card and is called by service.py
-        utils_py = '''
+        utils_py = """
 from processor import charge_card
 
 def helper():
     charge_card()
-'''
+"""
         head_service_py = '''
 """Checkout service."""
 
@@ -169,7 +171,9 @@ def confirm_checkout():
         # Validate identical output
         assert set(inc_model.symbols) == set(full_model.symbols)
         assert set(inc_model.call_graph.edges) == set(full_model.call_graph.edges)
-        assert set(inc_model.reference_graph.edges) == set(full_model.reference_graph.edges)
+        assert set(inc_model.reference_graph.edges) == set(
+            full_model.reference_graph.edges
+        )
 
     def test_incremental_delete_file(self, base_source_files):
         """Test deleting a file incrementally yields an identical graph to full compilation."""
@@ -178,13 +182,11 @@ def confirm_checkout():
 
         # Head files deletes processor.py
         # Checkout service is modified so it doesn't import or call from processor.py anymore.
-        head_service_py = '''
+        head_service_py = """
 def confirm_checkout():
     pass
-'''
-        head_files = {
-            "service.py": head_service_py
-        }
+"""
+        head_files = {"service.py": head_service_py}
 
         # Compile fully from scratch
         full_model = adapter.compile({"files": head_files})
@@ -196,7 +198,9 @@ def confirm_checkout():
         # Validate identical output
         assert set(inc_model.symbols) == set(full_model.symbols)
         assert set(inc_model.call_graph.edges) == set(full_model.call_graph.edges)
-        assert set(inc_model.reference_graph.edges) == set(full_model.reference_graph.edges)
+        assert set(inc_model.reference_graph.edges) == set(
+            full_model.reference_graph.edges
+        )
 
     def test_deleted_symbol_incoming_edge_cleanup(self, base_source_files):
         """Test deleting a symbol also correctly cleans up incoming edges from other unchanged files."""
@@ -209,10 +213,10 @@ def confirm_checkout():
         # so it will return None (meaning no call edge is added).
         # Our incremental compiler must match this by removing the incoming call edge
         # from service.py to the deleted charge_card symbol.
-        head_processor_py = '''
+        head_processor_py = """
 def save_order():
     pass
-'''
+"""
         head_files = dict(base_source_files)
         head_files["processor.py"] = head_processor_py
 
@@ -226,20 +230,24 @@ def save_order():
         # Validate call graph matching (specifically, no call edge to charge_card exists)
         assert set(inc_model.symbols) == set(full_model.symbols)
         assert set(inc_model.call_graph.edges) == set(full_model.call_graph.edges)
-        assert set(inc_model.reference_graph.edges) == set(full_model.reference_graph.edges)
+        assert set(inc_model.reference_graph.edges) == set(
+            full_model.reference_graph.edges
+        )
 
     def test_serialization(self, base_source_files):
         """Test saving the RepositoryGraph to disk and loading it back."""
         adapter = PythonLanguageAdapter()
         graph = adapter.compile_graph({"files": base_source_files})
 
-        with tempfile.NamedTemporaryFile(suffix=".repository_graph", delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(
+            suffix=".repository_graph", delete=False
+        ) as tmp:
             tmp_path = tmp.name
 
         try:
             # Save graph
             graph.save_to_file(tmp_path)
-            
+
             # Load graph
             loaded_graph = RepositoryGraph.load_from_file(tmp_path)
 
@@ -248,7 +256,9 @@ def save_order():
             assert set(loaded_graph.symbols.keys()) == set(graph.symbols.keys())
             assert set(loaded_graph.imports.keys()) == set(graph.imports.keys())
             assert set(loaded_graph.call_graph.edges) == set(graph.call_graph.edges)
-            assert set(loaded_graph.reference_graph.edges) == set(graph.reference_graph.edges)
+            assert set(loaded_graph.reference_graph.edges) == set(
+                graph.reference_graph.edges
+            )
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
@@ -258,23 +268,23 @@ def save_order():
         # Create a larger synthetic repository with 20 files
         files = {}
         for i in range(20):
-            files[f"file_{i}.py"] = f'''
+            files[f"file_{i}.py"] = f"""
 def func_{i}():
     print("Function {i}")
-'''
+"""
         adapter = PythonLanguageAdapter()
-        
+
         # Initial compilation
         graph = adapter.compile_graph({"files": files})
 
         # Modify only one file
-        files["file_10.py"] = '''
+        files["file_10.py"] = """
 def func_10():
     print("Modified Function 10")
     
 def new_helper():
     pass
-'''
+"""
         # Benchmark Full Compilation
         start_full = time.perf_counter()
         for _ in range(15):
@@ -295,7 +305,9 @@ def new_helper():
         # Incremental compilation should be faster (typically 3-10x faster)
         # Note: on extremely small synthetic examples it might be close, but still faster.
         # We assert it is at least as fast or faster.
-        assert duration_inc <= duration_full + 0.001  # allow 1ms tolerance for synthetic microbenchmarks
+        assert (
+            duration_inc <= duration_full + 0.001
+        )  # allow 1ms tolerance for synthetic microbenchmarks
 
     def test_changed_only_mode(self, base_source_files):
         """Test compiling incrementally with changed_only=True."""
@@ -305,32 +317,32 @@ def new_helper():
         # service.py is modified, processor.py is deleted, and a new utils.py is added.
         # We represent deleted processor.py as None, modified service.py with new content,
         # and new utils.py with new content.
-        head_service_py = '''
+        head_service_py = """
 from utils import helper
 def confirm_checkout():
     helper()
-'''
-        utils_py = '''
+"""
+        utils_py = """
 def helper():
     pass
-'''
+"""
         # We pass ONLY changed files to compile_incremental
         changed_files = {
             "service.py": head_service_py,
             "processor.py": None,
             "utils.py": utils_py,
         }
-        
+
         metrics = {}
         inc_graph = adapter.compile_incremental(
-            base_graph, 
-            {"files": changed_files, "changed_only": True, "metrics": metrics}
+            base_graph,
+            {"files": changed_files, "changed_only": True, "metrics": metrics},
         )
-        
+
         assert "service.py" in inc_graph.files
         assert "utils.py" in inc_graph.files
         assert "processor.py" not in inc_graph.files
-        
+
         # Verify metrics
         assert metrics.get("changed_files_compiled") == 2
         assert metrics.get("files_skipped") == 0
@@ -342,68 +354,79 @@ def helper():
         """Test end-to-end pipeline run utilizing incremental compilation."""
         from engine.pipeline.pipeline import Pipeline
         from engine.repository.indexing import MemoryRepositoryStore
-        from models import AnalysisRequest, RepositoryReference, PullRequestReference, DiffSnapshot, DiffFile
+        from models import (
+            AnalysisRequest,
+            RepositoryReference,
+            PullRequestReference,
+            DiffSnapshot,
+            DiffFile,
+        )
         from unittest.mock import AsyncMock, MagicMock
-        
+
         # Setup mocks
-        repo_ref = RepositoryReference(provider="github", owner="owner", repository="repo", default_branch="main")
-        pr_ref = PullRequestReference(number=123, base_sha="base", head_sha="head", title="Test PR")
-        
+        repo_ref = RepositoryReference(
+            provider="github", owner="owner", repository="repo", default_branch="main"
+        )
+        pr_ref = PullRequestReference(
+            number=123, base_sha="base", head_sha="head", title="Test PR"
+        )
+
         diff = DiffSnapshot(
             files=(
-                DiffFile(file_path="service.py", added_lines=(10,), removed_lines=(), hunks=()),
+                DiffFile(
+                    file_path="service.py",
+                    added_lines=(10,),
+                    removed_lines=(),
+                    hunks=(),
+                ),
             ),
             base_sha="base",
-            head_sha="head"
+            head_sha="head",
         )
-        
-        request = AnalysisRequest(
-            repository=repo_ref,
-            pull_request=pr_ref,
-            diff=diff
-        )
-        
+
+        request = AnalysisRequest(repository=repo_ref, pull_request=pr_ref, diff=diff)
+
         # Base files (mocked snapshot)
         base_snapshot = MagicMock()
         base_snapshot.files = base_source_files
-        
+
         provider = AsyncMock()
         provider.fetch_repository_at_sha.return_value = base_snapshot
-        
+
         # Fetch file at head for changed files
-        head_service_py = '''
+        head_service_py = """
 from processor import charge_card
 def confirm_checkout():
     charge_card()
-'''
+"""
         provider.fetch_file.return_value = head_service_py
-        
-        store = MemoryRepositoryStore()
+
+        from engine.repository.store import SQLiteRepositoryStore
+
+        store = SQLiteRepositoryStore(":memory:")
         pipeline = Pipeline(repository_store=store, repository_provider=provider)
-        
+
         context = await pipeline.run(request)
-        
+
         # Verify base and head models compiled and were released to optimize memory
         assert context.base_repository_model is None
         assert context.head_repository_model is None
-        
-        # Verify base graph cached
-        assert await store.exists("owner/repo", "base")
-        
+
+        # Verify base facts cached in SQLiteRepositoryStore
+        store.set_version_context("github/owner/repo", "github/owner/repo@base")
+
         # Verify repository compilation metrics in logs
         from core.logging import pipeline_logger
+
         log_text = "\n".join(pipeline_logger.pipeline_logs)
-        assert "Repository compilation" in log_text
-        assert "Fetch base repository" in log_text
-        assert "Compile base graph" in log_text
-        assert "Fetch changed files" in log_text
-        assert "Compile changed files" in log_text
-        assert "Patch repository graph" in log_text
+        assert "Fact-based repository compilation" in log_text
+        assert "Persistent facts loaded" in log_text
+        assert "PR overlay constructed" in log_text
 
     def test_incremental_with_duplicate_symbols(self):
         """Verify that incremental compilation succeeds when duplicate symbol IDs exist in a file."""
         # Nested functions/overloaded method names causing duplicate symbol IDs
-        source_py = '''
+        source_py = """
 def outer_func():
     def nested():
         pass
@@ -411,8 +434,8 @@ def outer_func():
 def another_func():
     def nested():
         pass
-'''
-        head_source_py = '''
+"""
+        head_source_py = """
 def outer_func():
     def nested():
         pass
@@ -420,103 +443,117 @@ def outer_func():
 def another_func():
     def nested():
         print("modified nested")
-'''
+"""
         adapter = PythonLanguageAdapter()
         base_graph = adapter.compile_graph({"files": {"main.py": source_py}})
-        
+
         # Incremental compilation should succeed without raising Symbol count mismatch
         try:
-            adapter.compile_incremental(base_graph, {"files": {"main.py": head_source_py}})
+            adapter.compile_incremental(
+                base_graph, {"files": {"main.py": head_source_py}}
+            )
         except ValueError as e:
             pytest.fail(f"Incremental compilation failed with: {e}")
 
     def test_incremental_with_path_mismatch_entry_point(self):
         """Verify that incremental compilation with absolute path updates does not duplicate entry points compiled with relative paths."""
-        source_py = '''
+        source_py = """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.get("/")
 def read_root():
     return {"status": "ok"}
-'''
+"""
         adapter = PythonLanguageAdapter()
         # Compile base graph with relative file path
         base_graph = adapter.compile_graph({"files": {"api/app.py": source_py}})
-        
+
         assert len(base_graph.entry_points) == 1
         assert base_graph.entry_points[0].route == "GET /"
-        
+
         # Incremental update with absolute path representation of the same file
         abs_path = os.path.abspath("api/app.py")
-        head_source_py = '''
+        head_source_py = """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.get("/")
 def read_root():
     return {"status": "modified"}
-'''
+"""
         # Perform incremental compilation
-        patched_graph = adapter.compile_incremental(base_graph, {"files": {abs_path: head_source_py}})
-        
+        patched_graph = adapter.compile_incremental(
+            base_graph, {"files": {abs_path: head_source_py}}
+        )
+
         # Verify that the entry point was replaced and not duplicated
         assert len(patched_graph.entry_points) == 1
         assert patched_graph.entry_points[0].route == "GET /"
 
     def test_incremental_with_multiple_routers_same_route(self):
         """Verify that incremental compilation succeeds when multiple routers define the same route path."""
-        source_py_1 = '''
+        source_py_1 = """
 from fastapi import APIRouter
 router = APIRouter()
 @router.get("/")
 def get_a():
     pass
-'''
-        source_py_2 = '''
+"""
+        source_py_2 = """
 from fastapi import APIRouter
 router = APIRouter()
 @router.get("/")
 def get_b():
     pass
-'''
+"""
         adapter = PythonLanguageAdapter()
-        base_graph = adapter.compile_graph({"files": {
-            "routes/a.py": source_py_1,
-            "routes/b.py": source_py_2,
-        }})
-        
+        base_graph = adapter.compile_graph(
+            {
+                "files": {
+                    "routes/a.py": source_py_1,
+                    "routes/b.py": source_py_2,
+                }
+            }
+        )
+
         assert len(base_graph.entry_points) == 2
-        
-        head_source_py_1 = '''
+
+        head_source_py_1 = """
 from fastapi import APIRouter
 router = APIRouter()
 @router.get("/")
 def get_a():
     print("modified")
-'''
+"""
         # Incremental compilation should succeed and not raise ValueError for duplicate entry point routes
         try:
-            adapter.compile_incremental(base_graph, {"files": {"routes/a.py": head_source_py_1}})
+            adapter.compile_incremental(
+                base_graph, {"files": {"routes/a.py": head_source_py_1}}
+            )
         except ValueError as e:
-            pytest.fail(f"Incremental compilation failed on duplicate entry points: {e}")
+            pytest.fail(
+                f"Incremental compilation failed on duplicate entry points: {e}"
+            )
 
     def test_incremental_with_dangling_edges(self):
         """Verify that incremental compilation succeeds when dangling call or reference edges exist in the graph."""
-        source_py = '''
+        source_py = """
 def caller_func():
     unresolved_external_call()
-'''
+"""
         adapter = PythonLanguageAdapter()
         base_graph = adapter.compile_graph({"files": {"main.py": source_py}})
-        
+
         # Incremental compilation should succeed and not raise ValueError for dangling call/reference edges
-        head_source_py = '''
+        head_source_py = """
 def caller_func():
     unresolved_external_call()
     print("modified")
-'''
+"""
         try:
-            adapter.compile_incremental(base_graph, {"files": {"main.py": head_source_py}})
+            adapter.compile_incremental(
+                base_graph, {"files": {"main.py": head_source_py}}
+            )
         except ValueError as e:
             pytest.fail(f"Incremental compilation failed with dangling edges: {e}")

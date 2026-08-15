@@ -1,16 +1,28 @@
 from dataclasses import dataclass, field
 from typing import Set, Dict, Tuple
 from engine.repository.facts import (
-    File, FileId, Symbol, SymbolId, Call, Reference, Import,
-    TypeRelationship, Endpoint, DatabaseRelationship,
-    EventPublication, EventSubscription, TestRelationship
+    File,
+    FileId,
+    Symbol,
+    SymbolId,
+    Call,
+    Reference,
+    Import,
+    TypeRelationship,
+    Endpoint,
+    DatabaseRelationship,
+    EventPublication,
+    EventSubscription,
+    TestRelationship,
 )
+
 
 @dataclass(frozen=True)
 class RepositoryOverlay:
     """
     Immutable representation of the repository fact changes introduced in a PR.
     """
+
     added_files: Dict[FileId, File] = field(default_factory=dict)
     removed_files: Set[FileId] = field(default_factory=set)
     modified_files: Set[FileId] = field(default_factory=set)
@@ -34,7 +46,9 @@ class RepositoryOverlay:
     removed_endpoints: Set[Endpoint] = field(default_factory=set)
 
     added_database_relationships: Set[DatabaseRelationship] = field(default_factory=set)
-    removed_database_relationships: Set[DatabaseRelationship] = field(default_factory=set)
+    removed_database_relationships: Set[DatabaseRelationship] = field(
+        default_factory=set
+    )
 
     added_event_publications: Set[EventPublication] = field(default_factory=set)
     removed_event_publications: Set[EventPublication] = field(default_factory=set)

@@ -7,7 +7,12 @@ from .imports import Import, ImportType
 from .type_relationship import TypeRelationship, TypeRelationshipType
 from .endpoint import Endpoint, EndpointMethod
 from .database import DatabaseRelationship, DatabaseRelationshipType
-from .event import EventPublication, EventPublicationType, EventSubscription, EventSubscriptionType
+from .event import (
+    EventPublication,
+    EventPublicationType,
+    EventSubscription,
+    EventSubscriptionType,
+)
 from .test import TestRelationship, TestRelationshipType
 from .repository_facts import RepositoryFacts
 

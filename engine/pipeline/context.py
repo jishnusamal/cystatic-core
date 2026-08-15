@@ -16,11 +16,13 @@ if TYPE_CHECKING:
     from engine.change.model import ChangeModel, RepositoryDelta, ChangeFacts
     from engine.repository.query import RepositoryQuery
     from engine.behavior.model.impact_surface import ImpactSurface
-    from engine.operational.model import OperationalChangeModel, EngineeringDiscoveryModel
+    from engine.operational.model import (
+        OperationalChangeModel,
+        EngineeringDiscoveryModel,
+    )
     from engine.operational.discovery.model import DiscoveryIR
     from engine.review_context.model import ReviewContext
     from engine.llm_context.model import LLMContext
-
 
 
 @dataclass
@@ -56,10 +58,9 @@ class PipelineContext:
     change_facts: ChangeFacts | None = None
     change_model: ChangeModel | None = None
     impact_surface: ImpactSurface | None = None
-    behavior_model: Any | None = None # legacy
+    behavior_model: Any | None = None  # legacy
     ocm: OperationalChangeModel | None = None
     edm: EngineeringDiscoveryModel | None = None
-
 
     # Discovery IR (output of Discovery Compiler)
     discovery_ir: DiscoveryIR | None = None
@@ -94,53 +95,62 @@ class PipelineContext:
     def mark_compilation_start(self) -> None:
         """Record the start time of compilation."""
         import time
+
         self.compile_started_at = time.time()
 
     def mark_repository_compiled(self) -> None:
         """Record repository compilation completion."""
         import time
+
         if self.compile_started_at:
             self.repository_compile_time = time.time() - self.compile_started_at
 
     def mark_change_compiled(self) -> None:
         """Record change compilation completion."""
         import time
+
         if self.compile_started_at:
             self.change_compile_time = time.time() - self.compile_started_at
 
     def mark_behavior_compiled(self) -> None:
         """Record behavior compilation completion."""
         import time
+
         if self.compile_started_at:
             self.behavior_compile_time = time.time() - self.compile_started_at
 
     def mark_operational_compiled(self) -> None:
         """Record operational compilation completion."""
         import time
+
         if self.compile_started_at:
             self.operational_compile_time = time.time() - self.compile_started_at
 
     def mark_discovery_compiled(self) -> None:
         """Record discovery compilation completion."""
         import time
+
         if self.compile_started_at:
             self.discovery_compile_time = time.time() - self.compile_started_at
 
     def mark_presentation_compiled(self) -> None:
         """Record presentation compilation completion."""
         import time
+
         if self.compile_started_at:
             self.presentation_compile_time = time.time() - self.compile_started_at
 
     def mark_render_complete(self) -> None:
         """Record rendering completion."""
         import time
+
         if self.compile_started_at:
             self.render_time = time.time() - self.compile_started_at
 
     def mark_complete(self) -> None:
         """Record total execution time."""
         import time
+
         if self.compile_started_at:
             self.total_time = time.time() - self.compile_started_at
 
@@ -174,4 +184,3 @@ class PipelineContext:
             "total_time": self.total_time,
             "has_error": self.error is not None,
         }
-

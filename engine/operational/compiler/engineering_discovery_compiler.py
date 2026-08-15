@@ -3,6 +3,7 @@
 This compiler is a projection-only pass that transforms the OperationalChangeModel
 into an EngineeringDiscoveryModel with all execution-oriented abstractions.
 """
+
 from __future__ import annotations
 
 from typing import Any, cast
@@ -78,8 +79,10 @@ class EngineeringDiscoveryCompiler:
             head_model = repository_model
 
         if head_model is None:
-            raise ValueError("Either repository_delta or repository_model must be provided")
-        
+            raise ValueError(
+                "Either repository_delta or repository_model must be provided"
+            )
+
         # After None check, head_model is guaranteed to be RepositoryModel
         if change_model is None:
             raise ValueError("change_model is required")
@@ -182,6 +185,7 @@ class EngineeringDiscoveryCompiler:
 
         # Run the composition pass first to create the base model
         from .passes import ModelCompositionPass
+
         context = ModelCompositionPass().run(context)
 
         # Run all enrichment passes
@@ -214,10 +218,11 @@ class EngineeringDiscoveryCompiler:
         reachable_units = getattr(behavior, "reachable_units", frozenset())
         execution_depth = getattr(behavior, "execution_depth", 0)
 
-        execution_units = tuple(
-            u for chain in execution_chains
-            for u in chain.units
-        ) if execution_chains else ()
+        execution_units = (
+            tuple(u for chain in execution_chains for u in chain.units)
+            if execution_chains
+            else ()
+        )
 
         return EngineeringDiscoveryModel(
             repository=operational_model.repository,
@@ -238,7 +243,6 @@ class EngineeringDiscoveryCompiler:
             validation=operational_model.validation,
             metrics=operational_model.metrics,
         )
-
 
     def get_pass_names(self) -> list[str]:
         """Get the names of all passes in execution order."""

@@ -6,6 +6,7 @@ The Discovery Compiler answers:
 It consumes the OperationalChangeModel and produces a DiscoveryModel.
 It is separate from the Operational Compiler and has no presentation logic.
 """
+
 from engine.discovery.model import (
     DiscoveryModel,
     Discovery,

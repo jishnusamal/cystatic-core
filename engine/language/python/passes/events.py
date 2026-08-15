@@ -43,7 +43,9 @@ class PythonEventIndexPass(BaseIndexPass):
                 if event:
                     builder["events"].append(event)
 
-    def visit_Call(self, node: ast.Call, context: FileContext, builder: dict[str, Any]) -> None:
+    def visit_Call(
+        self, node: ast.Call, context: FileContext, builder: dict[str, Any]
+    ) -> None:
         """Handle function call node from visitor."""
         event = self._extract_event(node, context.path)
         if event:

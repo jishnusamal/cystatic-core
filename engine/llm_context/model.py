@@ -15,6 +15,7 @@ Compression strategies:
     6. Compact arrays: positional tuples instead of verbose objects
     7. Short keys: 1-3 character field names throughout
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -198,14 +199,14 @@ ENUM_TABLES: dict[str, dict[int, str]] = {
 
 # Reverse mappings: string -> int for each enum
 ENUM_REVERSE: dict[str, dict[str, int]] = {
-    name: {v: k for k, v in table.items()}
-    for name, table in ENUM_TABLES.items()
+    name: {v: k for k, v in table.items()} for name, table in ENUM_TABLES.items()
 }
 
 
 # ---------------------------------------------------------------------------
 # String Table — global string dictionary
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class StringTable:
@@ -215,6 +216,7 @@ class StringTable:
     All other entries reference strings by their positional index.
     Index 0 is reserved for the empty string.
     """
+
     entries: tuple[str, ...] = field(default_factory=tuple)
 
     def __getitem__(self, idx: int) -> str:
@@ -228,6 +230,7 @@ class StringTable:
 # Execution DAG
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class ExecutionGraph:
     """Directed acyclic graph of execution steps.
@@ -238,6 +241,7 @@ class ExecutionGraph:
     This eliminates duplicate execution chains by factoring shared prefixes
     into a single DAG structure.
     """
+
     nodes: tuple[tuple[int, int, int, int], ...] = field(default_factory=tuple)
     # Each node: (sym_idx, depth, reaches_svc_idx, reaches_mod_idx)
 
@@ -248,6 +252,7 @@ class ExecutionGraph:
 # ---------------------------------------------------------------------------
 # LLMContext — the compressed IR
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class LLMContext:
@@ -298,7 +303,9 @@ class LLMContext:
     eg: ExecutionGraph = field(default_factory=ExecutionGraph)
 
     # Entry points: (ep_idx, (node_idxs...), terminal_idx, max_depth)
-    epts: tuple[tuple[int, tuple[int, ...], int, int], ...] = field(default_factory=tuple)
+    epts: tuple[tuple[int, tuple[int, ...], int, int], ...] = field(
+        default_factory=tuple
+    )
 
     # -----------------------------------------------------------------------
     # Discoveries Section

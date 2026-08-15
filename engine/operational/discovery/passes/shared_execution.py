@@ -7,6 +7,7 @@ Reuses existing compiler output:
 The shared execution analysis already exists in behavior/compiler/passes/shared_execution/.
 This pass only converts that output into Discovery objects — no duplicate traversal.
 """
+
 from __future__ import annotations
 
 from engine.operational.discovery.model import (
@@ -15,7 +16,10 @@ from engine.operational.discovery.model import (
     DiscoverySupport,
     DiscoveryEvidence,
 )
-from engine.operational.discovery.passes.base import DiscoveryPassContext, DiscoveryCompilerPass
+from engine.operational.discovery.passes.base import (
+    DiscoveryPassContext,
+    DiscoveryCompilerPass,
+)
 
 
 class SharedExecutionPass(DiscoveryCompilerPass):
@@ -41,8 +45,8 @@ class SharedExecutionPass(DiscoveryCompilerPass):
             return context
 
         # Reuse the pre-computed shared_executions from the behavior model
-        shared_executions = getattr(behavior, 'shared_executions', ())
-        behaviors = getattr(behavior, 'behaviors', ())
+        shared_executions = getattr(behavior, "shared_executions", ())
+        behaviors = getattr(behavior, "behaviors", ())
 
         if not shared_executions:
             return context
@@ -50,15 +54,15 @@ class SharedExecutionPass(DiscoveryCompilerPass):
         # Build a map: behavior_id -> behavior name/entry point
         behavior_names: dict[str, str] = {}
         for b in behaviors:
-            name = getattr(b, 'name', '')
+            name = getattr(b, "name", "")
             if not name:
-                entry = getattr(b, 'entry_point', '')
-                name = entry.split('/')[-1] if '/' in entry else entry
+                entry = getattr(b, "entry_point", "")
+                name = entry.split("/")[-1] if "/" in entry else entry
             behavior_names[b.id] = name or b.id
 
         for se in shared_executions:
-            symbol_id = getattr(se, 'symbol_id', '')
-            used_by = getattr(se, 'used_by', ())
+            symbol_id = getattr(se, "symbol_id", "")
+            used_by = getattr(se, "used_by", ())
             if not symbol_id or len(used_by) < 2:
                 continue
 
@@ -98,22 +102,24 @@ class SharedExecutionPass(DiscoveryCompilerPass):
                     )
                 )
 
-            context.discoveries.append(Discovery(
-                id=f"shared-execution://{symbol_id}",
-                kind=DiscoveryKind.SHARED_EXECUTION,
-                statement=statement,
-                importance=min(0.4 + 0.1 * count, 0.95),
-                support=DiscoverySupport(
-                    shared_by_count=count,
-                ),
-                evidence=tuple(evidence_list),
-                metadata={
-                    "symbol_id": symbol_id,
-                    "name": name,
-                    "shared_by_count": count,
-                    "used_by": list(used_by),
-                },
-            ))
+            context.discoveries.append(
+                Discovery(
+                    id=f"shared-execution://{symbol_id}",
+                    kind=DiscoveryKind.SHARED_EXECUTION,
+                    statement=statement,
+                    importance=min(0.4 + 0.1 * count, 0.95),
+                    support=DiscoverySupport(
+                        shared_by_count=count,
+                    ),
+                    evidence=tuple(evidence_list),
+                    metadata={
+                        "symbol_id": symbol_id,
+                        "name": name,
+                        "shared_by_count": count,
+                        "used_by": list(used_by),
+                    },
+                )
+            )
 
         return context
 

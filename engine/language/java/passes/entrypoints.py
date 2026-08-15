@@ -25,11 +25,11 @@ class JavaEntrypointIndexPass(BaseIndexPass):
 
         endpoint_patterns = [
             (r'@RequestMapping\s*\(.*?value\s*=\s*"([^"]+)"', None),
-            (r'@GetMapping\s*\(.*?"([^"]+)"', 'GET'),
-            (r'@PostMapping\s*\(.*?"([^"]+)"', 'POST'),
-            (r'@PutMapping\s*\(.*?"([^"]+)"', 'PUT'),
-            (r'@DeleteMapping\s*\(.*?"([^"]+)"', 'DELETE'),
-            (r'@PatchMapping\s*\(.*?"([^"]+)"', 'PATCH'),
+            (r'@GetMapping\s*\(.*?"([^"]+)"', "GET"),
+            (r'@PostMapping\s*\(.*?"([^"]+)"', "POST"),
+            (r'@PutMapping\s*\(.*?"([^"]+)"', "PUT"),
+            (r'@DeleteMapping\s*\(.*?"([^"]+)"', "DELETE"),
+            (r'@PatchMapping\s*\(.*?"([^"]+)"', "PATCH"),
         ]
 
         for i, line in enumerate(lines, 1):
@@ -53,11 +53,11 @@ class JavaEntrypointIndexPass(BaseIndexPass):
 
     def _find_method_name(self, lines: list[str], start_idx: int) -> str | None:
         """Find the method name following an annotation."""
-        method_pattern = r'(public|private|protected)?\s*\w+\s+(\w+)\s*\('
+        method_pattern = r"(public|private|protected)?\s*\w+\s+(\w+)\s*\("
 
         for i in range(start_idx, min(start_idx + 5, len(lines))):
             match = re.search(method_pattern, lines[i])
-            if match and 'class ' not in lines[i]:
+            if match and "class " not in lines[i]:
                 return match.group(2)
 
         return None

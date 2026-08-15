@@ -88,4 +88,3 @@ __all__ = [
     "PREVENT_LEGACY_ARCHITECTURE",
     "assert_new_architecture",
 ]
-

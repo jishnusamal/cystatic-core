@@ -31,8 +31,8 @@ class BehaviorCompilationPass(BehaviorCompilerPass):
         Returns:
             Updated context with discovered behaviors
         """
-        change_model = context.metadata.get('change_model')
-        repository_model = context.metadata.get('repository_model')
+        change_model = context.metadata.get("change_model")
+        repository_model = context.metadata.get("repository_model")
 
         if not change_model or not repository_model:
             # No models to process
@@ -57,14 +57,14 @@ class BehaviorCompilationPass(BehaviorCompilerPass):
         # Verify each changed symbol exists in repository_model.symbols
         # for symbol_id in changed_symbol_ids:
         #     symbol = repository_model.get_symbol_by_id(symbol_id)
-            # print(f"[DEBUG]   - get_symbol_by_id('{symbol_id}'): {symbol is not None}")
-            # if symbol:
-            #     print(f"[DEBUG]     - symbol found: {symbol.name} ({symbol.kind})")
-            # # Check reverse call graph
-            # called_by = repository_model.get_called_by(symbol_id)
-            # print(f"[DEBUG]   - get_called_by('{symbol_id}'): {len(called_by)} edges")
-            # for edge in called_by:
-            #     print(f"[DEBUG]     - caller: {edge.caller_id}")
+        # print(f"[DEBUG]   - get_symbol_by_id('{symbol_id}'): {symbol is not None}")
+        # if symbol:
+        #     print(f"[DEBUG]     - symbol found: {symbol.name} ({symbol.kind})")
+        # # Check reverse call graph
+        # called_by = repository_model.get_called_by(symbol_id)
+        # print(f"[DEBUG]   - get_called_by('{symbol_id}'): {len(called_by)} edges")
+        # for edge in called_by:
+        #     print(f"[DEBUG]     - caller: {edge.caller_id}")
 
         # Build a map from symbol_id to the behaviors that contain it
         symbol_to_behaviors: dict[str, list[Behavior]] = {}
@@ -91,9 +91,7 @@ class BehaviorCompilationPass(BehaviorCompilerPass):
         # Build symbol-to-behavior index for fast lookup
         context.symbol_to_behaviors = {}
         for symbol_id, behaviors in symbol_to_behaviors.items():
-            context.symbol_to_behaviors[symbol_id] = [
-                b.id for b in behaviors
-            ]
+            context.symbol_to_behaviors[symbol_id] = [b.id for b in behaviors]
 
         return context
 
@@ -110,15 +108,15 @@ class BehaviorCompilationPass(BehaviorCompilerPass):
         changed_ids: set[str] = set()
 
         # Added symbols
-        for symbol in getattr(change_model, 'added_symbols', ()):
+        for symbol in getattr(change_model, "added_symbols", ()):
             changed_ids.add(symbol.id)
 
         # Removed symbols
-        for symbol in getattr(change_model, 'removed_symbols', ()):
+        for symbol in getattr(change_model, "removed_symbols", ()):
             changed_ids.add(symbol.id)
 
         # Modified symbols
-        for modified in getattr(change_model, 'modified_symbols', ()):
+        for modified in getattr(change_model, "modified_symbols", ()):
             changed_ids.add(modified.symbol.id)
 
         return changed_ids
@@ -149,7 +147,7 @@ class BehaviorCompilationPass(BehaviorCompilerPass):
         # print(f"[DEBUG]   - Entry point handler_ids: {[ep.handler_id for ep in repository_model.entry_points]}")
 
         # Check if this symbol is itself an entry point
-        for entry_point in getattr(repository_model, 'entry_points', ()):
+        for entry_point in getattr(repository_model, "entry_points", ()):
             if entry_point.handler_id == symbol_id:
                 # print(f"[DEBUG]   - Symbol '{symbol_id}' IS an entry point handler")
                 behavior = self._create_behavior_from_entry_point(
@@ -172,7 +170,7 @@ class BehaviorCompilationPass(BehaviorCompilerPass):
             visited.add(current_id)
 
             # Check if this symbol is an entry point
-            for entry_point in getattr(repository_model, 'entry_points', ()):
+            for entry_point in getattr(repository_model, "entry_points", ()):
                 if entry_point.handler_id == current_id:
                     if current_id not in found_entry_points:
                         found_entry_points.add(current_id)
@@ -221,16 +219,24 @@ class BehaviorCompilationPass(BehaviorCompilerPass):
         }
 
         # Handle both EntryPointKind enum and string values
-        kind_str = entry_point.kind.value if hasattr(entry_point.kind, 'value') else entry_point.kind
+        kind_str = (
+            entry_point.kind.value
+            if hasattr(entry_point.kind, "value")
+            else entry_point.kind
+        )
         kind = kind_map.get(kind_str, BehaviorKind.EVENT_CONSUMER)
 
         # Create a stable behavior id from the entry point
         behavior_id = f"behavior://{entry_point.handler_id}"
 
         # Use the route as the name, or derive from handler
-        name = entry_point.route.split('/')[-1] if '/' in entry_point.route else entry_point.route
+        name = (
+            entry_point.route.split("/")[-1]
+            if "/" in entry_point.route
+            else entry_point.route
+        )
         if not name:
-            name = entry_point.handler_id.split('::')[-1]
+            name = entry_point.handler_id.split("::")[-1]
 
         return Behavior(
             id=behavior_id,
@@ -241,10 +247,10 @@ class BehaviorCompilationPass(BehaviorCompilerPass):
             changed_symbol_ids=(changed_symbol_id,),
             evidence=entry_point.evidence,
             metadata={
-                'handler_id': entry_point.handler_id,
-                'route': entry_point.route,
-                'kind': entry_point.kind.value,
-            }
+                "handler_id": entry_point.handler_id,
+                "route": entry_point.route,
+                "kind": entry_point.kind.value,
+            },
         )
 
     def _update_changed_symbols(

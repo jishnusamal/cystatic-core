@@ -1,12 +1,31 @@
 import pytest
 from core.runtime import PREVENT_LEGACY_ARCHITECTURE
-from engine.repository.model import RepositoryGraph, RepositoryModel, CallGraph, ReferenceGraph
+from engine.repository.model import (
+    RepositoryGraph,
+    RepositoryModel,
+    CallGraph,
+    ReferenceGraph,
+)
 from engine.language.base.graph_patcher import GraphPatcher
 from engine.repository.store import SQLiteRepositoryStore
 from engine.repository.store.sink import PersistentFactSink
-from engine.repository.facts import File, FileId, Symbol, SymbolId, SymbolKind, Call, CallType
+from engine.repository.facts import (
+    File,
+    FileId,
+    Symbol,
+    SymbolId,
+    SymbolKind,
+    Call,
+    CallType,
+)
 from engine.pipeline.pipeline import Pipeline
-from models import RepositoryReference, PullRequestReference, DiffSnapshot, AnalysisRequest, AnalysisTrigger
+from models import (
+    RepositoryReference,
+    PullRequestReference,
+    DiffSnapshot,
+    AnalysisRequest,
+    AnalysisTrigger,
+)
 from models.core import DiffFile, DiffHunk
 
 
@@ -14,13 +33,26 @@ def test_legacy_architecture_guard_raises():
     """Verify that constructing legacy objects raises RuntimeError when guard is active."""
     token = PREVENT_LEGACY_ARCHITECTURE.set(True)
     try:
-        with pytest.raises(RuntimeError, match=r"\[Architecture Assertion\] Attempt to construct 'RepositoryGraph'"):
+        with pytest.raises(
+            RuntimeError,
+            match=r"\[Architecture Assertion\] Attempt to construct 'RepositoryGraph'",
+        ):
             RepositoryGraph()
 
-        with pytest.raises(RuntimeError, match=r"\[Architecture Assertion\] Attempt to construct 'RepositoryModel'"):
-            RepositoryModel(symbols=frozenset(), call_graph=CallGraph(), reference_graph=ReferenceGraph())
+        with pytest.raises(
+            RuntimeError,
+            match=r"\[Architecture Assertion\] Attempt to construct 'RepositoryModel'",
+        ):
+            RepositoryModel(
+                symbols=frozenset(),
+                call_graph=CallGraph(),
+                reference_graph=ReferenceGraph(),
+            )
 
-        with pytest.raises(RuntimeError, match=r"\[Architecture Assertion\] Attempt to construct 'GraphPatcher'"):
+        with pytest.raises(
+            RuntimeError,
+            match=r"\[Architecture Assertion\] Attempt to construct 'GraphPatcher'",
+        ):
             GraphPatcher()
     finally:
         PREVENT_LEGACY_ARCHITECTURE.reset(token)
@@ -38,16 +70,16 @@ async def test_production_pipeline_fact_architecture(tmp_path):
     """
     db_file = str(tmp_path / "test_store.db")
     store = SQLiteRepositoryStore(db_file)
-    
+
     repo_name = "test-org/test-repo"
     base_sha = "sha-base-123"
     head_sha = "sha-head-456"
-    
+
     # 1. Index base repository facts into store
     repo_id = store.create_repository("github", "test-org", "test-repo")
     version_id = store.create_version(repo_id, base_sha)
     store.set_version_context(repo_id, version_id)
-    
+
     sink = PersistentFactSink(store, repo_id, version_id)
     file_1 = File(id=FileId(1), path="app.py", language="python")
     sink.add_file(file_1)
@@ -62,7 +94,7 @@ async def test_production_pipeline_fact_architecture(tmp_path):
     )
     sink.add_symbol(sym_1)
     sink.flush()
-    
+
     # Mock Repository Provider that only fetches changed files (lazy retrieval)
     class MockProvider:
         async def fetch_file(self, repository, file_path, sha):
@@ -74,7 +106,7 @@ async def test_production_pipeline_fact_architecture(tmp_path):
         repository_store=store,
         repository_provider=MockProvider(),
     )
-    
+
     # 2. Construct AnalysisRequest
     repo_ref = RepositoryReference(
         provider="github",
@@ -105,17 +137,17 @@ async def test_production_pipeline_fact_architecture(tmp_path):
         hunks=(hunk,),
     )
     diff_snapshot = DiffSnapshot(files=(diff_file,))
-    
+
     request = AnalysisRequest(
         repository=repo_ref,
         pull_request=pr_ref,
         diff=diff_snapshot,
         trigger=AnalysisTrigger.MANUAL,
     )
-    
+
     # 3. Run pipeline
     context = await pipeline.run(request)
-    
+
     # 4. Verify invariants
     assert context.error is None
     assert context.base_repository_model is None
@@ -126,7 +158,7 @@ async def test_production_pipeline_fact_architecture(tmp_path):
     assert context.impact_surface is not None
     assert context.ocm is not None
     assert context.review_context is not None
-    
+
     # Verify symbols from overlay view
     view_syms = context.repository_view.get_symbols_in_file(FileId(1))
     assert len(view_syms) >= 1
@@ -145,7 +177,7 @@ async def test_pipeline_on_demand_base_indexing(tmp_path):
 
     db_file = str(tmp_path / "test_store_ondemand.db")
     store = SQLiteRepositoryStore(db_file)
-    
+
     mock_provider = MagicMock()
     mock_snapshot = RepositorySnapshot(
         tree={},
@@ -153,7 +185,9 @@ async def test_pipeline_on_demand_base_indexing(tmp_path):
         commit="sha-base-ondemand",
     )
     mock_provider.fetch_repository_at_sha = AsyncMock(return_value=mock_snapshot)
-    mock_provider.fetch_file = AsyncMock(return_value="def test_func():\n    return 99\n")
+    mock_provider.fetch_file = AsyncMock(
+        return_value="def test_func():\n    return 99\n"
+    )
 
     pipeline = Pipeline(
         repository_store=store,
@@ -201,19 +235,22 @@ async def test_pipeline_on_demand_base_indexing(tmp_path):
     context = await pipeline.run(request)
 
     # 2. Verify on-demand fetch was called and context succeeded
-    mock_provider.fetch_repository_at_sha.assert_called_once_with(repo_ref, "sha-base-ondemand")
+    mock_provider.fetch_repository_at_sha.assert_called_once_with(
+        repo_ref, "sha-base-ondemand"
+    )
     assert context.error is None
     assert context.base_query is not None
     assert isinstance(context.base_query, SQLiteRepositoryStore)
     assert context.repository_view is not None
 
     # 3. Verify that base facts were persisted into SQLite store
-    store.set_version_context("github/test-org/ondemand-repo", "github/test-org/ondemand-repo@sha-base-ondemand")
+    store.set_version_context(
+        "github/test-org/ondemand-repo",
+        "github/test-org/ondemand-repo@sha-base-ondemand",
+    )
     file_fact = store.get_file(FileId(1))
     assert file_fact is not None
     assert file_fact.path == "main.py"
     syms = store.get_symbols_in_file(FileId(1))
     assert len(syms) == 1
     assert syms[0].name == "test_func"
-
-

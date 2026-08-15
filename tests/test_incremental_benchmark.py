@@ -56,7 +56,10 @@ class TestIncrementalBenchmark:
         head_files = dict(repo_files)
         for i in range(num_changed):
             idx = 10 + i
-            head_files[f"module_{idx}.py"] = repo_files[f"module_{idx}.py"] + f"\n# Modified comment {i}\ndef extra_{idx}():\n    return {i}\n"
+            head_files[f"module_{idx}.py"] = (
+                repo_files[f"module_{idx}.py"]
+                + f"\n# Modified comment {i}\ndef extra_{idx}():\n    return {i}\n"
+            )
 
         # 1. Full compilation baseline
         t0 = time.perf_counter()
@@ -66,17 +69,23 @@ class TestIncrementalBenchmark:
         # 2. Incremental compilation
         t0 = time.perf_counter()
         metrics: dict = {}
-        inc_graph = adapter.compile_incremental(base_graph, {"files": head_files, "metrics": metrics})
+        inc_graph = adapter.compile_incremental(
+            base_graph, {"files": head_files, "metrics": metrics}
+        )
         inc_model = inc_graph.to_model()
         inc_duration = time.perf_counter() - t0
 
         # Verify semantic output equivalence
         assert set(inc_model.symbols) == set(full_model.symbols)
         assert set(inc_model.call_graph.edges) == set(full_model.call_graph.edges)
-        assert set(inc_model.reference_graph.edges) == set(full_model.reference_graph.edges)
+        assert set(inc_model.reference_graph.edges) == set(
+            full_model.reference_graph.edges
+        )
 
         # Incremental compile duration must be smaller than full compilation
-        assert inc_duration <= full_duration + 0.1, f"Incremental ({inc_duration:.3f}s) should be fast compared to full ({full_duration:.3f}s)"
+        assert inc_duration <= full_duration + 0.1, (
+            f"Incremental ({inc_duration:.3f}s) should be fast compared to full ({full_duration:.3f}s)"
+        )
 
     def test_add_file_incremental_benchmark(self):
         """Benchmark adding a single new file to a 100-file repository."""
@@ -85,11 +94,11 @@ class TestIncrementalBenchmark:
         base_graph = adapter.compile_graph({"files": repo_files})
 
         head_files = dict(repo_files)
-        head_files["new_feature.py"] = '''from module_0 import core_utility
+        head_files["new_feature.py"] = """from module_0 import core_utility
 
 def new_feature_handler():
     return core_utility()
-'''
+"""
         full_model = adapter.compile({"files": head_files})
         inc_graph = adapter.compile_incremental(base_graph, {"files": head_files})
         inc_model = inc_graph.to_model()
@@ -121,9 +130,13 @@ def new_feature_handler():
 
         head_files = dict(repo_files)
         # Rename core_utility to core_utility_v2 in module_0.py
-        head_files["module_0.py"] = repo_files["module_0.py"].replace("core_utility", "core_utility_v2")
+        head_files["module_0.py"] = repo_files["module_0.py"].replace(
+            "core_utility", "core_utility_v2"
+        )
         # Update references in module_1.py
-        head_files["module_1.py"] = repo_files["module_1.py"].replace("core_utility", "core_utility_v2")
+        head_files["module_1.py"] = repo_files["module_1.py"].replace(
+            "core_utility", "core_utility_v2"
+        )
 
         full_model = adapter.compile({"files": head_files})
         inc_graph = adapter.compile_incremental(base_graph, {"files": head_files})

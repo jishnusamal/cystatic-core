@@ -63,9 +63,7 @@ class ModelCompositionPass(OperationalCompilerPass):
                 missing.append("change_model")
             if context.behavior_model is None:
                 missing.append("behavior_model")
-            raise ValueError(
-                f"Cannot compose models: missing {', '.join(missing)}"
-            )
+            raise ValueError(f"Cannot compose models: missing {', '.join(missing)}")
 
         context.composed_model = OperationalChangeModel(
             repository=context.repository_model,  # type: ignore[arg-type]

@@ -85,20 +85,13 @@ class ConsistencyValidationPass(OperationalCompilerPass):
             )
 
             # 2. Every behavior references valid symbols (in head repository)
-            errors.extend(
-                self._validate_behavior_symbols(model, head_symbol_ids)
-            )
+            errors.extend(self._validate_behavior_symbols(model, head_symbol_ids))
 
             # 3. Every entry point belongs to RepositoryModel
-            errors.extend(
-                self._validate_entry_points(model, head_symbol_ids)
-            )
+            errors.extend(self._validate_entry_points(model, head_symbol_ids))
 
             # 4. Every execution graph references known nodes
-            errors.extend(
-                self._validate_execution_graphs(model, head_symbol_ids)
-            )
-
+            errors.extend(self._validate_execution_graphs(model, head_symbol_ids))
 
         context.consistency_errors = errors
         return context
@@ -220,7 +213,7 @@ class ConsistencyValidationPass(OperationalCompilerPass):
         entry_points = getattr(model.repository, "entry_points", ())
         if not entry_points and hasattr(model.repository, "get_entry_points"):
             entry_points = model.repository.get_entry_points()
-            
+
         for entry_point in entry_points:
             if entry_point.handler_id not in known_symbol_ids:
                 errors.append(
@@ -229,7 +222,6 @@ class ConsistencyValidationPass(OperationalCompilerPass):
                 )
 
         return errors
-
 
     def _validate_execution_graphs(
         self,

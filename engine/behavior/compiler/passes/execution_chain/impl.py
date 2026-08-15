@@ -36,7 +36,11 @@ class ExecutionChainPass(BehaviorCompilerPass):
         # Build execution chain for each behavior
         execution_chains = []
         for behavior in context.behaviors:
-            graph = context.get_execution_graph(behavior.id) if hasattr(context, 'get_execution_graph') else None
+            graph = (
+                context.get_execution_graph(behavior.id)
+                if hasattr(context, "get_execution_graph")
+                else None
+            )
             # Find the graph for this behavior
             graph = None
             for g in context.execution_graphs:

@@ -20,7 +20,7 @@ from engine.repository.facts import (
 class RepositoryFactSink(ABC):
     """
     Abstract interface for streaming facts from the repository indexer.
-    
+
     The indexer writes facts sequentially to the sink without accumulating
     them in memory.
     """
@@ -92,7 +92,7 @@ class RepositoryFactSink(ABC):
 class InMemoryFactSink(RepositoryFactSink):
     """
     In-memory implementation of RepositoryFactSink.
-    
+
     Accumulates all facts in memory for testing and easy validation/compilation.
     """
 

@@ -9,6 +9,7 @@ from .evidence import Evidence
 
 class TestFramework(str, Enum):
     """Test framework identifier."""
+
     PYTEST = "pytest"
     UNITTEST = "unittest"
     DOCTEST = "doctest"
@@ -31,6 +32,7 @@ class TestFixture:
         file: Source file where the fixture is defined
         line: Line number where the fixture is defined
     """
+
     name: str
     scope: str = "function"
     symbol_id: str = ""
@@ -55,6 +57,7 @@ class TestDefinition:
         evidence: Provenance evidence for this test definition
         metadata: Additional framework-specific metadata
     """
+
     symbol_id: str
     name: str
     kind: str = "function"  # class, method, function
@@ -73,10 +76,10 @@ class TestDefinition:
         if not self.name:
             raise ValueError("Test name cannot be empty")
         if isinstance(self.framework, str):
-            object.__setattr__(self, 'framework', TestFramework(self.framework))
+            object.__setattr__(self, "framework", TestFramework(self.framework))
         if isinstance(self.fixtures, list):
-            object.__setattr__(self, 'fixtures', tuple(self.fixtures))
+            object.__setattr__(self, "fixtures", tuple(self.fixtures))
         if isinstance(self.assertions, list):
-            object.__setattr__(self, 'assertions', tuple(self.assertions))
+            object.__setattr__(self, "assertions", tuple(self.assertions))
         if isinstance(self.metadata, dict):
-            object.__setattr__(self, 'metadata', dict(self.metadata))
+            object.__setattr__(self, "metadata", dict(self.metadata))

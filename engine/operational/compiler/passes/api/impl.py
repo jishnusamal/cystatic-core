@@ -62,7 +62,10 @@ class APIModel:
 
 # GraphQL patterns
 _GRAPHQL_TYPE_PATTERNS = {
-    "query", "mutation", "subscription", "resolver",
+    "query",
+    "mutation",
+    "subscription",
+    "resolver",
 }
 
 
@@ -97,7 +100,7 @@ class APICompilationPass(OperationalCompilerPass):
         model = context.composed_model
         if model is None:
             return context
-        
+
         repo = model.repository
 
         # Use cached values from context
@@ -108,6 +111,7 @@ class APICompilationPass(OperationalCompilerPass):
         # Build reverse reachability: find all symbols that can reach an affected symbol
         # within 50 hops in the call graph (equivalent to traversing reverse call graph)
         from collections import deque
+
         can_reach_affected: set[str] = set(affected_symbol_ids)
         queue: deque[tuple[str, int]] = deque((sid, 0) for sid in affected_symbol_ids)
         visited_reverse: set[str] = set(affected_symbol_ids)
@@ -135,7 +139,6 @@ class APICompilationPass(OperationalCompilerPass):
             entry_points = repo.get_entry_points()
 
         for ep in entry_points:
-
             # Check if this entry point's handler is affected or can reach an affected symbol
             handler_affected = ep.handler_id in affected_symbol_ids
             handler_reachable = ep.handler_id in can_reach_affected
@@ -221,7 +224,7 @@ class APICompilationPass(OperationalCompilerPass):
             event=model.event,
             validation=model.validation,
             api=api_model,
-            metrics=model.metrics if hasattr(model, 'metrics') else None,
+            metrics=model.metrics if hasattr(model, "metrics") else None,
         )
 
         return context
@@ -241,6 +244,7 @@ class APICompilationPass(OperationalCompilerPass):
             return True
 
         from collections import deque
+
         adj: dict[str, list[str]] = {}
         for edge in repo.call_graph.edges:
             if edge.caller_id not in adj:

@@ -19,13 +19,15 @@ from .types import (
     TypeRelationship,
 )
 
+
 class InMemoryRepository(RepositoryQuery):
     """
     In-memory adapter implementing the RepositoryQuery interface using RepositoryFacts.
     """
+
     def __init__(self, facts: RepositoryFacts):
         self._facts = facts
-        
+
         # Precompute reverse indexes not present in RepositoryFacts for O(1) lookups
         self._importers: dict[FileId, tuple[Import, ...]] = {}
         importers_map = defaultdict(list)
@@ -64,7 +66,9 @@ class InMemoryRepository(RepositoryQuery):
     def get_importers(self, file_id: FileId) -> tuple[Import, ...]:
         return self._importers.get(file_id, ())
 
-    def get_type_relationships(self, symbol_id: SymbolId) -> tuple[TypeRelationship, ...]:
+    def get_type_relationships(
+        self, symbol_id: SymbolId
+    ) -> tuple[TypeRelationship, ...]:
         return self._facts.type_relationships_from(symbol_id)
 
     def get_type_dependents(self, symbol_id: SymbolId) -> tuple[TypeRelationship, ...]:
@@ -73,7 +77,9 @@ class InMemoryRepository(RepositoryQuery):
     def get_endpoints(self, symbol_id: SymbolId) -> tuple[Endpoint, ...]:
         return self._facts.endpoints_for(symbol_id)
 
-    def get_database_relationships(self, symbol_id: SymbolId) -> tuple[DatabaseRelationship, ...]:
+    def get_database_relationships(
+        self, symbol_id: SymbolId
+    ) -> tuple[DatabaseRelationship, ...]:
         return self._facts.database_relationships_for(symbol_id)
 
     def get_published_events(self, symbol_id: SymbolId) -> tuple[EventPublication, ...]:
@@ -87,23 +93,34 @@ class InMemoryRepository(RepositoryQuery):
 
     def get_entry_points(self) -> tuple[EntryPoint, ...]:
         entry_points = []
-        
+
         for ep in self._facts.endpoints:
-            entry_points.append(EntryPoint(
-                kind=EntryPointKind.REST_ENDPOINT,
-                route=f"{ep.method} {ep.path}",
-                handler_id=ep.symbol_id,
-                metadata={"framework": ep.framework, "method": ep.method, "path": ep.path}
-            ))
-            
+            entry_points.append(
+                EntryPoint(
+                    kind=EntryPointKind.REST_ENDPOINT,
+                    route=f"{ep.method} {ep.path}",
+                    handler_id=ep.symbol_id,
+                    metadata={
+                        "framework": ep.framework,
+                        "method": ep.method,
+                        "path": ep.path,
+                    },
+                )
+            )
+
         for sub in self._facts.event_subscriptions:
-            entry_points.append(EntryPoint(
-                kind=EntryPointKind.EVENT_CONSUMER,
-                route=f"event:{sub.event_id}",
-                handler_id=sub.symbol_id,
-                metadata={"subscription_type": sub.subscription_type, "event_id": sub.event_id}
-            ))
-            
+            entry_points.append(
+                EntryPoint(
+                    kind=EntryPointKind.EVENT_CONSUMER,
+                    route=f"event:{sub.event_id}",
+                    handler_id=sub.symbol_id,
+                    metadata={
+                        "subscription_type": sub.subscription_type,
+                        "event_id": sub.event_id,
+                    },
+                )
+            )
+
         return tuple(entry_points)
 
     def get_symbols_in_file(self, file_id: FileId) -> tuple[Symbol, ...]:

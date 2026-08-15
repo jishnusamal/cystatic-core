@@ -38,7 +38,7 @@ def test_query_instrumentation():
     # 3. Perform queries
     assert instrumented_repo.get_symbol(SymbolId(1)) == symbol_a
     assert instrumented_repo.get_symbol(SymbolId(2)) is None
-    
+
     assert instrumented_repo.get_file(FileId(1)) == file_a
     assert instrumented_repo.get_callers(SymbolId(1)) == ()
 

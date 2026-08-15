@@ -20,6 +20,7 @@ class CallEdge:
         line: Line number where the call occurs
         evidence: Provenance evidence for this call edge
     """
+
     caller_id: str
     callee_id: str
     call_type: str = "direct"
@@ -33,15 +34,15 @@ class CallEdge:
             raise ValueError("Caller id cannot be empty")
         if not self.callee_id:
             raise ValueError("Callee id cannot be empty")
-        object.__setattr__(self, 'caller_id', sys.intern(self.caller_id))
-        object.__setattr__(self, 'callee_id', sys.intern(self.callee_id))
-        object.__setattr__(self, 'call_type', sys.intern(self.call_type))
+        object.__setattr__(self, "caller_id", sys.intern(self.caller_id))
+        object.__setattr__(self, "callee_id", sys.intern(self.callee_id))
+        object.__setattr__(self, "call_type", sys.intern(self.call_type))
         if self.file:
-            object.__setattr__(self, 'file', sys.intern(self.file))
+            object.__setattr__(self, "file", sys.intern(self.file))
         if self.evidence is None and self.file:
             object.__setattr__(
                 self,
-                'evidence',
+                "evidence",
                 Evidence(
                     file_location=FileLocation(
                         file=self.file,
@@ -59,14 +60,17 @@ class CallGraph:
 
     Contains all direct call relationships between symbols in the repository.
     """
+
     edges: tuple[CallEdge, ...] = field(default_factory=tuple)
-    _indexes: dict[str, Any] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _indexes: dict[str, Any] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self):
         """Ensure edges is a tuple and initialize index container."""
         if isinstance(self.edges, list):
-            object.__setattr__(self, 'edges', tuple(self.edges))
-        object.__setattr__(self, '_indexes', {})
+            object.__setattr__(self, "edges", tuple(self.edges))
+        object.__setattr__(self, "_indexes", {})
 
     def _build_outgoing(self) -> dict[str, tuple[CallEdge, ...]]:
         outgoing: dict[str, list[CallEdge]] = {}
@@ -129,6 +133,7 @@ class ReferenceEdge:
         relation_type: Type of relationship (import, inheritance, etc.)
         evidence: Provenance evidence for this reference edge
     """
+
     source_id: str
     target_id: str
     relation_type: str = "reference"
@@ -140,9 +145,9 @@ class ReferenceEdge:
             raise ValueError("Source id cannot be empty")
         if not self.target_id:
             raise ValueError("Target id cannot be empty")
-        object.__setattr__(self, 'source_id', sys.intern(self.source_id))
-        object.__setattr__(self, 'target_id', sys.intern(self.target_id))
-        object.__setattr__(self, 'relation_type', sys.intern(self.relation_type))
+        object.__setattr__(self, "source_id", sys.intern(self.source_id))
+        object.__setattr__(self, "target_id", sys.intern(self.target_id))
+        object.__setattr__(self, "relation_type", sys.intern(self.relation_type))
 
 
 @dataclass(frozen=True)
@@ -152,14 +157,17 @@ class ReferenceGraph:
 
     Contains all reference relationships between symbols (imports, inheritance, etc.).
     """
+
     edges: tuple[ReferenceEdge, ...] = field(default_factory=tuple)
-    _indexes: dict[str, Any] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _indexes: dict[str, Any] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self):
         """Ensure edges is a tuple and initialize index container."""
         if isinstance(self.edges, list):
-            object.__setattr__(self, 'edges', tuple(self.edges))
-        object.__setattr__(self, '_indexes', {})
+            object.__setattr__(self, "edges", tuple(self.edges))
+        object.__setattr__(self, "_indexes", {})
 
     def _build_outgoing(self) -> dict[str, tuple[ReferenceEdge, ...]]:
         outgoing: dict[str, list[ReferenceEdge]] = {}
@@ -223,6 +231,7 @@ class TypeRelationshipEdge:
         metadata: Additional information about the relationship
         evidence: Provenance evidence for this type relationship
     """
+
     source_id: str
     target_id: str
     relation_type: str = "extends"
@@ -236,7 +245,7 @@ class TypeRelationshipEdge:
         if not self.target_id:
             raise ValueError("Target id cannot be empty")
         if isinstance(self.metadata, dict):
-            object.__setattr__(self, 'metadata', dict(self.metadata))
+            object.__setattr__(self, "metadata", dict(self.metadata))
 
 
 @dataclass(frozen=True)
@@ -247,14 +256,17 @@ class TypeRelationshipGraph:
     Contains inheritance, interface implementation, composition,
     and generic type reference relationships.
     """
+
     edges: tuple[TypeRelationshipEdge, ...] = field(default_factory=tuple)
-    _indexes: dict[str, Any] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _indexes: dict[str, Any] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self):
         """Ensure edges is a tuple and initialize index container."""
         if isinstance(self.edges, list):
-            object.__setattr__(self, 'edges', tuple(self.edges))
-        object.__setattr__(self, '_indexes', {})
+            object.__setattr__(self, "edges", tuple(self.edges))
+        object.__setattr__(self, "_indexes", {})
 
     def _build_outgoing(self) -> dict[str, tuple[TypeRelationshipEdge, ...]]:
         outgoing: dict[str, list[TypeRelationshipEdge]] = {}
@@ -301,8 +313,9 @@ class TypeRelationshipGraph:
         rels_from = self.get_relationships_for(symbol_id)
         rels_to = self.get_relationships_to(symbol_id)
         return tuple(
-            e for e in (rels_from + rels_to)
-            if e.relation_type in ('extends', 'implements')
+            e
+            for e in (rels_from + rels_to)
+            if e.relation_type in ("extends", "implements")
         )
 
     def __getstate__(self):

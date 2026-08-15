@@ -33,19 +33,19 @@ from engine.repository.query import InMemoryRepository
 def test_golden_queries_synthetic_repository():
     """
     Builds the synthetic repository requested in Phase 2.7:
-    
+
     A (Symbol 1)
       - calls -> B (Symbol 2) -> calls -> C (Symbol 3)
       - publishes -> EventX (EventId 100)
       - exposes -> POST /foo
-      
+
     EventX (EventId 100)
       - subscribed by/consumed by -> ConsumerD (Symbol 4)
     """
     # 1. Define source files
     file_main = File(id=FileId(1), path="app.py", language="python")
     file_lib = File(id=FileId(2), path="lib.py", language="python")
-    
+
     # 2. Define symbols
     symbol_a = Symbol(
         id=SymbolId(1),
@@ -83,7 +83,7 @@ def test_golden_queries_synthetic_repository():
         start_line=6,
         end_line=15,
     )
-    
+
     # 3. Define relationships
     # Import: app.py imports lib.py
     imp = Import(
@@ -95,14 +95,26 @@ def test_golden_queries_synthetic_repository():
     )
 
     # Calls: A -> B, B -> C
-    call_ab = Call(caller_id=symbol_a.id, callee_id=symbol_b.id, call_type=CallType.DIRECT)
-    call_bc = Call(caller_id=symbol_b.id, callee_id=symbol_c.id, call_type=CallType.DIRECT)
+    call_ab = Call(
+        caller_id=symbol_a.id, callee_id=symbol_b.id, call_type=CallType.DIRECT
+    )
+    call_bc = Call(
+        caller_id=symbol_b.id, callee_id=symbol_c.id, call_type=CallType.DIRECT
+    )
 
     # Reference: A references B (e.g. name reference)
-    ref = Reference(source_id=symbol_a.id, target_id=symbol_b.id, relation_type=ReferenceType.REFERENCE)
+    ref = Reference(
+        source_id=symbol_a.id,
+        target_id=symbol_b.id,
+        relation_type=ReferenceType.REFERENCE,
+    )
 
     # Type relationship: B inherits from C (representing classes in this context)
-    type_rel = TypeRelationship(source_id=symbol_b.id, target_id=symbol_c.id, relationship_type=TypeRelationshipType.INHERITS)
+    type_rel = TypeRelationship(
+        source_id=symbol_b.id,
+        target_id=symbol_c.id,
+        relationship_type=TypeRelationshipType.INHERITS,
+    )
 
     # Endpoint: A exposes POST /foo
     endpoint = Endpoint(
@@ -160,7 +172,7 @@ def test_golden_queries_synthetic_repository():
     # 5. Assert golden queries
     assert repo.get_symbol(symbol_a.id) == symbol_a
     assert repo.get_file(file_main.id) == file_main
-    
+
     assert repo.get_callees(symbol_a.id) == (call_ab,)
     assert repo.get_callers(symbol_b.id) == (call_ab,)
     assert repo.get_callees(symbol_b.id) == (call_bc,)
@@ -169,10 +181,10 @@ def test_golden_queries_synthetic_repository():
     assert repo.get_published_events(symbol_a.id) == (pub,)
     assert repo.get_event_consumers(EventId(100)) == (sub,)
     assert repo.get_endpoints(symbol_a.id) == (endpoint,)
-    
+
     assert repo.get_imports(file_main.id) == (imp,)
     assert repo.get_importers(file_lib.id) == (imp,)
-    
+
     assert repo.get_references_from(symbol_a.id) == (ref,)
     assert repo.get_references_to(symbol_b.id) == (ref,)
 

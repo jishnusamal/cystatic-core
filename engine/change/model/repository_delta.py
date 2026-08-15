@@ -52,8 +52,12 @@ class RepositoryDelta:
             raise ValueError("Head SHA cannot be empty")
 
         # Pre-compute and store symbol IDs before models are released
-        object.__setattr__(self, "_base_symbol_ids", frozenset(s.id for s in self.base_model.symbols))
-        object.__setattr__(self, "_head_symbol_ids", frozenset(s.id for s in self.head_model.symbols))
+        object.__setattr__(
+            self, "_base_symbol_ids", frozenset(s.id for s in self.base_model.symbols)
+        )
+        object.__setattr__(
+            self, "_head_symbol_ids", frozenset(s.id for s in self.head_model.symbols)
+        )
 
     def release_base_model(self) -> None:
         """Release the base repository model reference to free memory."""

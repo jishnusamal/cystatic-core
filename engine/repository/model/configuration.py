@@ -9,6 +9,7 @@ from .evidence import Evidence
 
 class ConfigReferenceKind(str, Enum):
     """Type of configuration reference."""
+
     ENVIRONMENT_VARIABLE = "environment_variable"
     CONFIG_FILE = "config_file"
     FEATURE_FLAG = "feature_flag"
@@ -34,6 +35,7 @@ class ConfigurationReference:
         evidence: Provenance evidence for this configuration reference
         metadata: Additional framework-specific metadata
     """
+
     symbol_id: str
     config_key: str
     kind: ConfigReferenceKind = ConfigReferenceKind.ENVIRONMENT_VARIABLE
@@ -51,6 +53,6 @@ class ConfigurationReference:
         if not self.config_key:
             raise ValueError("Config key cannot be empty")
         if isinstance(self.kind, str):
-            object.__setattr__(self, 'kind', ConfigReferenceKind(self.kind))
+            object.__setattr__(self, "kind", ConfigReferenceKind(self.kind))
         if isinstance(self.metadata, dict):
-            object.__setattr__(self, 'metadata', dict(self.metadata))
+            object.__setattr__(self, "metadata", dict(self.metadata))

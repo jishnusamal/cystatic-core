@@ -29,18 +29,25 @@ class PRWebhookPayload(BaseModel):
 class AnalysisRequest(BaseModel):
     """Request to analyze a repository."""
 
-    repository: str = Field(..., description="Repository identifier (e.g., 'owner/repo')")
+    repository: str = Field(
+        ..., description="Repository identifier (e.g., 'owner/repo')"
+    )
     base_sha: str | None = Field(None, description="Base commit SHA")
     head_sha: str | None = Field(None, description="Head commit SHA")
     pr_number: int | None = Field(None, description="Pull request number")
     diff_data: dict[str, Any] | None = Field(None, description="Raw diff data")
-    pr_url: str | None = Field(None, description="GitHub PR URL (e.g., 'https://github.com/owner/repo/pull/123')")
+    pr_url: str | None = Field(
+        None,
+        description="GitHub PR URL (e.g., 'https://github.com/owner/repo/pull/123')",
+    )
 
 
 class RepositoryResponse(BaseModel):
     """Repository information in API responses."""
 
-    provider: str = Field(description="Integration provider name (e.g., 'github', 'gitlab')")
+    provider: str = Field(
+        description="Integration provider name (e.g., 'github', 'gitlab')"
+    )
     owner: str = Field(description="Repository owner/organization")
     repository: str = Field(description="Repository name")
     full_name: str = Field(description="Full repository name (owner/repo)")

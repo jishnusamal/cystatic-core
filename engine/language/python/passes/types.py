@@ -30,11 +30,15 @@ class PythonTypeIndexPass(BaseIndexPass):
             if isinstance(node, ast.ClassDef):
                 self._extract_type_relationships(node, file_path, builder)
 
-    def visit_ClassDef(self, node: ast.ClassDef, context: FileContext, builder: dict[str, Any]) -> None:
+    def visit_ClassDef(
+        self, node: ast.ClassDef, context: FileContext, builder: dict[str, Any]
+    ) -> None:
         """Handle class definition node from visitor."""
         self._extract_type_relationships(node, context.path, builder)
 
-    def _extract_type_relationships(self, node: ast.ClassDef, file_path: str, builder: dict[str, Any]) -> None:
+    def _extract_type_relationships(
+        self, node: ast.ClassDef, file_path: str, builder: dict[str, Any]
+    ) -> None:
         """Extract type relationships from a class definition."""
         for base in node.bases:
             base_str = self._base_to_string(base)

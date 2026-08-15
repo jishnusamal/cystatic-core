@@ -80,7 +80,9 @@ def _to_visibility(vis_str: str) -> SymbolVisibility:
         return SymbolVisibility.PUBLIC
 
 
-def _build_symbol_id(language: str, file_path: str, name: str, kind: str = "", parent: str = "") -> str:
+def _build_symbol_id(
+    language: str, file_path: str, name: str, kind: str = "", parent: str = ""
+) -> str:
     """Build a canonical symbol ID.
 
     Uses # separator for class-level symbols (classes, methods with parent)
@@ -115,7 +117,7 @@ class SemanticCompiler:
         self._watchdog_interval = 5.0  # seconds
         self._progress_interval = 0.1  # 10%
         self._watchdog_last_check = 0.0
-    
+
     def compile(
         self,
         index: RepositoryIndex,
@@ -153,7 +155,7 @@ class SemanticCompiler:
         total_tests = sum(len(f.tests) for f in index.files)
         total_configs = sum(len(f.configurations) for f in index.files)
         total_type_rels = sum(len(f.type_relationships) for f in index.files)
-        
+
         log(f"Files: {len(index.files)}")
         log(f"Symbols: {total_symbols}")
         log(f"Imports: {total_imports}")
@@ -165,7 +167,7 @@ class SemanticCompiler:
         log(f"Configurations: {total_configs}")
         log(f"Type Relationships: {total_type_rels}")
         log("=" * 80 + "\n")
-        
+
         # Stage 1: Build symbol table
         log(f"[semantic] START Resolve Symbols")
         start = time.perf_counter()
@@ -185,51 +187,65 @@ class SemanticCompiler:
                     symbols.append(import_sym)
                     symbol_index[import_sym.id] = import_sym
                     import_symbols.append(import_sym)
-        
+
         elapsed = time.perf_counter() - start
-        log(f"[semantic] END Resolve Symbols ({elapsed:.2f}s) - {len(symbols)} symbols, {len(import_symbols)} imports")
-        
+        log(
+            f"[semantic] END Resolve Symbols ({elapsed:.2f}s) - {len(symbols)} symbols, {len(import_symbols)} imports"
+        )
+
         # Stage 2: Resolve imports → reference graph
         log(f"[semantic] START Resolve Imports")
         start = time.perf_counter()
         reference_edges: list[ReferenceEdge] = []
         self._watchdog_last_check = start
-        
+
         # Build name index ONCE for O(1) lookups - CRITICAL for performance
         name_to_symbols: dict[str, list[Symbol]] = {}
         for sym_id, symbol in symbol_index.items():
             name_to_symbols.setdefault(symbol.name, []).append(symbol)
-        
+
         # Progress reporting for large import sets
         total_imports_to_resolve = len(import_symbols)
         last_progress = -1
-        
+
         for idx, imp_sym in enumerate(import_symbols):
-            self._resolve_import_references_fast(imp_sym, name_to_symbols, reference_edges)
-            
+            self._resolve_import_references_fast(
+                imp_sym, name_to_symbols, reference_edges
+            )
+
             # Watchdog check
             current = time.perf_counter()
             if current - self._watchdog_last_check >= self._watchdog_interval:
-                pipeline_logger.log_pipeline(f"  Still running: Resolve Imports - processed {idx} / {total_imports_to_resolve}, elapsed {current - start:.1f}s", to_terminal=False)
+                pipeline_logger.log_pipeline(
+                    f"  Still running: Resolve Imports - processed {idx} / {total_imports_to_resolve}, elapsed {current - start:.1f}s",
+                    to_terminal=False,
+                )
                 self._watchdog_last_check = current
-            
+
             # Report progress every 10% to pipeline.log
             if total_imports_to_resolve > 100:
                 progress_pct = int((idx / total_imports_to_resolve) * 100)
                 if progress_pct >= last_progress + 10:
-                    pipeline_logger.log_pipeline(f"  Resolving Imports: {idx} / {total_imports_to_resolve}", to_terminal=False)
+                    pipeline_logger.log_pipeline(
+                        f"  Resolving Imports: {idx} / {total_imports_to_resolve}",
+                        to_terminal=False,
+                    )
                     last_progress = progress_pct
-        
+
         elapsed = time.perf_counter() - start
-        log(f"[semantic] END Resolve Imports ({elapsed:.2f}s) - {len(reference_edges)} edges")
-        print(f"Resolving imports... ✓ {total_imports_to_resolve:,} imports ({elapsed * 1000:.0f}ms)")
-        
+        log(
+            f"[semantic] END Resolve Imports ({elapsed:.2f}s) - {len(reference_edges)} edges"
+        )
+        print(
+            f"Resolving imports... ✓ {total_imports_to_resolve:,} imports ({elapsed * 1000:.0f}ms)"
+        )
+
         # Stage 3: Build call graph from call entries
         print(f"[semantic] START Call Graph")
         start = time.perf_counter()
         call_edges: list[CallEdge] = []
         self._watchdog_last_check = start
-        
+
         # Build callee name index ONCE for O(1) lookups - CRITICAL for performance
         callee_name_to_ids: dict[str, list[str]] = {}
         for sym_id, symbol in symbol_index.items():
@@ -253,7 +269,9 @@ class SemanticCompiler:
                     parts = symbol.id.split("#")[-1].split(".")
                     if len(parts) == 2:
                         class_name, method_name = parts
-                        class_method_map[(symbol.file, class_name, method_name)] = symbol
+                        class_method_map[(symbol.file, class_name, method_name)] = (
+                            symbol
+                        )
             elif symbol.kind == SymbolKind.IMPORT:
                 continue
             else:
@@ -291,7 +309,7 @@ class SemanticCompiler:
         # Progress reporting for large call sets
         total_calls_to_resolve = sum(len(f.calls) for f in index.files)
         last_progress = -1
-        
+
         for file_index in index.files:
             for call in file_index.calls:
                 caller_id = _build_symbol_id(
@@ -299,9 +317,9 @@ class SemanticCompiler:
                     file_index.path,
                     call.caller,
                     kind="method" if call.caller_parent else "function",
-                    parent=call.caller_parent
+                    parent=call.caller_parent,
                 )
-                
+
                 callee_id = self._resolve_callee_id(
                     call.callee,
                     call.receiver,
@@ -315,57 +333,69 @@ class SemanticCompiler:
                     resolved_inheritance_map,
                     callee_name_to_ids,
                 )
-                
+
                 # Record to call_resolution.json (up to 10k items to avoid memory bloat)
                 if len(pipeline_logger.call_resolutions) < 10000:
-                    pipeline_logger.record_call_resolution({
-                        "caller_id": caller_id,
-                        "callee_name": call.callee,
-                        "receiver": call.receiver,
-                        "resolved_callee_id": callee_id,
-                        "success": callee_id is not None
-                    })
-                
+                    pipeline_logger.record_call_resolution(
+                        {
+                            "caller_id": caller_id,
+                            "callee_name": call.callee,
+                            "receiver": call.receiver,
+                            "resolved_callee_id": callee_id,
+                            "success": callee_id is not None,
+                        }
+                    )
+
                 if callee_id:
-                    call_edges.append(CallEdge(
-                        caller_id=caller_id,
-                        callee_id=callee_id,
-                        call_type=call.call_type,
-                        file=file_index.path,
-                        line=call.line,
-                        evidence=Evidence(
-                            file_location=FileLocation(
-                                file=file_index.path,
-                                start_line=max(call.line, 1),
-                                end_line=max(call.line, 1),
+                    call_edges.append(
+                        CallEdge(
+                            caller_id=caller_id,
+                            callee_id=callee_id,
+                            call_type=call.call_type,
+                            file=file_index.path,
+                            line=call.line,
+                            evidence=Evidence(
+                                file_location=FileLocation(
+                                    file=file_index.path,
+                                    start_line=max(call.line, 1),
+                                    end_line=max(call.line, 1),
+                                ),
                             ),
-                        ),
-                    ))
-            
+                        )
+                    )
+
             # Watchdog check
             current = time.perf_counter()
             if current - self._watchdog_last_check >= self._watchdog_interval:
-                pipeline_logger.log_pipeline(f"  Still running: Call Graph - processed {len(call_edges)} / {total_calls_to_resolve}, elapsed {current - start:.1f}s", to_terminal=False)
+                pipeline_logger.log_pipeline(
+                    f"  Still running: Call Graph - processed {len(call_edges)} / {total_calls_to_resolve}, elapsed {current - start:.1f}s",
+                    to_terminal=False,
+                )
                 self._watchdog_last_check = current
-            
+
             # Report progress every 10% to pipeline.log
             if total_calls_to_resolve > 100:
                 current_count = len(call_edges)
                 progress_pct = int((current_count / total_calls_to_resolve) * 100)
                 if progress_pct >= last_progress + 10:
-                    pipeline_logger.log_pipeline(f"  Resolving Calls: {current_count} / {total_calls_to_resolve}", to_terminal=False)
+                    pipeline_logger.log_pipeline(
+                        f"  Resolving Calls: {current_count} / {total_calls_to_resolve}",
+                        to_terminal=False,
+                    )
                     last_progress = progress_pct
-        
+
         elapsed = time.perf_counter() - start
         log = pipeline_logger.log_semantic
         log(f"[semantic] END Call Graph ({elapsed:.2f}s) - {len(call_edges)} edges")
-        print(f"Resolving calls... ✓ {total_calls_to_resolve:,} calls ({elapsed * 1000:.0f}ms)")
-        
+        print(
+            f"Resolving calls... ✓ {total_calls_to_resolve:,} calls ({elapsed * 1000:.0f}ms)"
+        )
+
         # Log detailed analysis
         log(f"\n  [analysis] CALL GRAPH BREAKDOWN:")
         log(f"    Total calls resolved: {len(call_edges)}")
         log(f"    Total time: {elapsed:.2f}s")
-        
+
         # Stage 4: Build type relationships
         log(f"[semantic] START Resolve Type Relationships")
         start = time.perf_counter()
@@ -375,10 +405,12 @@ class SemanticCompiler:
                 type_edge = self._create_type_edge(rel, file_index.path)
                 if type_edge:
                     type_edges.append(type_edge)
-        
+
         elapsed = time.perf_counter() - start
-        log(f"[semantic] END Resolve Type Relationships ({elapsed:.2f}s) - {len(type_edges)} edges")
-        
+        log(
+            f"[semantic] END Resolve Type Relationships ({elapsed:.2f}s) - {len(type_edges)} edges"
+        )
+
         # Stage 5: Build entry points
         log(f"[semantic] START Resolve Entry Points")
         start = time.perf_counter()
@@ -388,10 +420,12 @@ class SemanticCompiler:
                 entry_point = self._create_entry_point(ep, file_index.path, language)
                 if entry_point:
                     entry_points.append(entry_point)
-        
+
         elapsed = time.perf_counter() - start
-        log(f"[semantic] END Resolve Entry Points ({elapsed:.2f}s) - {len(entry_points)} entry points")
-        
+        log(
+            f"[semantic] END Resolve Entry Points ({elapsed:.2f}s) - {len(entry_points)} entry points"
+        )
+
         # Stage 6: Build persistence models
         log(f"[semantic] START Resolve Persistence Models")
         start = time.perf_counter()
@@ -401,10 +435,12 @@ class SemanticCompiler:
                 model = self._create_persistence_model(pm, file_index.path, language)
                 if model:
                     persistence_models.append(model)
-        
+
         elapsed = time.perf_counter() - start
-        log(f"[semantic] END Resolve Persistence Models ({elapsed:.2f}s) - {len(persistence_models)} models")
-        
+        log(
+            f"[semantic] END Resolve Persistence Models ({elapsed:.2f}s) - {len(persistence_models)} models"
+        )
+
         # Stage 7: Build repository methods
         log(f"[semantic] START Resolve Repository Methods")
         start = time.perf_counter()
@@ -414,10 +450,12 @@ class SemanticCompiler:
                 method = self._create_repository_method(rm, file_index.path, language)
                 if method:
                     repository_methods.append(method)
-        
+
         elapsed = time.perf_counter() - start
-        log(f"[semantic] END Resolve Repository Methods ({elapsed:.2f}s) - {len(repository_methods)} methods")
-        
+        log(
+            f"[semantic] END Resolve Repository Methods ({elapsed:.2f}s) - {len(repository_methods)} methods"
+        )
+
         # Stage 8: Build event constructs
         log(f"[semantic] START Resolve Events")
         start = time.perf_counter()
@@ -427,10 +465,12 @@ class SemanticCompiler:
                 event = self._create_event(ev, file_index.path, language)
                 if event:
                     event_constructs.append(event)
-        
+
         elapsed = time.perf_counter() - start
-        log(f"[semantic] END Resolve Events ({elapsed:.2f}s) - {len(event_constructs)} events")
-        
+        log(
+            f"[semantic] END Resolve Events ({elapsed:.2f}s) - {len(event_constructs)} events"
+        )
+
         # Stage 9: Build test definitions
         log(f"[semantic] START Resolve Tests")
         start = time.perf_counter()
@@ -440,10 +480,12 @@ class SemanticCompiler:
                 test = self._create_test(td, file_index.path, language)
                 if test:
                     test_definitions.append(test)
-        
+
         elapsed = time.perf_counter() - start
-        log(f"[semantic] END Resolve Tests ({elapsed:.2f}s) - {len(test_definitions)} tests")
-        
+        log(
+            f"[semantic] END Resolve Tests ({elapsed:.2f}s) - {len(test_definitions)} tests"
+        )
+
         # Stage 10: Build configuration references
         log(f"[semantic] START Resolve Configurations")
         start = time.perf_counter()
@@ -453,28 +495,32 @@ class SemanticCompiler:
                 config = self._create_config(cr, file_index.path, language)
                 if config:
                     config_references.append(config)
-        
+
         elapsed = time.perf_counter() - start
-        log(f"[semantic] END Resolve Configurations ({elapsed:.2f}s) - {len(config_references)} configs")
-        
+        log(
+            f"[semantic] END Resolve Configurations ({elapsed:.2f}s) - {len(config_references)} configs"
+        )
+
         # Build graphs and print statistics
         log(f"\n[semantic] START Build Graphs")
         start = time.perf_counter()
-        
+
         call_graph = CallGraph(edges=tuple(call_edges))
         reference_graph = ReferenceGraph(edges=tuple(reference_edges))
         type_relationship_graph = TypeRelationshipGraph(edges=tuple(type_edges))
-        
+
         elapsed = time.perf_counter() - start
         log(f"[semantic] END Build Graphs ({elapsed:.2f}s)")
-        
+
         # Log graph statistics
         log("\n" + "=" * 80)
         log("GRAPH STATISTICS")
         log("=" * 80)
-        
+
         # Call graph stats
-        call_nodes = len(set(e.caller_id for e in call_edges) | set(e.callee_id for e in call_edges))
+        call_nodes = len(
+            set(e.caller_id for e in call_edges) | set(e.callee_id for e in call_edges)
+        )
         log(f"\nCall Graph:")
         log(f"  Nodes: {call_nodes}")
         log(f"  Edges: {len(call_edges)}")
@@ -483,9 +529,12 @@ class SemanticCompiler:
             log(f"  Average Degree: {avg_degree:.2f}")
             max_degree = self._calculate_max_degree(call_edges)
             log(f"  Maximum Degree: {max_degree}")
-        
+
         # Reference graph stats
-        ref_nodes = len(set(e.source_id for e in reference_edges) | set(e.target_id for e in reference_edges))
+        ref_nodes = len(
+            set(e.source_id for e in reference_edges)
+            | set(e.target_id for e in reference_edges)
+        )
         log(f"\nReference Graph:")
         log(f"  Nodes: {ref_nodes}")
         log(f"  Edges: {len(reference_edges)}")
@@ -494,9 +543,11 @@ class SemanticCompiler:
             log(f"  Average Degree: {avg_degree:.2f}")
             max_degree = self._calculate_max_degree(reference_edges)
             log(f"  Maximum Degree: {max_degree}")
-        
+
         # Type relationship graph stats
-        type_nodes = len(set(e.source_id for e in type_edges) | set(e.target_id for e in type_edges))
+        type_nodes = len(
+            set(e.source_id for e in type_edges) | set(e.target_id for e in type_edges)
+        )
         log(f"\nType Relationship Graph:")
         log(f"  Nodes: {type_nodes}")
         log(f"  Edges: {len(type_edges)}")
@@ -505,17 +556,23 @@ class SemanticCompiler:
             log(f"  Average Degree: {avg_degree:.2f}")
             max_degree = self._calculate_max_degree(type_edges)
             log(f"  Maximum Degree: {max_degree}")
-        
+
         log("=" * 80 + "\n")
-        
+
         # Log statistics
-        log(f"[semantic] RepositoryModel: {len(symbols)} symbols, {len(call_edges)} call edges, {len(reference_edges)} reference edges")
-        log(f"[semantic] Entry Points: {len(entry_points)}, Persistence Models: {len(persistence_models)}")
-        log(f"[semantic] Events: {len(event_constructs)}, Tests: {len(test_definitions)}, Configs: {len(config_references)}")
-        
+        log(
+            f"[semantic] RepositoryModel: {len(symbols)} symbols, {len(call_edges)} call edges, {len(reference_edges)} reference edges"
+        )
+        log(
+            f"[semantic] Entry Points: {len(entry_points)}, Persistence Models: {len(persistence_models)}"
+        )
+        log(
+            f"[semantic] Events: {len(event_constructs)}, Tests: {len(test_definitions)}, Configs: {len(config_references)}"
+        )
+
         # Print top operations summary
         self._print_top_operations()
-        
+
         return RepositoryModel(
             symbols=frozenset(symbols),
             call_graph=call_graph,
@@ -535,27 +592,29 @@ class SemanticCompiler:
         degree_map: dict[str, int] = {}
         for edge in edges:
             # For undirected degree calculation
-            source = getattr(edge, 'source_id', getattr(edge, 'caller_id', ''))
-            target = getattr(edge, 'target_id', getattr(edge, 'callee_id', ''))
+            source = getattr(edge, "source_id", getattr(edge, "caller_id", ""))
+            target = getattr(edge, "target_id", getattr(edge, "callee_id", ""))
             degree_map[source] = degree_map.get(source, 0) + 1
             degree_map[target] = degree_map.get(target, 0) + 1
-        
+
         return max(degree_map.values()) if degree_map else 0
-    
+
     def _print_top_operations(self):
         """Print top 25 slowest semantic operations."""
         log = pipeline_logger.log_semantic
         log("\n" + "=" * 80)
         log("TOP 25 SLOWEST SEMANTIC OPERATIONS")
         log("=" * 80)
-        
+
         # Collect all operations with timing
         operations = []
-        
+
         # We'll track key operations manually since we're not using decorators
         # This is a simplified version - in production you'd use the instrumentation framework
-        
-        log("\nNote: Detailed per-operation timing requires decorator-based instrumentation.")
+
+        log(
+            "\nNote: Detailed per-operation timing requires decorator-based instrumentation."
+        )
         log("Phase-level timing is shown above in START/END messages.")
         log("=" * 80 + "\n")
 
@@ -566,7 +625,9 @@ class SemanticCompiler:
         language: str,
     ) -> Symbol:
         """Create a Symbol from a SymbolEntry."""
-        symbol_id = _build_symbol_id(language, file_path, entry.name, entry.kind, entry.parent)
+        symbol_id = _build_symbol_id(
+            language, file_path, entry.name, entry.kind, entry.parent
+        )
         return Symbol(
             id=symbol_id,
             name=entry.name,
@@ -656,14 +717,18 @@ class SemanticCompiler:
                         evidence=Evidence(
                             file_location=import_symbol.evidence.file_location
                             if import_symbol.evidence
-                            else FileLocation(file=import_symbol.file, start_line=1, end_line=1),
+                            else FileLocation(
+                                file=import_symbol.file, start_line=1, end_line=1
+                            ),
                         ),
                     )
                     reference_edges.append(edge)
-        
+
         elapsed = time.perf_counter() - start
         if elapsed > 0.01:  # Only log if >10ms
-            print(f"    [hotspot] resolve_import_references: {elapsed*1000:.2f}ms for {len(imported_names)} names")
+            print(
+                f"    [hotspot] resolve_import_references: {elapsed * 1000:.2f}ms for {len(imported_names)} names"
+            )
 
     def _resolve_callee_id(
         self,
@@ -687,11 +752,13 @@ class SemanticCompiler:
                 if len(parts) == 2:
                     class_name = parts[0]
                     class_id = f"{language}://{file_path}#{class_name}"
-                    
-                    method_sym = class_method_map.get((file_path, class_name, callee_name))
+
+                    method_sym = class_method_map.get(
+                        (file_path, class_name, callee_name)
+                    )
                     if method_sym:
                         return method_sym.id
-                    
+
                     queue = deque(resolved_inheritance_map.get(class_id, []))
                     visited = {class_id}
                     while queue:
@@ -699,11 +766,13 @@ class SemanticCompiler:
                         if base_id in visited:
                             continue
                         visited.add(base_id)
-                        
+
                         if "#" in base_id:
                             base_uri, base_class = base_id.split("#")
                             base_file = base_uri.split("://")[-1]
-                            method_sym = class_method_map.get((base_file, base_class, callee_name))
+                            method_sym = class_method_map.get(
+                                (base_file, base_class, callee_name)
+                            )
                             if method_sym:
                                 return method_sym.id
                             queue.extend(resolved_inheritance_map.get(base_id, []))
@@ -715,7 +784,9 @@ class SemanticCompiler:
                 if "#" in imported_target:
                     base_uri, class_name = imported_target.split("#")
                     target_file = base_uri.split("://")[-1]
-                    method_sym = class_method_map.get((target_file, class_name, callee_name))
+                    method_sym = class_method_map.get(
+                        (target_file, class_name, callee_name)
+                    )
                     if method_sym:
                         return method_sym.id
                     queue = deque(resolved_inheritance_map.get(imported_target, []))
@@ -728,7 +799,9 @@ class SemanticCompiler:
                         if "#" in base_id:
                             base_uri, base_class = base_id.split("#")
                             base_file = base_uri.split("://")[-1]
-                            method_sym = class_method_map.get((base_file, base_class, callee_name))
+                            method_sym = class_method_map.get(
+                                (base_file, base_class, callee_name)
+                            )
                             if method_sym:
                                 return method_sym.id
                             queue.extend(resolved_inheritance_map.get(base_id, []))
@@ -737,7 +810,7 @@ class SemanticCompiler:
                     potential_id = f"{language}://{target_file}::{callee_name}"
                     if potential_id in symbol_index:
                         return potential_id
-            
+
             local_class = file_symbol_map.get((file_path, receiver))
             if local_class and local_class.kind == SymbolKind.CLASS:
                 method_sym = class_method_map.get((file_path, receiver, callee_name))
@@ -748,7 +821,7 @@ class SemanticCompiler:
         local_sym = file_symbol_map.get((file_path, callee_name))
         if local_sym:
             return local_sym.id
-            
+
         imported_target = resolved_imports.get((file_path, callee_name))
         if imported_target:
             return imported_target
@@ -913,8 +986,7 @@ class SemanticCompiler:
         symbol_id = _build_symbol_id(language, file_path, td.name, td.kind)
 
         fixtures = tuple(
-            TestFixture(**f) if isinstance(f, dict) else f
-            for f in td.fixtures
+            TestFixture(**f) if isinstance(f, dict) else f for f in td.fixtures
         )
 
         test_def = TestDefinition(

@@ -9,6 +9,7 @@ from .evidence import Evidence
 
 class PersistenceModelKind(str, Enum):
     """Type of persistence model."""
+
     TABLE = "table"
     COLLECTION = "collection"
     VIEW = "view"
@@ -17,6 +18,7 @@ class PersistenceModelKind(str, Enum):
 
 class RepositoryMethodKind(str, Enum):
     """Type of repository/data access method."""
+
     FIND = "find"
     SAVE = "save"
     UPDATE = "update"
@@ -45,6 +47,7 @@ class PersistenceModel:
         evidence: Provenance evidence for this persistence model
         metadata: Additional framework-specific metadata
     """
+
     symbol_id: str
     name: str
     kind: PersistenceModelKind = PersistenceModelKind.TABLE
@@ -62,13 +65,13 @@ class PersistenceModel:
         if not self.name:
             raise ValueError("Model name cannot be empty")
         if isinstance(self.kind, str):
-            object.__setattr__(self, 'kind', PersistenceModelKind(self.kind))
+            object.__setattr__(self, "kind", PersistenceModelKind(self.kind))
         if isinstance(self.fields, list):
-            object.__setattr__(self, 'fields', tuple(self.fields))
+            object.__setattr__(self, "fields", tuple(self.fields))
         if isinstance(self.relationships, list):
-            object.__setattr__(self, 'relationships', tuple(self.relationships))
+            object.__setattr__(self, "relationships", tuple(self.relationships))
         if isinstance(self.metadata, dict):
-            object.__setattr__(self, 'metadata', dict(self.metadata))
+            object.__setattr__(self, "metadata", dict(self.metadata))
 
 
 @dataclass(frozen=True)
@@ -88,6 +91,7 @@ class RepositoryMethod:
         evidence: Provenance evidence for this repository method
         metadata: Additional framework-specific metadata
     """
+
     symbol_id: str
     name: str
     kind: RepositoryMethodKind = RepositoryMethodKind.CUSTOM
@@ -104,6 +108,6 @@ class RepositoryMethod:
         if not self.name:
             raise ValueError("Method name cannot be empty")
         if isinstance(self.kind, str):
-            object.__setattr__(self, 'kind', RepositoryMethodKind(self.kind))
+            object.__setattr__(self, "kind", RepositoryMethodKind(self.kind))
         if isinstance(self.metadata, dict):
-            object.__setattr__(self, 'metadata', dict(self.metadata))
+            object.__setattr__(self, "metadata", dict(self.metadata))

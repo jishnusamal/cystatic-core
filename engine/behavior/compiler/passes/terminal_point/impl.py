@@ -59,8 +59,7 @@ class TerminalPointPass(BehaviorCompilerPass):
 
         # Find nodes that are not callers (no outgoing edges)
         terminal_nodes = [
-            node for node in graph.nodes
-            if node.symbol_id not in called_symbols
+            node for node in graph.nodes if node.symbol_id not in called_symbols
         ]
 
         # If no terminal points found, use the last node in order

@@ -4,6 +4,7 @@ Tests that the ReviewContextCompiler correctly transforms existing compiler outp
 into a stable engineering context without performing any discovery, graph traversal,
 or recomputation.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -72,6 +73,7 @@ from engine.review_context.model import (
 # ---------------------------------------------------------------------------
 # Test helpers
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class TestHelper:
@@ -184,6 +186,7 @@ class TestHelper:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def sample_symbols():
     """Create sample symbols for testing."""
@@ -233,9 +236,7 @@ def sample_change_model(sample_symbols):
         modified_symbols=[
             ModifiedSymbol(
                 symbol=sample_symbols[0],
-                changes=(
-                    TestHelper.create_function_body_change(),
-                ),
+                changes=(TestHelper.create_function_body_change(),),
             ),
         ],
         changed_imports=[
@@ -381,8 +382,12 @@ def sample_discovery_model(
 @pytest.fixture
 def sample_discovery_ir():
     """Create a sample DiscoveryModel for testing."""
-    ref1 = DiscoveryReference(artifact_type="behavior", artifact_id="ref1", location="behavior://test")
-    ref2 = DiscoveryReference(artifact_type="change", artifact_id="ref2", location="change://test")
+    ref1 = DiscoveryReference(
+        artifact_type="behavior", artifact_id="ref1", location="behavior://test"
+    )
+    ref2 = DiscoveryReference(
+        artifact_type="change", artifact_id="ref2", location="change://test"
+    )
     discoveries = [
         IRDiscovery(
             id="discovery://deep_execution/1",
@@ -393,13 +398,17 @@ def sample_discovery_ir():
         IRDiscovery(
             id="discovery://shared_execution/1",
             kind=IRDiscoveryKind.SHARED_EXECUTION,
-            facts=DiscoveryFact(shared_symbol_ids=("python://test.py::func1",), behavior_count=2),
+            facts=DiscoveryFact(
+                shared_symbol_ids=("python://test.py::func1",), behavior_count=2
+            ),
             references=(ref2,),
         ),
         IRDiscovery(
             id="discovery://boundary/1",
             kind=IRDiscoveryKind.BOUNDARY_CROSSING,
-            facts=DiscoveryFact(crossed_boundaries=("service_layer",), service_transitions=1),
+            facts=DiscoveryFact(
+                crossed_boundaries=("service_layer",), service_transitions=1
+            ),
             references=(ref1, ref2),
         ),
     ]
@@ -409,6 +418,7 @@ def sample_discovery_ir():
 # ---------------------------------------------------------------------------
 # Tests: ReviewContextCompiler — Initialization
 # ---------------------------------------------------------------------------
+
 
 class TestReviewContextCompilerInit:
     """Tests for ReviewContextCompiler initialization."""
@@ -431,12 +441,13 @@ class TestReviewContextCompilerInit:
         assert isinstance(result.change, ChangeContext)
         assert isinstance(result.execution, ExecutionContext)
         assert result.discoveries == ()
-        assert not hasattr(result, 'references')
+        assert not hasattr(result, "references")
 
 
 # ---------------------------------------------------------------------------
 # Tests: ReviewContextCompiler — ChangeContext — Summary
 # ---------------------------------------------------------------------------
+
 
 class TestChangeSummary:
     """Tests for ChangeSummary (the summary section)."""
@@ -528,6 +539,7 @@ class TestChangeSummary:
 # Tests: ReviewContextCompiler — ChangeContext — Files
 # ---------------------------------------------------------------------------
 
+
 class TestFileChanges:
     """Tests for the hierarchical file-centered change structure."""
 
@@ -554,11 +566,15 @@ class TestFileChanges:
     def test_file_change_type_mixed(self, sample_symbols):
         """Test file change type is 'mixed' when file has added + removed symbols."""
         sym1 = TestHelper.create_symbol(
-            "python://test.py::func1", "func1", SymbolKind.FUNCTION,
+            "python://test.py::func1",
+            "func1",
+            SymbolKind.FUNCTION,
             file="test.py",
         )
         sym2 = TestHelper.create_symbol(
-            "python://test.py::func2", "func2", SymbolKind.FUNCTION,
+            "python://test.py::func2",
+            "func2",
+            SymbolKind.FUNCTION,
             file="test.py",
         )
         change_model = TestHelper.create_change_model(
@@ -664,11 +680,11 @@ class TestFileChanges:
         """Test that the old flat lists are gone."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(change_model=sample_change_model)
-        assert hasattr(result.change, 'summary')
-        assert hasattr(result.change, 'files')
-        assert not hasattr(result.change, 'changed_files')
-        assert not hasattr(result.change, 'changed_symbols')
-        assert not hasattr(result.change, 'changed_behaviors')
+        assert hasattr(result.change, "summary")
+        assert hasattr(result.change, "files")
+        assert not hasattr(result.change, "changed_files")
+        assert not hasattr(result.change, "changed_symbols")
+        assert not hasattr(result.change, "changed_behaviors")
 
     def test_none_model(self):
         """Test that None change model returns empty ChangeContext."""
@@ -682,6 +698,7 @@ class TestFileChanges:
 # ---------------------------------------------------------------------------
 # Tests: ReviewContextCompiler — ExecutionContext — Hierarchical Graph
 # ---------------------------------------------------------------------------
+
 
 class TestExecutionContextHierarchical:
     """Tests for the hierarchical execution graph structure."""
@@ -854,7 +871,9 @@ class TestExecutionContextHierarchical:
             depths = [step.depth for step in ep.execution_chain]
             assert depths == sorted(depths)
 
-    def test_changed_step_marked_correctly(self, sample_behavior_model, sample_change_model):
+    def test_changed_step_marked_correctly(
+        self, sample_behavior_model, sample_change_model
+    ):
         """Test that changed symbols are marked correctly in execution steps."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(
@@ -883,11 +902,11 @@ class TestExecutionContextHierarchical:
         """Test that the old flat lists are gone from execution context."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(behavior_model=sample_behavior_model)
-        assert not hasattr(result.execution, 'execution_chains')
-        assert not hasattr(result.execution, 'terminal_points')
-        assert not hasattr(result.execution, 'reachable_units')
-        assert not hasattr(result.execution, 'shared_execution')
-        assert not hasattr(result.execution, 'max_execution_depth')
+        assert not hasattr(result.execution, "execution_chains")
+        assert not hasattr(result.execution, "terminal_points")
+        assert not hasattr(result.execution, "reachable_units")
+        assert not hasattr(result.execution, "shared_execution")
+        assert not hasattr(result.execution, "max_execution_depth")
 
     def test_execution_context_none_models(self):
         """Test that None models return empty ExecutionContext."""
@@ -902,12 +921,15 @@ class TestExecutionContextHierarchical:
 # Tests: ReviewContextCompiler — ValidationContext Selection
 # ---------------------------------------------------------------------------
 
+
 class TestValidationContextSelection:
     """Tests for ValidationContext selection (Pass 1)."""
+
 
 # ---------------------------------------------------------------------------
 # Tests: ReviewContextCompiler — Discovery Assembly (Pass 3)
 # ---------------------------------------------------------------------------
+
 
 class TestDiscoveryAssembly:
     """Tests for discovery assembly from DiscoveryModel."""
@@ -950,7 +972,9 @@ class TestDiscoveryAssembly:
     def test_reference_count_preserved(self):
         """Test that reference_count preserves total count before truncation."""
         refs = tuple(
-            DiscoveryReference(artifact_type="symbol", artifact_id=f"sym{i}", location=f"file{i}.py")
+            DiscoveryReference(
+                artifact_type="symbol", artifact_id=f"sym{i}", location=f"file{i}.py"
+            )
             for i in range(15)
         )
         discoveries = [
@@ -972,7 +996,9 @@ class TestDiscoveryAssembly:
     def test_reference_truncation_max_10(self):
         """Test that references are truncated to at most 10."""
         refs = tuple(
-            DiscoveryReference(artifact_type="symbol", artifact_id=f"sym{i}", location=f"file{i}.py")
+            DiscoveryReference(
+                artifact_type="symbol", artifact_id=f"sym{i}", location=f"file{i}.py"
+            )
             for i in range(20)
         )
         discoveries = [
@@ -994,9 +1020,15 @@ class TestDiscoveryAssembly:
     def test_reference_ranking_prioritizes_changed(self):
         """Test that changed symbols are ranked first."""
         refs = (
-            DiscoveryReference(artifact_type="symbol", artifact_id="sym1", location="impl.py"),
-            DiscoveryReference(artifact_type="change", artifact_id="change1", location="change.py"),
-            DiscoveryReference(artifact_type="behavior", artifact_id="ep1", location="endpoint.py"),
+            DiscoveryReference(
+                artifact_type="symbol", artifact_id="sym1", location="impl.py"
+            ),
+            DiscoveryReference(
+                artifact_type="change", artifact_id="change1", location="change.py"
+            ),
+            DiscoveryReference(
+                artifact_type="behavior", artifact_id="ep1", location="endpoint.py"
+            ),
         )
         discoveries = [
             IRDiscovery(
@@ -1023,9 +1055,15 @@ class TestDiscoveryAssembly:
     def test_reference_deduplication_before_ranking(self):
         """Test that duplicate references are removed before ranking."""
         refs = (
-            DiscoveryReference(artifact_type="change", artifact_id="change1", location="change.py"),
-            DiscoveryReference(artifact_type="change", artifact_id="change1", location="change.py"),  # Duplicate
-            DiscoveryReference(artifact_type="behavior", artifact_id="ep1", location="endpoint.py"),
+            DiscoveryReference(
+                artifact_type="change", artifact_id="change1", location="change.py"
+            ),
+            DiscoveryReference(
+                artifact_type="change", artifact_id="change1", location="change.py"
+            ),  # Duplicate
+            DiscoveryReference(
+                artifact_type="behavior", artifact_id="ep1", location="endpoint.py"
+            ),
         )
         discoveries = [
             IRDiscovery(
@@ -1048,21 +1086,21 @@ class TestDiscoveryAssembly:
         compiler = ReviewContextCompiler()
         result = compiler.compile(discovery_model=sample_discovery_ir)
         for discovery in result.discoveries:
-            assert not hasattr(discovery, 'importance')
+            assert not hasattr(discovery, "importance")
 
     def test_discovery_no_ranking_vectors(self, sample_discovery_ir):
         """Test that ranking vectors are NOT present."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(discovery_model=sample_discovery_ir)
         for discovery in result.discoveries:
-            assert not hasattr(discovery, 'ranking_vector')
+            assert not hasattr(discovery, "ranking_vector")
 
     def test_discovery_no_support_metrics(self, sample_discovery_ir):
         """Test that support metrics are NOT present."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(discovery_model=sample_discovery_ir)
         for discovery in result.discoveries:
-            assert not hasattr(discovery, 'support')
+            assert not hasattr(discovery, "support")
 
     def test_discovery_no_metadata(self, sample_discovery_ir):
         """Test that discovery metadata is NOT present (metadata is on model, not discovery)."""
@@ -1070,7 +1108,7 @@ class TestDiscoveryAssembly:
         result = compiler.compile(discovery_model=sample_discovery_ir)
         # Metadata exists on DiscoveryModel, not on individual Discovery objects
         for discovery in result.discoveries:
-            assert not hasattr(discovery, 'metadata')
+            assert not hasattr(discovery, "metadata")
 
     def test_discoveries_empty_when_no_ir(self):
         """Test that no DiscoveryModel returns empty discoveries."""
@@ -1083,6 +1121,7 @@ class TestDiscoveryAssembly:
 # Tests: ReviewContextCompiler — Reference Assembly (Pass 4)
 # ---------------------------------------------------------------------------
 
+
 class TestReferenceAssembly:
     """Tests for reference assembly from discoveries."""
 
@@ -1091,12 +1130,16 @@ class TestReferenceAssembly:
         compiler = ReviewContextCompiler()
         result = compiler.compile(discovery_model=sample_discovery_ir)
         # Top-level references were removed - each section owns its own
-        assert not hasattr(result, 'references')
+        assert not hasattr(result, "references")
 
     def test_references_deduplicated(self):
         """Test that references are deduplicated by id within each discovery."""
-        ref1 = DiscoveryReference(artifact_type="behavior", artifact_id="ref1", location="test.py")
-        ref2 = DiscoveryReference(artifact_type="change", artifact_id="ref2", location="test2.py")
+        ref1 = DiscoveryReference(
+            artifact_type="behavior", artifact_id="ref1", location="test.py"
+        )
+        ref2 = DiscoveryReference(
+            artifact_type="change", artifact_id="ref2", location="test2.py"
+        )
         discoveries = [
             IRDiscovery(
                 id="discovery://a/1",
@@ -1115,7 +1158,7 @@ class TestReferenceAssembly:
         compiler = ReviewContextCompiler()
         result = compiler.compile(discovery_model=discovery_ir)
         # Each discovery owns its own references - no top-level collection
-        assert not hasattr(result, 'references')
+        assert not hasattr(result, "references")
         # Verify references are within discoveries
         for d in result.discoveries:
             assert len(d.references) > 0
@@ -1133,12 +1176,13 @@ class TestReferenceAssembly:
         """Test that no discoveries returns no top-level references field."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(discovery_model=None)
-        assert not hasattr(result, 'references')
+        assert not hasattr(result, "references")
 
 
 # ---------------------------------------------------------------------------
 # Tests: ReviewContextCompiler — Full Compilation
 # ---------------------------------------------------------------------------
+
 
 class TestFullCompilation:
     """Tests for full ReviewContext compilation."""
@@ -1163,7 +1207,7 @@ class TestFullCompilation:
         assert isinstance(result.change, ChangeContext)
         assert isinstance(result.execution, ExecutionContext)
         assert isinstance(result.discoveries, tuple)
-        assert not hasattr(result, 'references')
+        assert not hasattr(result, "references")
 
     def test_full_compile_all_sections_populated(
         self,
@@ -1236,19 +1280,20 @@ class TestFullCompilation:
         """Test that ImpactContext is no longer part of ReviewContext."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(behavior_model=sample_behavior_model)
-        assert not hasattr(result, 'impact')
+        assert not hasattr(result, "impact")
 
     def test_no_compiler_metrics_in_execution(self, sample_behavior_model):
         """Test that compiler metrics (fan_in, fan_out) are not in execution."""
         compiler = ReviewContextCompiler()
         result = compiler.compile(behavior_model=sample_behavior_model)
-        assert not hasattr(result.execution, 'fan_in')
-        assert not hasattr(result.execution, 'fan_out')
+        assert not hasattr(result.execution, "fan_in")
+        assert not hasattr(result.execution, "fan_out")
 
 
 # ---------------------------------------------------------------------------
 # Tests: ReviewContextCompiler — Edge Cases
 # ---------------------------------------------------------------------------
+
 
 class TestEdgeCases:
     """Tests for edge cases in ReviewContext compilation."""
@@ -1275,7 +1320,7 @@ class TestEdgeCases:
         compiler = ReviewContextCompiler()
         result = compiler.compile(discovery_model=discovery_ir)
         assert result.discoveries == ()
-        assert not hasattr(result, 'references')
+        assert not hasattr(result, "references")
 
     def test_partial_models_change_only(self, sample_change_model):
         """Test with only change model provided."""
@@ -1317,12 +1362,13 @@ class TestEdgeCases:
         assert len(result.discoveries) == 1
         assert result.discoveries[0].references == ()
         assert result.discoveries[0].reference_count == 0
-        assert not hasattr(result, 'references')
+        assert not hasattr(result, "references")
 
 
 # ---------------------------------------------------------------------------
 # Tests: ReviewContext Model — Immutability
 # ---------------------------------------------------------------------------
+
 
 class TestReviewContextModel:
     """Tests for ReviewContext model immutability and structure."""
@@ -1414,36 +1460,36 @@ class TestReviewContextModel:
         assert ctx.execution.deepest_execution.entry_point == ""
         assert ctx.execution.deepest_execution.depth == 0
         assert ctx.discoveries == ()
-        assert not hasattr(ctx, 'references')
+        assert not hasattr(ctx, "references")
 
     def test_review_context_no_impact(self):
         """Test that ReviewContext no longer has an impact section."""
         ctx = ReviewContext()
-        assert not hasattr(ctx, 'impact')
+        assert not hasattr(ctx, "impact")
 
     def test_review_context_all_fields_present(self):
         """Test that ReviewContext has all required fields."""
         ctx = ReviewContext()
-        assert hasattr(ctx, 'change')
-        assert hasattr(ctx, 'execution')
-        assert hasattr(ctx, 'discoveries')
-        assert not hasattr(ctx, 'references')  # Removed - each section owns its own
+        assert hasattr(ctx, "change")
+        assert hasattr(ctx, "execution")
+        assert hasattr(ctx, "discoveries")
+        assert not hasattr(ctx, "references")  # Removed - each section owns its own
 
     def test_discovery_no_presentation_fields(self):
         """Test that Discovery has no presentation fields."""
         d = Discovery(id="d1", kind="execution_depth", statement="test")
-        assert not hasattr(d, 'title')
-        assert not hasattr(d, 'summary')
-        assert not hasattr(d, 'description')
-        assert not hasattr(d, 'importance')
-        assert not hasattr(d, 'ranking_vector')
-        assert not hasattr(d, 'narrative_position')
-        assert not hasattr(d, 'visual_semantic')
+        assert not hasattr(d, "title")
+        assert not hasattr(d, "summary")
+        assert not hasattr(d, "description")
+        assert not hasattr(d, "importance")
+        assert not hasattr(d, "ranking_vector")
+        assert not hasattr(d, "narrative_position")
+        assert not hasattr(d, "visual_semantic")
 
     def test_reference_no_presentation_fields(self):
         """Test that Reference has no presentation fields."""
         r = Reference(id="r1", kind="behavior", location="test.py")
-        assert not hasattr(r, 'title')
-        assert not hasattr(r, 'description')
-        assert not hasattr(r, 'format')
-        assert not hasattr(r, 'style')
+        assert not hasattr(r, "title")
+        assert not hasattr(r, "description")
+        assert not hasattr(r, "format")
+        assert not hasattr(r, "style")

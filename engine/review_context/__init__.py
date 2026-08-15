@@ -8,6 +8,7 @@ It is NOT a presentation layer.
 It is NOT a serializer.
 It is NOT another analysis pass.
 """
+
 from .model import (
     ReviewContext,
     ChangeContext,

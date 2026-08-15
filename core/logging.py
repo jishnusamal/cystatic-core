@@ -202,9 +202,9 @@ class PipelineLogger:
         self._timings_var: ContextVar[Optional[list[dict[str, Any]]]] = ContextVar(
             "timings", default=None
         )
-        self._call_resolutions_var: ContextVar[
-            Optional[list[dict[str, Any]]]
-        ] = ContextVar("call_resolutions", default=None)
+        self._call_resolutions_var: ContextVar[Optional[list[dict[str, Any]]]] = (
+            ContextVar("call_resolutions", default=None)
+        )
 
         # Globals for fallback (e.g. if run outside a pipeline execution context)
         self._global_pipeline_logs: list[str] = []
@@ -413,7 +413,9 @@ class Timer:
         return elapsed
 
     @contextmanager
-    def timed(self, name: str, metadata: Optional[dict[str, Any]] = None) -> Generator[None, None, None]:
+    def timed(
+        self, name: str, metadata: Optional[dict[str, Any]] = None
+    ) -> Generator[None, None, None]:
         self.start(name, metadata)
         self._depth += 1
         try:
@@ -443,7 +445,7 @@ class Timer:
             latest = self._timings[-1]
             elapsed_str = (
                 f"{latest['elapsed'] * 1000:.2f}ms"
-                if latest['elapsed'] < 1.0
+                if latest["elapsed"] < 1.0
                 else f"{latest['elapsed']:.2f}s"
             )
             pipeline_logger.log_pipeline(
@@ -455,11 +457,13 @@ class Timer:
         """Log a summary of all recorded timings for the run."""
         if not self._timings:
             return
-        pipeline_logger.log_pipeline("[timer] --- Timing Summary ---", to_terminal=False)
+        pipeline_logger.log_pipeline(
+            "[timer] --- Timing Summary ---", to_terminal=False
+        )
         for record in self._timings:
             elapsed_str = (
                 f"{record['elapsed'] * 1000:.2f}ms"
-                if record['elapsed'] < 1.0
+                if record["elapsed"] < 1.0
                 else f"{record['elapsed']:.2f}s"
             )
             pipeline_logger.log_pipeline(

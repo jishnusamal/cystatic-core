@@ -9,6 +9,7 @@ from engine.repository.model import Evidence
 
 class BehaviorKind(str, Enum):
     """Type of behavior entry point."""
+
     REST_ENDPOINT = "rest_endpoint"
     GRAPHQL_RESOLVER = "graphql_resolver"
     RPC_HANDLER = "rpc_handler"
@@ -36,6 +37,7 @@ class Behavior:
         evidence: Provenance evidence for this behavior
         metadata: Additional metadata
     """
+
     id: str
     name: str
     kind: BehaviorKind
@@ -56,6 +58,8 @@ class Behavior:
         if not self.root_symbol_id:
             raise ValueError("Root symbol id cannot be empty")
         if isinstance(self.changed_symbol_ids, list):
-            object.__setattr__(self, 'changed_symbol_ids', tuple(self.changed_symbol_ids))
+            object.__setattr__(
+                self, "changed_symbol_ids", tuple(self.changed_symbol_ids)
+            )
         if isinstance(self.metadata, dict):
-            object.__setattr__(self, 'metadata', dict(self.metadata))
+            object.__setattr__(self, "metadata", dict(self.metadata))

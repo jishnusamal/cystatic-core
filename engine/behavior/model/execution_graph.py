@@ -18,6 +18,7 @@ class ExecutionNode:
         order: Execution order (topological position)
         evidence: Provenance evidence for this node
     """
+
     symbol_id: str
     order: int
     evidence: Evidence | None = None
@@ -41,6 +42,7 @@ class ExecutionEdge:
         call_type: Type of call (direct, indirect, dynamic)
         evidence: Provenance evidence for this edge
     """
+
     caller_id: str
     callee_id: str
     call_type: str = "direct"
@@ -68,6 +70,7 @@ class ExecutionGraph:
         edges: Execution edges in this graph
         evidence: Provenance evidence for this execution graph
     """
+
     behavior_id: str
     nodes: tuple[ExecutionNode, ...] = field(default_factory=tuple)
     edges: tuple[ExecutionEdge, ...] = field(default_factory=tuple)
@@ -78,9 +81,9 @@ class ExecutionGraph:
         if not self.behavior_id:
             raise ValueError("Behavior id cannot be empty")
         if isinstance(self.nodes, list):
-            object.__setattr__(self, 'nodes', tuple(self.nodes))
+            object.__setattr__(self, "nodes", tuple(self.nodes))
         if isinstance(self.edges, list):
-            object.__setattr__(self, 'edges', tuple(self.edges))
+            object.__setattr__(self, "edges", tuple(self.edges))
 
     def get_node_ids(self) -> tuple[str, ...]:
         """Get all symbol ids in this execution graph."""

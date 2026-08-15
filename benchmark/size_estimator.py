@@ -2,6 +2,7 @@ import sys
 import gc
 from typing import Set, Any
 
+
 def get_retained_size(obj: Any, seen: Set[int] = None) -> int:
     """Recursively calculates the size of a Python object, including referenced objects.
     Avoids infinite loops by tracking seen object IDs.
@@ -22,7 +23,10 @@ def get_retained_size(obj: Any, seen: Set[int] = None) -> int:
 
     # Dictionaries
     if isinstance(obj, dict):
-        size += sum(get_retained_size(k, seen) + get_retained_size(v, seen) for k, v in obj.items())
+        size += sum(
+            get_retained_size(k, seen) + get_retained_size(v, seen)
+            for k, v in obj.items()
+        )
         return size
 
     # Lists, Tuples, Sets, Frozensets

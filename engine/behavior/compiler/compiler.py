@@ -18,7 +18,6 @@ from engine.repository.model import RepositoryModel
 from .impact_engine import ImpactEngine
 
 
-
 class BehaviorCompiler:
     """
     Compiles a Change Model + Repository Delta into a Behavior Model.
@@ -66,7 +65,11 @@ class BehaviorCompiler:
         """
         # Support both old and new interface for backward compatibility
         # Check if repository_delta is actually a RepositoryDelta (new interface)
-        if repository_delta is not None and hasattr(repository_delta, 'head_model') and hasattr(repository_delta, 'base_model'):
+        if (
+            repository_delta is not None
+            and hasattr(repository_delta, "head_model")
+            and hasattr(repository_delta, "base_model")
+        ):
             head_model = repository_delta.head_model
             base_model = repository_delta.base_model
         elif repository_delta is not None:
@@ -80,34 +83,39 @@ class BehaviorCompiler:
         if repository_query is None:
             if head_model is not None:
                 from engine.change.compiler.compiler import RepositoryModelQuery
+
                 repository_query = RepositoryModelQuery(head_model)
-                
+
         # Calculate impact surface using bounded traversal
         impact_engine = ImpactEngine()
         changed_ids = set()
-        for s in getattr(change_model, 'added_symbols', ()): changed_ids.add(s.id)
-        for s in getattr(change_model, 'removed_symbols', ()): changed_ids.add(s.id)
-        for m in getattr(change_model, 'modified_symbols', ()): changed_ids.add(m.symbol.id)
-        
+        for s in getattr(change_model, "added_symbols", ()):
+            changed_ids.add(s.id)
+        for s in getattr(change_model, "removed_symbols", ()):
+            changed_ids.add(s.id)
+        for m in getattr(change_model, "modified_symbols", ()):
+            changed_ids.add(m.symbol.id)
+
         impact_surface = None
         if repository_query is not None:
-            impact_surface = impact_engine.calculate_impact(changed_ids, repository_query)
+            impact_surface = impact_engine.calculate_impact(
+                changed_ids, repository_query
+            )
 
         # Initialize pass context with models
         context = BehaviorPassContext(
             metadata={
-                'change_model': change_model,
-                'repository_model': head_model,
-                'repository_delta': repository_delta,
-                'repository_query': repository_query,
-                'impact_surface': impact_surface,
+                "change_model": change_model,
+                "repository_model": head_model,
+                "repository_delta": repository_delta,
+                "repository_query": repository_query,
+                "impact_surface": impact_surface,
             }
         )
 
         # Phase 8: We no longer run the legacy passes that depend on the materialized graph.
         # Instead, we return the ImpactSurface produced by bounded traversal.
         return impact_surface
-
 
     def _build_behavior_model(self, context: BehaviorPassContext) -> BehaviorModel:
         """

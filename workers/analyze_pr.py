@@ -136,6 +136,29 @@ async def _process_pr_analysis(
             except Exception as exc:
                 print(f"[analyze_pr] LLM comment generation failed: {exc}")
 
+        # Render and print deterministic repository artifacts
+        if context.ocm is not None:
+            try:
+                from integrations.github.renderers.github_renderer import GitHubRenderer
+
+                renderer = GitHubRenderer()
+                render_context = {
+                    "repository": repo_full_name,
+                    "pr_number": str(pr_number),
+                    "base_sha": base_sha or "",
+                    "head_sha": head_sha or "",
+                    "language": context.language or "unknown",
+                    "total_time": f"{context.total_time:.2f}"
+                    if context.total_time
+                    else "N/A",
+                }
+                report = renderer.render(context.ocm, render_context)
+                print("\n--- REPOSITORY ANALYSIS ARTIFACTS ---")
+                print(report)
+                print("-------------------------------------\n")
+            except Exception as exc:
+                print(f"[analyze_pr] Failed to render repository artifacts: {exc}")
+
         await output_provider.publish(context.ocm, destination)
         print(f"Successfully analyzed {repo_full_name} PR#{pr_number}")
 

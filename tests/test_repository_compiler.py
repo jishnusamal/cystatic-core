@@ -62,7 +62,7 @@ def fastapi_source_files():
 
     This tests that entry points are detected with arbitrary variable names.
     """
-    main_py = '''
+    main_py = """
 from fastapi import FastAPI
 from fastapi import APIRouter
 
@@ -81,7 +81,7 @@ async def create_item():
 @checkout_router.get("/checkout")
 async def process_checkout():
     pass
-'''
+"""
     return {
         "main.py": main_py,
     }
@@ -89,13 +89,13 @@ async def process_checkout():
 
 class TestPythonLanguageAdapter:
     """Test the repository compiler."""
-    
+
     def test_compiler_initialization(self):
         """Test that compiler initializes correctly."""
         adapter = PythonLanguageAdapter()
         assert adapter is not None
         assert adapter.get_language() == "python"
-    
+
     def test_compiler_pass_names(self):
         """Test that compiler has correct pass names."""
         adapter = PythonLanguageAdapter()
@@ -113,7 +113,7 @@ class TestPythonLanguageAdapter:
             "test_definitions",
             "configuration_references",
         ]
-    
+
     def test_full_compilation(self, sample_source_files):
         """Test full compilation pipeline."""
         adapter = PythonLanguageAdapter()
@@ -144,7 +144,9 @@ class TestPythonLanguageAdapter:
         assert "python://checkout/service.py#CheckoutService" in symbol_ids
 
         # Method
-        assert "python://checkout/service.py#CheckoutService.process_payment" in symbol_ids
+        assert (
+            "python://checkout/service.py#CheckoutService.process_payment" in symbol_ids
+        )
 
     def test_symbol_properties(self, sample_source_files):
         """Test that symbol properties are preserved."""
@@ -152,7 +154,9 @@ class TestPythonLanguageAdapter:
         model = adapter.compile({"files": sample_source_files})
 
         # Find confirm_checkout function
-        confirm_checkout = model.get_symbol_by_id("python://checkout/service.py::confirm_checkout")
+        confirm_checkout = model.get_symbol_by_id(
+            "python://checkout/service.py::confirm_checkout"
+        )
 
         assert confirm_checkout is not None
         assert confirm_checkout.name == "confirm_checkout"
@@ -217,7 +221,9 @@ class TestPythonLanguageAdapter:
 
         # confirm_checkout should call charge_card
         assert len(called_by) == 1
-        assert called_by[0].caller_id == "python://checkout/service.py::confirm_checkout"
+        assert (
+            called_by[0].caller_id == "python://checkout/service.py::confirm_checkout"
+        )
 
     def test_empty_source_files(self):
         """Test compilation with empty source files."""
@@ -279,18 +285,18 @@ class Sub(Base):
     def child(self):
         self.common()
         self.child()
-"""
+""",
         }
         adapter = PythonLanguageAdapter()
         model = adapter.compile({"files": files})
-        
+
         # Verify Sub.child has outgoing calls
         child_id = "python://sub.py#Sub.child"
         common_id = "python://base.py#Base.common"
-        
+
         calls = model.get_calls_for(child_id)
         assert len(calls) == 2
-        
+
         callee_ids = {c.callee_id for c in calls}
         # Correctly resolves self.common() to Base.common through inheritance
         assert common_id in callee_ids

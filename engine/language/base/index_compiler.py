@@ -126,20 +126,30 @@ class IndexCompiler:
             builder = _empty_builder(context.path, context.language)
             for pass_instance in self._passes:
                 pass_name = type(pass_instance).__name__
-                
+
                 start = time.perf_counter()
                 try:
                     pass_instance.process(context, builder)
                 finally:
                     elapsed = time.perf_counter() - start
                     inst.record_pass_time(pass_name, elapsed, context.path)
-                    
+
                     # Count objects emitted
-                    for key in ['symbols', 'imports', 'calls', 'entrypoints', 'persistence_models', 
-                                'events', 'tests', 'configurations']:
+                    for key in [
+                        "symbols",
+                        "imports",
+                        "calls",
+                        "entrypoints",
+                        "persistence_models",
+                        "events",
+                        "tests",
+                        "configurations",
+                    ]:
                         if key in builder:
-                            inst.increment_counter(pass_name, f"{key}_emitted", len(builder[key]))
-            
+                            inst.increment_counter(
+                                pass_name, f"{key}_emitted", len(builder[key])
+                            )
+
             file_indices.append(_builder_to_file_index(builder))
 
         return RepositoryIndex(
@@ -176,7 +186,7 @@ class IndexCompiler:
 
         for context in file_contexts:
             builder = _empty_builder(context.path, context.language)
-            
+
             # Time the visitor execution
             start = time.perf_counter()
             try:
@@ -184,7 +194,7 @@ class IndexCompiler:
             finally:
                 elapsed = time.perf_counter() - start
                 inst.record_pass_time("Visitor", elapsed, context.path)
-            
+
             file_indices.append(_builder_to_file_index(builder))
 
         return RepositoryIndex(

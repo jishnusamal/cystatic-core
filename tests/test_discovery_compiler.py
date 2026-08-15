@@ -56,6 +56,7 @@ from engine.discovery.model import (
 # Test helpers
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class TestHelper:
     """Helper for creating test fixtures."""
@@ -142,6 +143,7 @@ class TestHelper:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def sample_symbols():
@@ -303,6 +305,7 @@ def sample_operational_model(
 # Tests: DiscoveryModel
 # ---------------------------------------------------------------------------
 
+
 class TestDiscoveryModel:
     """Tests for the DiscoveryModel dataclass."""
 
@@ -339,11 +342,11 @@ class TestDiscoveryModel:
             kind=DiscoveryKind.VALIDATION_GAP,
         )
         model = DiscoveryModel(discoveries=(discovery1, discovery2))
-        
+
         shared = model.get_discoveries_by_kind(DiscoveryKind.SHARED_EXECUTION)
         assert len(shared) == 1
         assert shared[0].id == "test::1"
-        
+
         validation = model.get_discoveries_by_kind(DiscoveryKind.VALIDATION_GAP)
         assert len(validation) == 1
         assert validation[0].id == "test::2"
@@ -359,11 +362,11 @@ class TestDiscoveryModel:
             kind=DiscoveryKind.VALIDATION_GAP,
         )
         model = DiscoveryModel(discoveries=(discovery1, discovery2))
-        
+
         found = model.get_discovery_by_id("test::1")
         assert found is not None
         assert found.id == "test::1"
-        
+
         not_found = model.get_discovery_by_id("test::3")
         assert not_found is None
 
@@ -371,6 +374,7 @@ class TestDiscoveryModel:
 # ---------------------------------------------------------------------------
 # Tests: DiscoveryCompiler
 # ---------------------------------------------------------------------------
+
 
 class TestDiscoveryCompiler:
     """Tests for the DiscoveryCompiler."""
@@ -404,17 +408,19 @@ class TestDiscoveryCompiler:
         """Test compiling with shared executions."""
         compiler = DiscoveryCompiler()
         model = compiler.compile(sample_operational_model)
-        
+
         assert isinstance(model, DiscoveryModel)
         # Should have at least one shared execution discovery
-        shared_discoveries = model.get_discoveries_by_kind(DiscoveryKind.SHARED_EXECUTION)
+        shared_discoveries = model.get_discoveries_by_kind(
+            DiscoveryKind.SHARED_EXECUTION
+        )
         assert len(shared_discoveries) > 0
 
     def test_compile_produces_discovery_model(self, sample_operational_model):
         """Test that compilation produces a DiscoveryModel."""
         compiler = DiscoveryCompiler()
         model = compiler.compile(sample_operational_model)
-        
+
         assert isinstance(model, DiscoveryModel)
         assert "compiler_version" in model.metadata
         assert "compiled_at" in model.metadata
@@ -424,24 +430,28 @@ class TestDiscoveryCompiler:
     def test_compile_deterministic(self, sample_operational_model):
         """Test that compilation is deterministic."""
         compiler = DiscoveryCompiler()
-        
+
         model1 = compiler.compile(sample_operational_model)
         model2 = compiler.compile(sample_operational_model)
-        
+
         # Discoveries should be identical
         assert len(model1.discoveries) == len(model2.discoveries)
         assert model1.discoveries == model2.discoveries
         # Metadata should have same structure (except timestamp)
-        assert model1.metadata['compiler_version'] == model2.metadata['compiler_version']
-        assert model1.metadata['discovery_count'] == model2.metadata['discovery_count']
-        assert model1.metadata['pass_count'] == model2.metadata['pass_count']
+        assert (
+            model1.metadata["compiler_version"] == model2.metadata["compiler_version"]
+        )
+        assert model1.metadata["discovery_count"] == model2.metadata["discovery_count"]
+        assert model1.metadata["pass_count"] == model2.metadata["pass_count"]
 
     def test_shared_execution_discovery_facts(self, sample_operational_model):
         """Test that shared execution discoveries have correct facts."""
         compiler = DiscoveryCompiler()
         model = compiler.compile(sample_operational_model)
-        
-        shared_discoveries = model.get_discoveries_by_kind(DiscoveryKind.SHARED_EXECUTION)
+
+        shared_discoveries = model.get_discoveries_by_kind(
+            DiscoveryKind.SHARED_EXECUTION
+        )
         if shared_discoveries:
             discovery = shared_discoveries[0]
             assert discovery.facts.behavior_count > 0
@@ -451,7 +461,7 @@ class TestDiscoveryCompiler:
         """Test that discoveries have references."""
         compiler = DiscoveryCompiler()
         model = compiler.compile(sample_operational_model)
-        
+
         for discovery in model.discoveries:
             assert len(discovery.references) > 0
             for ref in discovery.references:
@@ -462,7 +472,7 @@ class TestDiscoveryCompiler:
         """Test that deep execution discoveries are produced."""
         compiler = DiscoveryCompiler()
         model = compiler.compile(sample_operational_model)
-        
+
         deep_discoveries = model.get_discoveries_by_kind(DiscoveryKind.DEEP_EXECUTION)
         # Should have deep execution discovery if execution_depth > 0
         if sample_operational_model.behavior.execution_depth > 0:
@@ -474,36 +484,44 @@ class TestDiscoveryCompiler:
         """Test that hidden relationship discoveries are produced."""
         compiler = DiscoveryCompiler()
         model = compiler.compile(sample_operational_model)
-        
+
         # This may or may not produce discoveries depending on the model
-        hidden_discoveries = model.get_discoveries_by_kind(DiscoveryKind.HIDDEN_RELATIONSHIP)
+        hidden_discoveries = model.get_discoveries_by_kind(
+            DiscoveryKind.HIDDEN_RELATIONSHIP
+        )
         assert isinstance(hidden_discoveries, tuple)
 
     def test_validation_gap_discovery(self, sample_operational_model):
         """Test that validation gap discoveries are produced."""
         compiler = DiscoveryCompiler()
         model = compiler.compile(sample_operational_model)
-        
+
         # This may or may not produce discoveries depending on the model
-        validation_discoveries = model.get_discoveries_by_kind(DiscoveryKind.VALIDATION_GAP)
+        validation_discoveries = model.get_discoveries_by_kind(
+            DiscoveryKind.VALIDATION_GAP
+        )
         assert isinstance(validation_discoveries, tuple)
 
     def test_boundary_crossing_discovery(self, sample_operational_model):
         """Test that boundary crossing discoveries are produced."""
         compiler = DiscoveryCompiler()
         model = compiler.compile(sample_operational_model)
-        
+
         # This may or may not produce discoveries depending on the model
-        boundary_discoveries = model.get_discoveries_by_kind(DiscoveryKind.BOUNDARY_CROSSING)
+        boundary_discoveries = model.get_discoveries_by_kind(
+            DiscoveryKind.BOUNDARY_CROSSING
+        )
         assert isinstance(boundary_discoveries, tuple)
 
     def test_public_interface_change_discovery(self, sample_operational_model):
         """Test that public interface change discoveries are produced."""
         compiler = DiscoveryCompiler()
         model = compiler.compile(sample_operational_model)
-        
+
         # This may or may not produce discoveries depending on the model
-        interface_discoveries = model.get_discoveries_by_kind(DiscoveryKind.PUBLIC_INTERFACE_CHANGE)
+        interface_discoveries = model.get_discoveries_by_kind(
+            DiscoveryKind.PUBLIC_INTERFACE_CHANGE
+        )
         assert isinstance(interface_discoveries, tuple)
 
     def test_discovery_kinds_are_strings(self):

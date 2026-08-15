@@ -1,4 +1,5 @@
 import gc
+from zlib import adler32
 from typing import Any, Dict, Iterable, Callable
 from engine.repository.indexing.sink import RepositoryFactSink
 from engine.repository.facts import (
@@ -9,6 +10,7 @@ from engine.repository.facts import (
     Call,
     Reference,
     Import,
+    ImportType,
     TypeRelationship,
     Endpoint,
     DatabaseRelationship,
@@ -18,7 +20,9 @@ from engine.repository.facts import (
 )
 
 
-def build_symbol_fqn(language: str, file_path: str, name: str, kind: str = "", parent: str = "") -> str:
+def build_symbol_fqn(
+    language: str, file_path: str, name: str, kind: str = "", parent: str = ""
+) -> str:
     """Build a canonical symbol ID string (FQN) for a symbol entry."""
     if parent:
         return f"{language}://{file_path}#{parent}.{name}"
@@ -32,7 +36,7 @@ def build_symbol_fqn(language: str, file_path: str, name: str, kind: str = "", p
 class RepositoryIndexer:
     """
     Orchestrates streaming fact extraction from a repository snapshot.
-    
+
     Processes one file at a time, parses it using language adapters,
     extracts flat facts, writes them to the RepositoryFactSink, and releases
     the AST and file-scoped context before moving to the next file.
@@ -42,14 +46,14 @@ class RepositoryIndexer:
         self.sink = sink
         self._file_id_map: Dict[str, FileId] = {}
         self._next_file_id = 1
-        
+
         self._symbol_id_map: Dict[str, SymbolId] = {}
         self._symbol_fqn_map: Dict[SymbolId, str] = {}
         self._next_symbol_id = 1
 
     def get_or_create_file_id(self, path: str) -> FileId:
         """Get or allocate a stable FileId for a file path."""
-        normalized_path = path.replace('\\', '/')
+        normalized_path = path.replace("\\", "/")
         if normalized_path not in self._file_id_map:
             file_id = FileId(self._next_file_id)
             self._next_file_id += 1
@@ -72,14 +76,14 @@ class RepositoryIndexer:
     def index_repository(self, repository_input: Dict[str, Any], adapter: Any) -> None:
         """
         Streamingly index a repository snapshot using the provided adapter.
-        
+
         Args:
             repository_input: Snapshots dictionary with 'files' mapping path to content.
             adapter: Language adapter (e.g. PythonLanguageAdapter, JavaLanguageAdapter).
         """
         files = repository_input.get("files", {})
         language = repository_input.get("language", adapter.get_language())
-        
+
         # Invariant check: ensure file-scoped extraction and release of AST
         for file_path, content in files.items():
             if content is None:
@@ -88,14 +92,14 @@ class RepositoryIndexer:
             self.sink.begin()
             try:
                 file_id = self.get_or_create_file_id(file_path)
-                
+
                 # Step 1: Write File Fact
                 file_fact = File(id=file_id, path=file_path, language=language)
                 self.sink.add_file(file_fact)
 
                 # Step 2: Parse and Index single file scoped to local scope
                 file_index = adapter._index_single_file(file_path, content, language)
-                
+
                 # Step 3: Extract and emit facts to the sink
                 self._extract_file_facts(file_index, file_id, language)
 
@@ -107,23 +111,30 @@ class RepositoryIndexer:
                 raise e
             finally:
                 # Step 5: Release file-scoped context and AST
-                if 'file_index' in locals():
+                if "file_index" in locals():
                     del file_index
                 gc.collect()
 
-    def _extract_file_facts(self, file_index: Any, file_id: FileId, language: str) -> None:
+    def _extract_file_facts(
+        self, file_index: Any, file_id: FileId, language: str
+    ) -> None:
         """Extract flat facts from a file index and write them to the sink."""
         # 1. Symbols
         for sym in file_index.symbols:
-            fqn = build_symbol_fqn(language, file_index.path, sym.name, sym.kind, sym.parent)
+            fqn = build_symbol_fqn(
+                language, file_index.path, sym.name, sym.kind, sym.parent
+            )
             sym_id = self.get_or_create_symbol_id(fqn)
-            
+
             parent_id = None
             if sym.parent:
-                parent_fqn = build_symbol_fqn(language, file_index.path, sym.parent, "class", "")
+                parent_fqn = build_symbol_fqn(
+                    language, file_index.path, sym.parent, "class", ""
+                )
                 parent_id = self.get_or_create_symbol_id(parent_fqn)
-                
+
             from engine.repository.facts import SymbolVisibility, SymbolKind
+
             try:
                 kind = SymbolKind(sym.kind)
             except ValueError:
@@ -150,12 +161,17 @@ class RepositoryIndexer:
         for imp in file_index.imports:
             # target_file_id will be resolved in Phase B/semantic compiler, initially None
             # or we can compute a stable FileId if the target path is known or guessable
+            try:
+                imp_type = ImportType(imp.import_type)
+            except ValueError:
+                imp_type = ImportType.STANDARD
+
             import_fact = Import(
                 source_file_id=file_id,
                 target_file_id=None,
                 module=imp.module,
                 imported_name=", ".join(imp.names) if imp.names else "",
-                import_type=imp.import_type,
+                import_type=imp_type,
             )
             self.sink.add_import(import_fact)
 
@@ -163,14 +179,17 @@ class RepositoryIndexer:
         for call in file_index.calls:
             # Caller
             caller_parent = getattr(call, "caller_parent", "")
-            caller_fqn = build_symbol_fqn(language, file_index.path, call.caller, parent=caller_parent)
+            caller_fqn = build_symbol_fqn(
+                language, file_index.path, call.caller, parent=caller_parent
+            )
             caller_id = self.get_or_create_symbol_id(caller_fqn)
-            
+
             # Callee FQN: since unresolved, we assign a placeholder FQN for the callee
             callee_fqn = f"unresolved://{call.callee}"
             callee_id = self.get_or_create_symbol_id(callee_fqn)
 
             from engine.repository.facts import CallType
+
             try:
                 c_type = CallType(call.call_type)
             except ValueError:
@@ -186,13 +205,18 @@ class RepositoryIndexer:
         # 4. References
         for ref in file_index.references:
             parent_sym = getattr(ref, "parent_symbol", "")
-            source_fqn = build_symbol_fqn(language, file_index.path, parent_sym) if parent_sym else f"{language}://{file_index.path}"
+            source_fqn = (
+                build_symbol_fqn(language, file_index.path, parent_sym)
+                if parent_sym
+                else f"{language}://{file_index.path}"
+            )
             source_id = self.get_or_create_symbol_id(source_fqn)
-            
+
             target_fqn = f"unresolved://{ref.name}"
             target_id = self.get_or_create_symbol_id(target_fqn)
 
             from engine.repository.facts import ReferenceType
+
             ref_fact = Reference(
                 source_id=source_id,
                 target_id=target_id,
@@ -204,11 +228,12 @@ class RepositoryIndexer:
         for tr in file_index.type_relationships:
             source_fqn = build_symbol_fqn(language, file_index.path, tr.source)
             source_id = self.get_or_create_symbol_id(source_fqn)
-            
+
             target_fqn = f"unresolved://{tr.target}"
             target_id = self.get_or_create_symbol_id(target_fqn)
 
             from engine.repository.facts import TypeRelationshipType
+
             try:
                 tr_type = TypeRelationshipType(tr.relation_type)
             except ValueError:
@@ -227,9 +252,9 @@ class RepositoryIndexer:
             handler_id = self.get_or_create_symbol_id(handler_fqn)
 
             from engine.repository.facts import EndpointId, EndpointMethod
+
             # Create a stable integer ID for the endpoint
-            from zlib import adler32
-            ep_id_int = adler32(f"{ep.route}:{ep.handler}".encode()) & 0xffffffff
+            ep_id_int = adler32(f"{ep.route}:{ep.handler}".encode()) & 0xFFFFFFFF
             ep_id = EndpointId(ep_id_int)
 
             method_str = ep.route.split(" ")[0] if " " in ep.route else "GET"
@@ -249,11 +274,18 @@ class RepositoryIndexer:
 
         # 7. Persistence Models
         for pm in file_index.persistence_models:
-            model_fqn = build_symbol_fqn(language, file_index.path, pm.name, kind="class")
+            model_fqn = build_symbol_fqn(
+                language, file_index.path, pm.name, kind="class"
+            )
             model_id = self.get_or_create_symbol_id(model_fqn)
 
             from engine.repository.facts import DatabaseRelationshipType, ResourceId
-            res_id = ResourceId(adler32(pm.table_name.encode()) & 0xffffffff) if pm.table_name else ResourceId(0)
+
+            res_id = (
+                ResourceId(adler32(pm.table_name.encode()) & 0xFFFFFFFF)
+                if pm.table_name
+                else ResourceId(0)
+            )
 
             db_fact = DatabaseRelationship(
                 symbol_id=model_id,
@@ -267,29 +299,38 @@ class RepositoryIndexer:
             symbol_fqn = build_symbol_fqn(language, file_index.path, ev.symbol_name)
             symbol_id = self.get_or_create_symbol_id(symbol_fqn)
 
-            from engine.repository.facts import EventId, EventPublicationType, EventSubscriptionType
-            event_id = EventId(adler32(ev.event_name.encode()) & 0xffffffff)
+            from engine.repository.facts import (
+                EventId,
+                EventPublicationType,
+                EventSubscriptionType,
+            )
+
+            event_id = EventId(adler32(ev.event_name.encode()) & 0xFFFFFFFF)
 
             if ev.operation_kind in ("publish", "emit", "send", "produce"):
                 try:
                     pub_type = EventPublicationType(ev.operation_kind)
                 except ValueError:
                     pub_type = EventPublicationType.PUBLISH
-                self.sink.add_event_publication(EventPublication(
-                    symbol_id=symbol_id,
-                    event_id=event_id,
-                    publication_type=pub_type,
-                ))
+                self.sink.add_event_publication(
+                    EventPublication(
+                        symbol_id=symbol_id,
+                        event_id=event_id,
+                        publication_type=pub_type,
+                    )
+                )
             else:
                 try:
                     sub_type = EventSubscriptionType(ev.operation_kind)
                 except ValueError:
                     sub_type = EventSubscriptionType.SUBSCRIBE
-                self.sink.add_event_subscription(EventSubscription(
-                    symbol_id=symbol_id,
-                    event_id=event_id,
-                    subscription_type=sub_type,
-                ))
+                self.sink.add_event_subscription(
+                    EventSubscription(
+                        symbol_id=symbol_id,
+                        event_id=event_id,
+                        subscription_type=sub_type,
+                    )
+                )
 
         # 9. Tests
         for test in file_index.tests:
@@ -304,8 +345,11 @@ class RepositoryIndexer:
                 target_id = self.get_or_create_symbol_id(target_fqn)
 
                 from engine.repository.facts import TestRelationshipType
-                self.sink.add_test_relationship(TestRelationship(
-                    test_symbol_id=test_id,
-                    target_symbol_id=target_id,
-                    relationship_type=TestRelationshipType.COVERS,
-                ))
+
+                self.sink.add_test_relationship(
+                    TestRelationship(
+                        test_symbol_id=test_id,
+                        target_symbol_id=target_id,
+                        relationship_type=TestRelationshipType.COVERS,
+                    )
+                )

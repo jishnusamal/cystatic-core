@@ -108,7 +108,7 @@ with zipfile.ZipFile(io.BytesIO(zip_content)) as zf:
     for name in all_names:
         raw = zf.read(name)
         content = raw.decode("utf-8")
-        files[relative_name] = content   # dict[str, str]
+        files[relative_name] = content  # dict[str, str]
 ```
 
 `io.BytesIO(zip_content)` wraps (does not copy) `zip_content`. Each `zf.read(name)` is
@@ -139,7 +139,7 @@ For Polar: 80 MB → 251 MB (Δ ≈ 171 MB = ~80 MB zip + ~90 MB decoded source 
 tree = ast.parse(content, filename=file_path)
 context = FileContext(
     path=file_path,
-    source=content,   # ← reference to the str already in files dict
+    source=content,  # ← reference to the str already in files dict
     ast=tree,
     language=language,
 )
@@ -220,10 +220,10 @@ dataclass instances.
 Five additional lookup tables are built at Stage 3 start:
 
 ```python
-callee_name_to_ids: dict[str, list[str]] = {}       # name → list of symbol IDs
-resolved_imports:   dict[tuple[str, str], str] = {}  # (file, name) → target_id
-file_symbol_map:    dict[tuple[str, str], Symbol] = {}
-class_method_map:   dict[tuple[str, str, str], Symbol] = {}
+callee_name_to_ids: dict[str, list[str]] = {}  # name → list of symbol IDs
+resolved_imports: dict[tuple[str, str], str] = {}  # (file, name) → target_id
+file_symbol_map: dict[tuple[str, str], Symbol] = {}
+class_method_map: dict[tuple[str, str, str], Symbol] = {}
 resolved_inheritance_map: dict[str, list[str]] = {}
 ```
 
@@ -246,19 +246,19 @@ diagnostic side-channel that persists across requests if the logger is process-g
 `RepositoryGraph` is a **mutable** `@dataclass` (no `frozen=True`). Key fields:
 
 ```python
-files:       dict[str, FileContribution]    # per-file raw facts
-symbols:     dict[str, Symbol]              # all non-import symbols
-imports:     dict[str, Symbol]              # all import symbols
-call_graph:  CallGraph                      # frozen: (edges tuple, _outgoing, _incoming)
+files: dict[str, FileContribution]  # per-file raw facts
+symbols: dict[str, Symbol]  # all non-import symbols
+imports: dict[str, Symbol]  # all import symbols
+call_graph: CallGraph  # frozen: (edges tuple, _outgoing, _incoming)
 reference_graph: ReferenceGraph
 type_relationship_graph: TypeRelationshipGraph
 
 # Reverse indexes — mutable, separate from graph data
-symbol_to_callers:               dict[str, set[str]]
-symbol_to_importers:             dict[str, set[str]]
+symbol_to_callers: dict[str, set[str]]
+symbol_to_importers: dict[str, set[str]]
 unresolved_symbol_to_waiting_files: dict[str, set[str]]
-file_to_call_edges:              dict[str, list[Any]]
-file_to_reference_edges:         dict[str, list[Any]]
+file_to_call_edges: dict[str, list[Any]]
+file_to_reference_edges: dict[str, list[Any]]
 # ... 6 more file_to_* buckets
 ```
 
@@ -294,7 +294,9 @@ dict (being built)`. Same pattern applies to `ReferenceGraph` and `TypeRelations
 ```python
 # L510-514
 # Clone base_graph using pickle to avoid mutating cache
-pipeline_logger.log_pipeline("[pipeline] Step 1.2: Cloning base RepositoryGraph...", to_terminal=True)
+pipeline_logger.log_pipeline(
+    "[pipeline] Step 1.2: Cloning base RepositoryGraph...", to_terminal=True
+)
 clone_start = time.perf_counter()
 patched_graph = pickle.loads(pickle.dumps(base_graph))
 clone_duration = time.perf_counter() - clone_start

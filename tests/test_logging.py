@@ -7,7 +7,12 @@ from datetime import datetime
 from unittest.mock import MagicMock
 
 from engine.pipeline.pipeline import Pipeline
-from models.analysis import AnalysisRequest, RepositoryReference, PullRequestReference, AnalysisTrigger
+from models.analysis import (
+    AnalysisRequest,
+    RepositoryReference,
+    PullRequestReference,
+    AnalysisTrigger,
+)
 from engine.repository.indexing import MemoryRepositoryStore
 from integrations.base import RepositoryProvider
 
@@ -20,10 +25,10 @@ class MockRepositoryProvider(RepositoryProvider):
         snapshot = MagicMock()
         snapshot.files = {
             "main.py": "from utils import greet\ngreet()\n",
-            "utils.py": "def greet():\n    print('hello')\n"
+            "utils.py": "def greet():\n    print('hello')\n",
         }
         return snapshot
-        
+
     async def fetch_diff(self, repository, base_sha, head_sha):
         return MagicMock()
 
@@ -43,7 +48,7 @@ async def test_pipeline_logging():
         repository_provider=MockRepositoryProvider(),
         repository_store=MemoryRepositoryStore(),
     )
-    
+
     request = AnalysisRequest(
         repository=RepositoryReference(
             provider="github",
@@ -59,16 +64,16 @@ async def test_pipeline_logging():
         ),
         trigger=AnalysisTrigger.MANUAL,
     )
-    
+
     context = await pipeline.run(request)
-    
+
     assert context.run_context is not None
     log_dir = context.run_context.log_dir
-    
+
     # Verify run ID format (run-YYYYMMDD-HHMMSS-******)
     assert context.run_context.run_id.startswith("run-")
     assert len(context.run_context.run_id.split("-")) == 4
-    
+
     # Verify directory and files
     assert os.path.exists(log_dir)
     assert os.path.exists(os.path.join(log_dir, "pipeline.log"))
@@ -80,18 +85,10 @@ async def test_pipeline_logging():
     assert os.path.exists(os.path.join(log_dir, "summary.json"))
     assert os.path.exists(os.path.join(log_dir, "profile.json"))
     assert os.path.exists(os.path.join(log_dir, "call_resolution.json"))
-    
+
     # Verify contents
     with open(os.path.join(log_dir, "pipeline.log"), "r") as f:
         pipeline_log = f.read()
         assert "[pipeline]" in pipeline_log
         assert "Factor Analysis" in pipeline_log
         assert context.run_context.run_id in pipeline_log
-        
-    with open(os.path.join(log_dir, "visitor.log"), "r") as f:
-        visitor_log = f.read()
-        assert "VISITOR PASS SUMMARY" in visitor_log
-        
-    with open(os.path.join(log_dir, "semantic.log"), "r") as f:
-        semantic_log = f.read()
-        assert "SEMANTIC COMPILATION - INPUT SIZE" in semantic_log

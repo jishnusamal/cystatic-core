@@ -3,7 +3,11 @@
 from dataclasses import dataclass, field
 
 from engine.repository.model.repository_model import EntryPoint
-from engine.repository.query.types import DatabaseRelationship, EventPublication, SymbolId
+from engine.repository.query.types import (
+    DatabaseRelationship,
+    EventPublication,
+    SymbolId,
+)
 
 
 @dataclass(frozen=True)
@@ -19,6 +23,7 @@ class ImpactSurface:
         affected_events: Event publications reachable.
         traversal_evidence: Evidence of traversal paths for reasoning/validation.
     """
+
     affected_symbols: frozenset[str] = frozenset()
     affected_services: frozenset[str] = frozenset()
     affected_endpoints: frozenset[EntryPoint] = frozenset()
@@ -29,14 +34,24 @@ class ImpactSurface:
     def __post_init__(self):
         """Ensure collections are frozen/immutable."""
         if isinstance(self.affected_symbols, (set, list)):
-            object.__setattr__(self, 'affected_symbols', frozenset(self.affected_symbols))
+            object.__setattr__(
+                self, "affected_symbols", frozenset(self.affected_symbols)
+            )
         if isinstance(self.affected_services, (set, list)):
-            object.__setattr__(self, 'affected_services', frozenset(self.affected_services))
+            object.__setattr__(
+                self, "affected_services", frozenset(self.affected_services)
+            )
         if isinstance(self.affected_endpoints, (set, list)):
-            object.__setattr__(self, 'affected_endpoints', frozenset(self.affected_endpoints))
+            object.__setattr__(
+                self, "affected_endpoints", frozenset(self.affected_endpoints)
+            )
         if isinstance(self.affected_databases, (set, list)):
-            object.__setattr__(self, 'affected_databases', frozenset(self.affected_databases))
+            object.__setattr__(
+                self, "affected_databases", frozenset(self.affected_databases)
+            )
         if isinstance(self.affected_events, (set, list)):
-            object.__setattr__(self, 'affected_events', frozenset(self.affected_events))
+            object.__setattr__(self, "affected_events", frozenset(self.affected_events))
         if isinstance(self.traversal_evidence, list):
-            object.__setattr__(self, 'traversal_evidence', tuple(self.traversal_evidence))
+            object.__setattr__(
+                self, "traversal_evidence", tuple(self.traversal_evidence)
+            )
