@@ -30,6 +30,14 @@ class RepositoryFactSink(ABC):
         """Add a source file fact to the sink."""
         pass
 
+    def begin(self) -> None:
+        """Begin a transaction/batch of facts."""
+        pass
+
+    def flush(self) -> None:
+        """Flush/commit buffered facts."""
+        pass
+
     @abstractmethod
     def add_symbol(self, symbol: Symbol) -> SymbolId:
         """Add a code symbol fact to the sink."""

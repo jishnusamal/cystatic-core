@@ -85,21 +85,31 @@ class RepositoryIndexer:
             if content is None:
                 continue
 
-            file_id = self.get_or_create_file_id(file_path)
-            
-            # Step 1: Write File Fact
-            file_fact = File(id=file_id, path=file_path, language=language)
-            self.sink.add_file(file_fact)
+            self.sink.begin()
+            try:
+                file_id = self.get_or_create_file_id(file_path)
+                
+                # Step 1: Write File Fact
+                file_fact = File(id=file_id, path=file_path, language=language)
+                self.sink.add_file(file_fact)
 
-            # Step 2: Parse and Index single file scoped to local scope
-            file_index = adapter._index_single_file(file_path, content, language)
-            
-            # Step 3: Extract and emit facts to the sink
-            self._extract_file_facts(file_index, file_id, language)
+                # Step 2: Parse and Index single file scoped to local scope
+                file_index = adapter._index_single_file(file_path, content, language)
+                
+                # Step 3: Extract and emit facts to the sink
+                self._extract_file_facts(file_index, file_id, language)
 
-            # Step 4: Release file-scoped context and AST
-            del file_index
-            gc.collect()
+                # Step 4: Flush / commit the facts for this file
+                self.sink.flush()
+            except Exception as e:
+                if hasattr(self.sink, "rollback"):
+                    self.sink.rollback()
+                raise e
+            finally:
+                # Step 5: Release file-scoped context and AST
+                if 'file_index' in locals():
+                    del file_index
+                gc.collect()
 
     def _extract_file_facts(self, file_index: Any, file_id: FileId, language: str) -> None:
         """Extract flat facts from a file index and write them to the sink."""
