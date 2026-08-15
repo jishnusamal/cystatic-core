@@ -18,7 +18,9 @@ from engine.repository.facts import (
     TestRelationship,
     TypeRelationship,
 )
+from engine.repository.model.repository_model import EntryPoint, EntryPointKind
 from engine.repository.overlay.overlay import RepositoryOverlay
+
 
 
 class RepositoryView(RepositoryQuery):
@@ -263,3 +265,40 @@ class RepositoryView(RepositoryQuery):
             and t not in self.overlay.removed_test_relationships
         ]
         return tuple(v_tests + self._added_tests.get(symbol_id, []))
+
+    def get_entry_points(self) -> tuple[EntryPoint, ...]:
+        base_eps = self.base.get_entry_points()
+        v_eps = []
+        for ep in base_eps:
+            try:
+                sym_id_int = int(ep.handler_id)
+                sym_id = SymbolId(sym_id_int)
+                if not self._should_skip_base_for_symbol(sym_id) and self.get_symbol(sym_id) is not None:
+                    v_eps.append(ep)
+            except ValueError:
+                v_eps.append(ep)
+                
+        for ep_list in self._added_endpoints.values():
+            for ep in ep_list:
+                sym_id_str = str(ep.symbol_id)
+                route = f"{ep.method} {ep.path}"
+                v_eps.append(EntryPoint(
+                    kind=EntryPointKind.REST_ENDPOINT,
+                    route=route,
+                    handler_id=sym_id_str,
+                    metadata={"framework": ep.framework, "method": ep.method, "path": ep.path}
+                ))
+                
+        for sub_list in self._added_event_subs.values():
+            for sub in sub_list:
+                sym_id_str = str(sub.symbol_id)
+                event_id_str = str(sub.event_id)
+                v_eps.append(EntryPoint(
+                    kind=EntryPointKind.EVENT_CONSUMER,
+                    route=f"event:{event_id_str}",
+                    handler_id=sym_id_str,
+                    metadata={"subscription_type": str(sub.subscription_type), "event_id": event_id_str}
+                ))
+                
+        return tuple(v_eps)
+

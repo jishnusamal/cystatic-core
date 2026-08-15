@@ -1,35 +1,35 @@
 import sqlite3
 import datetime
 from typing import Any
-from engine.repository.facts import (
+from engine.repository.query.types import (
     Call,
-    CallType,
     DatabaseRelationship,
-    DatabaseRelationshipType,
     Endpoint,
-    EndpointId,
-    EndpointMethod,
-    EventId,
     EventPublication,
-    EventPublicationType,
     EventSubscription,
-    EventSubscriptionType,
     File,
     FileId,
     Import,
-    ImportType,
     Reference,
-    ReferenceType,
-    ResourceId,
     Symbol,
     SymbolId,
-    SymbolKind,
-    SymbolVisibility,
+    EventId,
+    EndpointId,
+    EndpointMethod,
+    EventSubscriptionType,
+    EventPublicationType,
+    DatabaseRelationshipType,
+    CallType,
+    ReferenceType,
+    ImportType,
     TestRelationship,
     TestRelationshipType,
     TypeRelationship,
     TypeRelationshipType,
 )
+from engine.repository.model.repository_model import EntryPoint, EntryPointKind
+from engine.repository.model.evidence import Evidence, FileLocation
+
 from .store import RepositoryStore
 from .schema import CREATE_TABLES_SQL, CREATE_INDEXES_SQL
 from .errors import RepositoryNotFoundError, VersionNotFoundError
@@ -652,6 +652,43 @@ class SQLiteRepositoryStore(RepositoryStore):
             return tuple(v_tests + p_tests)
             
         return tuple(v_tests)
+
+    def get_entry_points(self) -> tuple[EntryPoint, ...]:
+        repo_id, version_id = self._get_context()
+        cur = self.conn.cursor()
+        entry_points = []
+        
+        # 1. Fetch Endpoints
+        cur.execute(
+            "SELECT symbol_id, method, path, framework FROM endpoints WHERE repository_id = ? AND version_id = ?",
+            (repo_id, version_id)
+        )
+        for row in cur.fetchall():
+            sym_id = str(row["symbol_id"])
+            route = f"{row['method']} {row['path']}"
+            entry_points.append(EntryPoint(
+                kind=EntryPointKind.REST_ENDPOINT,
+                route=route,
+                handler_id=sym_id,
+                metadata={"framework": row["framework"], "method": row["method"], "path": row["path"]}
+            ))
+            
+        # 2. Fetch Event Subscriptions (Event Consumers)
+        cur.execute(
+            "SELECT symbol_id, event_id, subscription_type FROM event_subscriptions WHERE repository_id = ? AND version_id = ?",
+            (repo_id, version_id)
+        )
+        for row in cur.fetchall():
+            sym_id = str(row["symbol_id"])
+            event_id = str(row["event_id"])
+            entry_points.append(EntryPoint(
+                kind=EntryPointKind.EVENT_CONSUMER,
+                route=f"event:{event_id}",
+                handler_id=sym_id,
+                metadata={"subscription_type": row["subscription_type"], "event_id": event_id}
+            ))
+            
+        return tuple(entry_points)
 
     def close(self) -> None:
         self.conn.close()

@@ -15,6 +15,8 @@ from .passes import (
 from engine.behavior.model import BehaviorModel
 from engine.change.model import RepositoryDelta
 from engine.repository.model import RepositoryModel
+from .impact_engine import ImpactEngine
+
 
 
 class BehaviorCompiler:
@@ -49,6 +51,7 @@ class BehaviorCompiler:
         change_model: Any,
         repository_delta: RepositoryDelta | RepositoryModel | None = None,
         repository_model: Any = None,
+        repository_query: Any = None,
     ) -> BehaviorModel:
         """
         Compile changes into a Behavior Model.
@@ -74,21 +77,37 @@ class BehaviorCompiler:
             head_model = repository_model
             base_model = None
 
+        if repository_query is None:
+            if head_model is not None:
+                from engine.change.compiler.compiler import RepositoryModelQuery
+                repository_query = RepositoryModelQuery(head_model)
+                
+        # Calculate impact surface using bounded traversal
+        impact_engine = ImpactEngine()
+        changed_ids = set()
+        for s in getattr(change_model, 'added_symbols', ()): changed_ids.add(s.id)
+        for s in getattr(change_model, 'removed_symbols', ()): changed_ids.add(s.id)
+        for m in getattr(change_model, 'modified_symbols', ()): changed_ids.add(m.symbol.id)
+        
+        impact_surface = None
+        if repository_query is not None:
+            impact_surface = impact_engine.calculate_impact(changed_ids, repository_query)
+
         # Initialize pass context with models
         context = BehaviorPassContext(
             metadata={
                 'change_model': change_model,
                 'repository_model': head_model,
                 'repository_delta': repository_delta,
+                'repository_query': repository_query,
+                'impact_surface': impact_surface,
             }
         )
 
-        # Execute each pass in sequence
-        for compiler_pass in self.passes:
-            context = compiler_pass.run(context)
+        # Phase 8: We no longer run the legacy passes that depend on the materialized graph.
+        # Instead, we return the ImpactSurface produced by bounded traversal.
+        return impact_surface
 
-        # Create and return the behavior model
-        return self._build_behavior_model(context)
 
     def _build_behavior_model(self, context: BehaviorPassContext) -> BehaviorModel:
         """

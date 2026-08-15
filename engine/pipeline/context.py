@@ -14,7 +14,7 @@ from core.runtime import RunContext
 if TYPE_CHECKING:
     from engine.repository.model import RepositoryModel
     from engine.change.model import ChangeModel, RepositoryDelta
-    from engine.behavior.model import BehaviorModel
+    from engine.behavior.model.impact_surface import ImpactSurface
     from engine.operational.model import OperationalChangeModel, EngineeringDiscoveryModel
     from engine.operational.discovery.model import DiscoveryIR
     from engine.review_context.model import ReviewContext
@@ -51,7 +51,8 @@ class PipelineContext:
 
     # Intermediate artifacts
     change_model: ChangeModel | None = None
-    behavior_model: BehaviorModel | None = None
+    impact_surface: ImpactSurface | None = None
+    behavior_model: Any | None = None # legacy
     ocm: OperationalChangeModel | None = None
     edm: EngineeringDiscoveryModel | None = None
 

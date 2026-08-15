@@ -829,11 +829,13 @@ class Pipeline:
             )
         
         try:
-            # BehaviorCompiler receives repository_delta for cross-model analysis
-            context.behavior_model = self._behavior_compiler.compile(
+            # BehaviorCompiler (now returns ImpactSurface)
+            context.impact_surface = self._behavior_compiler.compile(
                 change_model=context.change_model,
                 repository_delta=context.repository_delta,
             )
+            # Legacy compatibility
+            context.behavior_model = context.impact_surface
             context.mark_behavior_compiled()
         except Exception as exc:
             raise PipelineExecutionError(

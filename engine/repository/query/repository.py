@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 from .types import (
     Call,
     DatabaseRelationship,
@@ -15,6 +16,8 @@ from .types import (
     TestRelationship,
     TypeRelationship,
 )
+from engine.repository.model.repository_model import EntryPoint
+
 
 class RepositoryQuery(ABC):
     """
@@ -93,4 +96,9 @@ class RepositoryQuery(ABC):
     @abstractmethod
     def get_tests(self, symbol_id: SymbolId) -> tuple[TestRelationship, ...]:
         """Fetch test relationships targeting the given code symbol ID."""
+        pass
+
+    @abstractmethod
+    def get_entry_points(self) -> tuple[EntryPoint, ...]:
+        """Fetch all recognized entry points in the repository."""
         pass

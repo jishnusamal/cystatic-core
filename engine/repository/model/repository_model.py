@@ -77,6 +77,9 @@ class EntryPoint:
                 ),
             )
 
+    def __hash__(self) -> int:
+        return hash((self.kind, self.route, self.handler_id))
+
 
 @dataclass(frozen=True)
 class AsyncEntryPoint:

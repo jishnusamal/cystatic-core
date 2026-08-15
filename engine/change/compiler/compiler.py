@@ -103,6 +103,10 @@ class RepositoryModelQuery(RepositoryQuery):
     def get_tests(self, symbol_id):
         return ()
 
+    def get_entry_points(self):
+        return tuple(getattr(self.model, "entry_points", ()))
+
+
 
 class ChangeCompiler:
     """
