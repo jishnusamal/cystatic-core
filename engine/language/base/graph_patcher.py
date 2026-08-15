@@ -184,10 +184,8 @@ class GraphPatcher:
 
         if deleted_symbol_ids:
             for del_id in deleted_symbol_ids:
-                if del_id in graph.symbol_to_callers:
-                    affected_files.update(graph.symbol_to_callers[del_id])
-                if del_id in graph.symbol_to_importers:
-                    affected_files.update(graph.symbol_to_importers[del_id])
+                affected_files.update(graph.callers_of(del_id))
+                affected_files.update(graph.importers_of(del_id))
 
             # Fallback scan if reverse index was partially populated
             for edge in graph.call_graph.edges:
@@ -211,8 +209,7 @@ class GraphPatcher:
 
         if added_symbol_names:
             for sym_name in added_symbol_names:
-                if sym_name in graph.unresolved_symbol_to_waiting_files:
-                    affected_files.update(graph.unresolved_symbol_to_waiting_files[sym_name])
+                affected_files.update(graph.waiting_files_for(sym_name))
 
             # Fast fallback check across files
             for file_path, contrib in graph.files.items():
@@ -244,16 +241,7 @@ class GraphPatcher:
                 graph.imports.pop(imp.id, None)
 
             # Clear per-file edge and construct buckets for affected file
-            graph.file_to_call_edges.pop(file_path, None)
-            graph.file_to_reference_edges.pop(file_path, None)
-            graph.file_to_type_edges.pop(file_path, None)
-            graph.file_to_entry_points.pop(file_path, None)
-            graph.file_to_async_entry_points.pop(file_path, None)
-            graph.file_to_persistence.pop(file_path, None)
-            graph.file_to_methods.pop(file_path, None)
-            graph.file_to_events.pop(file_path, None)
-            graph.file_to_tests.pop(file_path, None)
-            graph.file_to_configs.pop(file_path, None)
+            graph.clear_file_indexes(file_path)
 
         log_phase("Remove contributions", time.perf_counter() - t_phase_start)
 
@@ -321,7 +309,7 @@ class GraphPatcher:
                 self.compiler._resolve_import_references_fast(imp_sym, name_to_symbols, new_file_ref_edges)
 
             reference_edges.extend(new_file_ref_edges)
-            graph.file_to_reference_edges[file_path] = new_file_ref_edges
+            graph.set_file_reference_edges(file_path, new_file_ref_edges)
 
         log_phase("Resolve imports", time.perf_counter() - t_phase_start)
 
@@ -451,7 +439,7 @@ class GraphPatcher:
                     call_edges.append(edge)
                     new_file_call_edges.append(edge)
 
-            graph.file_to_call_edges[file_path] = new_file_call_edges
+            graph.set_file_call_edges(file_path, new_file_call_edges)
 
             # Re-resolve structural constructs for affected files
             new_type_edges: list[TypeRelationshipEdge] = []
@@ -460,7 +448,7 @@ class GraphPatcher:
                 if t_edge:
                     type_edges.append(t_edge)
                     new_type_edges.append(t_edge)
-            graph.file_to_type_edges[file_path] = new_type_edges
+            graph.set_file_type_edges(file_path, new_type_edges)
 
             new_eps = []
             for ep in contrib.entrypoints:
@@ -468,7 +456,7 @@ class GraphPatcher:
                 if entry_point:
                     entry_points.append(entry_point)
                     new_eps.append(entry_point)
-            graph.file_to_entry_points[file_path] = new_eps
+            graph.set_file_entry_points(file_path, new_eps)
 
             new_pms = []
             for pm in contrib.persistence_models:
@@ -476,7 +464,7 @@ class GraphPatcher:
                 if model:
                     persistence_models.append(model)
                     new_pms.append(model)
-            graph.file_to_persistence[file_path] = new_pms
+            graph.set_file_persistence(file_path, new_pms)
 
             new_rms = []
             for rm in contrib.repository_methods:
@@ -484,7 +472,7 @@ class GraphPatcher:
                 if method:
                     repository_methods.append(method)
                     new_rms.append(method)
-            graph.file_to_methods[file_path] = new_rms
+            graph.set_file_methods(file_path, new_rms)
 
             new_evs = []
             for ev in contrib.events:
@@ -492,7 +480,7 @@ class GraphPatcher:
                 if event:
                     event_constructs.append(event)
                     new_evs.append(event)
-            graph.file_to_events[file_path] = new_evs
+            graph.set_file_events(file_path, new_evs)
 
             new_tds = []
             for td in contrib.tests:
@@ -500,7 +488,7 @@ class GraphPatcher:
                 if test:
                     test_definitions.append(test)
                     new_tds.append(test)
-            graph.file_to_tests[file_path] = new_tds
+            graph.set_file_tests(file_path, new_tds)
 
             new_crs = []
             for cr in contrib.configurations:
@@ -508,7 +496,7 @@ class GraphPatcher:
                 if config:
                     configuration_references.append(config)
                     new_crs.append(config)
-            graph.file_to_configs[file_path] = new_crs
+            graph.set_file_configs(file_path, new_crs)
 
         # Update graphs in graph instance
         graph.call_graph = CallGraph(edges=tuple(call_edges))

@@ -383,9 +383,9 @@ def confirm_checkout():
         
         context = await pipeline.run(request)
         
-        # Verify base and head models compiled
-        assert context.base_repository_model is not None
-        assert context.head_repository_model is not None
+        # Verify base and head models compiled and were released to optimize memory
+        assert context.base_repository_model is None
+        assert context.head_repository_model is None
         
         # Verify base graph cached
         assert await store.exists("owner/repo", "base")

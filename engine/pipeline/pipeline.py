@@ -785,6 +785,11 @@ class Pipeline:
                 comparison=comparison
             )
             context.mark_change_compiled()
+            
+            # Release base repository model from delta and context to optimize memory lifetime
+            if context.repository_delta is not None:
+                context.repository_delta.release_base_model()
+            context.base_repository_model = None
         except Exception as exc:
             raise PipelineExecutionError(
                 f"Change compilation failed: {exc}",
@@ -958,6 +963,15 @@ class Pipeline:
             
             context.presentation_compile_time = time.time() - start
             context.mark_presentation_compiled()
+
+            # Release head repository model reference to free memory
+            if context.repository_delta is not None:
+                context.repository_delta.release_head_model()
+            if context.ocm is not None:
+                object.__setattr__(context.ocm, "repository", None)
+            if context.edm is not None:
+                object.__setattr__(context.edm, "repository", None)
+            context.head_repository_model = None
         except Exception as exc:
             raise PipelineExecutionError(
                 f"ReviewContext compilation failed: {exc}",

@@ -6,9 +6,10 @@ Evidence provides the chain of provenance from source code to model.
 
 from dataclasses import dataclass, field
 from typing import Any
+import sys
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class FileLocation:
     """
     A precise location in a source file.
@@ -36,9 +37,10 @@ class FileLocation:
             raise ValueError(
                 f"End line ({self.end_line}) must be >= start line ({self.start_line})"
             )
+        object.__setattr__(self, 'file', sys.intern(self.file))
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class SymbolReference:
     """
     A reference to a symbol in the repository.
@@ -54,9 +56,10 @@ class SymbolReference:
         """Validate symbol reference after initialization."""
         if not self.symbol_id:
             raise ValueError("Symbol id cannot be empty")
+        object.__setattr__(self, 'symbol_id', sys.intern(self.symbol_id))
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class CallReference:
     """
     Evidence for a function/method call.
@@ -78,9 +81,12 @@ class CallReference:
             raise ValueError("Caller symbol id cannot be empty")
         if not self.callee_name:
             raise ValueError("Callee name cannot be empty")
+        object.__setattr__(self, 'caller_symbol_id', sys.intern(self.caller_symbol_id))
+        object.__setattr__(self, 'callee_name', sys.intern(self.callee_name))
+        object.__setattr__(self, 'call_type', sys.intern(self.call_type))
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class ImportReference:
     """
     Evidence for an import statement.
@@ -100,11 +106,17 @@ class ImportReference:
         """Validate import reference after initialization."""
         if not self.module:
             raise ValueError("Module cannot be empty")
-        if isinstance(self.names, list):
-            object.__setattr__(self, 'names', tuple(self.names))
+        names_tuple = tuple(self.names) if isinstance(self.names, list) else self.names
+        # Intern strings
+        object.__setattr__(self, 'module', sys.intern(self.module))
+        object.__setattr__(self, 'import_type', sys.intern(self.import_type))
+        if names_tuple:
+            object.__setattr__(self, 'names', tuple(sys.intern(n) for n in names_tuple))
+        else:
+            object.__setattr__(self, 'names', names_tuple)
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class AnnotationReference:
     """
     Evidence for an annotation/decorator.
@@ -122,11 +134,12 @@ class AnnotationReference:
         """Validate annotation reference after initialization."""
         if not self.annotation_name:
             raise ValueError("Annotation name cannot be empty")
+        object.__setattr__(self, 'annotation_name', sys.intern(self.annotation_name))
         if isinstance(self.arguments, dict):
             object.__setattr__(self, 'arguments', dict(self.arguments))
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class Evidence:
     """
     Provenance evidence for a compiled fact.
@@ -160,6 +173,8 @@ class Evidence:
             object.__setattr__(self, 'import_references', tuple(self.import_references))
         if isinstance(self.annotation_references, list):
             object.__setattr__(self, 'annotation_references', tuple(self.annotation_references))
+        if self.source:
+            object.__setattr__(self, 'source', sys.intern(self.source))
 
     @staticmethod
     def from_file(file: str, start_line: int, end_line: int) -> 'Evidence':

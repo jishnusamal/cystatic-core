@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+import sys
+
 from .evidence import Evidence, FileLocation
 
 
@@ -30,7 +32,7 @@ class SymbolVisibility(str, Enum):
     PACKAGE = "package"
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class Symbol:
     """
     Represents a discovered symbol in the repository.
@@ -73,6 +75,13 @@ class Symbol:
             raise ValueError(f"Symbol range cannot have negative values: {self.range}")
         if self.range[0] > self.range[1]:
             raise ValueError(f"Symbol range start cannot exceed end: {self.range}")
+        
+        # Intern high-cardinality string fields
+        object.__setattr__(self, 'id', sys.intern(self.id))
+        object.__setattr__(self, 'name', sys.intern(self.name))
+        object.__setattr__(self, 'file', sys.intern(self.file))
+        object.__setattr__(self, 'language', sys.intern(self.language))
+
         if isinstance(self.properties, dict):
             object.__setattr__(self, 'properties', dict(self.properties))
         if self.evidence is None:
