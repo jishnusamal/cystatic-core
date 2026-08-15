@@ -1,7 +1,6 @@
 """Change types for classification."""
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from engine.repository.model import Evidence
 

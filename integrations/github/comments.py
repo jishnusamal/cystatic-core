@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from integrations.base import OutputProvider
 from engine.operational.model import OperationalChangeModel
+from integrations.base import OutputProvider
 from integrations.github.renderers.github_renderer import GitHubRenderer
 
 

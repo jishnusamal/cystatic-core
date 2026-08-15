@@ -17,22 +17,22 @@ static analysis or repository traversal. It filters the context to retain:
 from __future__ import annotations
 
 import sys
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from core.config import CompilerSettings
 
 from engine.review_context.model import (
-    ReviewContext,
-    ChangeContext,
-    FileChange,
     Change,
-    ExecutionContext,
-    EntryPointExecution,
-    ExecutionStep,
+    ChangeContext,
     DeepestExecution,
     Discovery,
+    EntryPointExecution,
+    ExecutionContext,
+    ExecutionStep,
+    FileChange,
     Reference,
+    ReviewContext,
 )
 
 # ---------------------------------------------------------------------------
@@ -264,9 +264,7 @@ def classify_symbol(name: str, symbol_id: str, file_path: str, kind: str) -> str
         or path_lower.startswith("test\\")
         or "test_" in path_lower
         or "_test.py" in path_lower
-    ):
-        is_test = True
-    elif (
+    ) or (
         "test_" in name_lower
         or "mock" in name_lower
         or "monkeypatch" in name_lower

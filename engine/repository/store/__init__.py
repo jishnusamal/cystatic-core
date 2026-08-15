@@ -1,17 +1,17 @@
-from .store import RepositoryStore
-from .sqlite import SQLiteRepositoryStore
-from .sink import PersistentFactSink
 from .errors import (
-    RepositoryStoreError,
     RepositoryNotFoundError,
+    RepositoryStoreError,
     VersionNotFoundError,
 )
+from .sink import PersistentFactSink
+from .sqlite import SQLiteRepositoryStore
+from .store import RepositoryStore
 
 __all__ = [
-    "RepositoryStore",
-    "SQLiteRepositoryStore",
     "PersistentFactSink",
-    "RepositoryStoreError",
     "RepositoryNotFoundError",
+    "RepositoryStore",
+    "RepositoryStoreError",
+    "SQLiteRepositoryStore",
     "VersionNotFoundError",
 ]

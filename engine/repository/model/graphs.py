@@ -1,8 +1,8 @@
 """Graph models for the repository."""
 
+import sys
 from dataclasses import dataclass, field
 from typing import Any
-import sys
 
 from .evidence import Evidence, FileLocation
 

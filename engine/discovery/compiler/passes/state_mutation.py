@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from engine.operational.model import OperationalChangeModel
-
 from engine.discovery.model import (
     Discovery,
-    DiscoveryKind,
     DiscoveryFact,
+    DiscoveryKind,
     DiscoveryReference,
 )
-from .base import DiscoveryPassContext, DiscoveryCompilerPass
+
+from .base import DiscoveryCompilerPass, DiscoveryPassContext
 
 
 class StateMutationPass(DiscoveryCompilerPass):

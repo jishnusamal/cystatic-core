@@ -2,18 +2,18 @@
 
 from .compiler import DiscoveryCompiler
 from .model import (
-    DiscoveryIR,
     Discovery,
+    DiscoveryEvidence,
+    DiscoveryIR,
     DiscoveryKind,
     DiscoverySupport,
-    DiscoveryEvidence,
 )
 
 __all__ = [
-    "DiscoveryCompiler",
-    "DiscoveryIR",
     "Discovery",
+    "DiscoveryCompiler",
+    "DiscoveryEvidence",
+    "DiscoveryIR",
     "DiscoveryKind",
     "DiscoverySupport",
-    "DiscoveryEvidence",
 ]

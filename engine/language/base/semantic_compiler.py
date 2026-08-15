@@ -15,15 +15,12 @@ This stage is designed so that future lazy expansion (selective compilation
 of a symbol neighborhood) can be supported without reshaping the API.
 """
 
-from collections import deque
-import sys
 import time
+from collections import deque
 from typing import Any
 
-from core.logging import timer
-from core.logging import pipeline_logger
+from core.logging import pipeline_logger, timer
 from engine.repository.model import (
-    AsyncEntryPoint,
     CallEdge,
     CallGraph,
     ConfigurationReference,
@@ -47,9 +44,9 @@ from engine.repository.model import (
     TypeRelationshipGraph,
 )
 from engine.repository.model.repository_index import (
+    ImportEntry,
     RepositoryIndex,
     SymbolEntry,
-    ImportEntry,
 )
 
 # Maps from index entry kind strings to model SymbolKind enums
@@ -169,7 +166,7 @@ class SemanticCompiler:
         log("=" * 80 + "\n")
 
         # Stage 1: Build symbol table
-        log(f"[semantic] START Resolve Symbols")
+        log("[semantic] START Resolve Symbols")
         start = time.perf_counter()
         symbols: list[Symbol] = []
         symbol_index: dict[str, Symbol] = {}
@@ -194,7 +191,7 @@ class SemanticCompiler:
         )
 
         # Stage 2: Resolve imports → reference graph
-        log(f"[semantic] START Resolve Imports")
+        log("[semantic] START Resolve Imports")
         start = time.perf_counter()
         reference_edges: list[ReferenceEdge] = []
         self._watchdog_last_check = start
@@ -241,7 +238,7 @@ class SemanticCompiler:
         )
 
         # Stage 3: Build call graph from call entries
-        print(f"[semantic] START Call Graph")
+        print("[semantic] START Call Graph")
         start = time.perf_counter()
         call_edges: list[CallEdge] = []
         self._watchdog_last_check = start
@@ -392,12 +389,12 @@ class SemanticCompiler:
         )
 
         # Log detailed analysis
-        log(f"\n  [analysis] CALL GRAPH BREAKDOWN:")
+        log("\n  [analysis] CALL GRAPH BREAKDOWN:")
         log(f"    Total calls resolved: {len(call_edges)}")
         log(f"    Total time: {elapsed:.2f}s")
 
         # Stage 4: Build type relationships
-        log(f"[semantic] START Resolve Type Relationships")
+        log("[semantic] START Resolve Type Relationships")
         start = time.perf_counter()
         type_edges: list[TypeRelationshipEdge] = []
         for file_index in index.files:
@@ -412,7 +409,7 @@ class SemanticCompiler:
         )
 
         # Stage 5: Build entry points
-        log(f"[semantic] START Resolve Entry Points")
+        log("[semantic] START Resolve Entry Points")
         start = time.perf_counter()
         entry_points: list[EntryPoint] = []
         for file_index in index.files:
@@ -427,7 +424,7 @@ class SemanticCompiler:
         )
 
         # Stage 6: Build persistence models
-        log(f"[semantic] START Resolve Persistence Models")
+        log("[semantic] START Resolve Persistence Models")
         start = time.perf_counter()
         persistence_models: list[PersistenceModel] = []
         for file_index in index.files:
@@ -442,7 +439,7 @@ class SemanticCompiler:
         )
 
         # Stage 7: Build repository methods
-        log(f"[semantic] START Resolve Repository Methods")
+        log("[semantic] START Resolve Repository Methods")
         start = time.perf_counter()
         repository_methods: list[RepositoryMethod] = []
         for file_index in index.files:
@@ -457,7 +454,7 @@ class SemanticCompiler:
         )
 
         # Stage 8: Build event constructs
-        log(f"[semantic] START Resolve Events")
+        log("[semantic] START Resolve Events")
         start = time.perf_counter()
         event_constructs: list[EventConstruct] = []
         for file_index in index.files:
@@ -472,7 +469,7 @@ class SemanticCompiler:
         )
 
         # Stage 9: Build test definitions
-        log(f"[semantic] START Resolve Tests")
+        log("[semantic] START Resolve Tests")
         start = time.perf_counter()
         test_definitions: list[TestDefinition] = []
         for file_index in index.files:
@@ -487,7 +484,7 @@ class SemanticCompiler:
         )
 
         # Stage 10: Build configuration references
-        log(f"[semantic] START Resolve Configurations")
+        log("[semantic] START Resolve Configurations")
         start = time.perf_counter()
         config_references: list[ConfigurationReference] = []
         for file_index in index.files:
@@ -502,7 +499,7 @@ class SemanticCompiler:
         )
 
         # Build graphs and print statistics
-        log(f"\n[semantic] START Build Graphs")
+        log("\n[semantic] START Build Graphs")
         start = time.perf_counter()
 
         call_graph = CallGraph(edges=tuple(call_edges))
@@ -521,7 +518,7 @@ class SemanticCompiler:
         call_nodes = len(
             set(e.caller_id for e in call_edges) | set(e.callee_id for e in call_edges)
         )
-        log(f"\nCall Graph:")
+        log("\nCall Graph:")
         log(f"  Nodes: {call_nodes}")
         log(f"  Edges: {len(call_edges)}")
         if call_nodes > 0:
@@ -535,7 +532,7 @@ class SemanticCompiler:
             set(e.source_id for e in reference_edges)
             | set(e.target_id for e in reference_edges)
         )
-        log(f"\nReference Graph:")
+        log("\nReference Graph:")
         log(f"  Nodes: {ref_nodes}")
         log(f"  Edges: {len(reference_edges)}")
         if ref_nodes > 0:
@@ -548,7 +545,7 @@ class SemanticCompiler:
         type_nodes = len(
             set(e.source_id for e in type_edges) | set(e.target_id for e in type_edges)
         )
-        log(f"\nType Relationship Graph:")
+        log("\nType Relationship Graph:")
         log(f"  Nodes: {type_nodes}")
         log(f"  Edges: {len(type_edges)}")
         if type_nodes > 0:

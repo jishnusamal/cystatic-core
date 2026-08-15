@@ -17,14 +17,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import FrozenSet, cast
 
 from engine.operational.compiler.passes.base import (
     OperationalCompilerPass,
     OperationalPassContext,
 )
-from engine.repository.model import Symbol, SymbolKind
-from engine.operational.model import OperationalChangeModel
+from engine.repository.model import Symbol
 
 
 @dataclass(frozen=True)

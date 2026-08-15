@@ -38,13 +38,13 @@ from collections import defaultdict
 
 from engine.operational.discovery.model import (
     Discovery,
+    DiscoveryEvidence,
     DiscoveryKind,
     DiscoverySupport,
-    DiscoveryEvidence,
 )
 from engine.operational.discovery.passes.base import (
-    DiscoveryPassContext,
     DiscoveryCompilerPass,
+    DiscoveryPassContext,
 )
 
 

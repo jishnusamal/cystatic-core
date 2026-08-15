@@ -1,10 +1,9 @@
 """Symbol model - represents a discovered symbol in the repository."""
 
+import sys
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
-
-import sys
 
 from .evidence import Evidence, FileLocation
 

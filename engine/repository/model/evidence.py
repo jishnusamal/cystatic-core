@@ -4,9 +4,9 @@ Every compiled fact must be traceable back to repository evidence.
 Evidence provides the chain of provenance from source code to model.
 """
 
+import sys
 from dataclasses import dataclass, field
 from typing import Any
-import sys
 
 
 @dataclass(slots=True, frozen=True)

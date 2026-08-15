@@ -1,11 +1,16 @@
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
+
+from engine.repository.model.repository_model import EntryPoint
+
 from .repository import RepositoryQuery
 from .types import (
     Call,
     DatabaseRelationship,
     Endpoint,
+    EventId,
     EventPublication,
     EventSubscription,
     File,
@@ -14,11 +19,9 @@ from .types import (
     Reference,
     Symbol,
     SymbolId,
-    EventId,
     TestRelationship,
     TypeRelationship,
 )
-from engine.repository.model.repository_model import EntryPoint
 
 
 @dataclass
@@ -52,8 +55,7 @@ class QueryInstrumenter:
         stats.calls += 1
         stats.results += result_count
         stats.total_latency_ms += latency_ms
-        if latency_ms > stats.max_latency_ms:
-            stats.max_latency_ms = latency_ms
+        stats.max_latency_ms = max(stats.max_latency_ms, latency_ms)
 
     def get_stats(self, query_name: str) -> QueryStats | None:
         return self._stats.get(query_name)

@@ -19,14 +19,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import FrozenSet, cast
 
 from engine.operational.compiler.passes.base import (
     OperationalCompilerPass,
     OperationalPassContext,
 )
 from engine.repository.model import RepositoryModel, Symbol, SymbolKind
-from engine.operational.model import OperationalChangeModel
 
 
 @dataclass(frozen=True)
@@ -143,7 +141,6 @@ _MODEL_SUFFIXES = {
     "models",
     "entity",
     "entities",
-    "schema",
     "schema",
     "dto",
     "dao",

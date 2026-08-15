@@ -8,17 +8,17 @@ Architecture:
 """
 
 from .adapter import BaseLanguageAdapter
-from .index_compiler import IndexCompiler
-from .semantic_compiler import SemanticCompiler
 from .file_context import FileContext
-from .passes import BaseIndexPass
+from .index_compiler import IndexCompiler
 from .parser import BaseParser
+from .passes import BaseIndexPass
+from .semantic_compiler import SemanticCompiler
 
 __all__ = [
+    "BaseIndexPass",
     "BaseLanguageAdapter",
+    "BaseParser",
+    "FileContext",
     "IndexCompiler",
     "SemanticCompiler",
-    "FileContext",
-    "BaseIndexPass",
-    "BaseParser",
 ]

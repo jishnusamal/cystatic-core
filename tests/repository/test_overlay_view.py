@@ -1,36 +1,34 @@
-import pytest
 from engine.repository.facts import (
-    File,
-    FileId,
-    Symbol,
-    SymbolId,
-    SymbolKind,
-    SymbolVisibility,
     Call,
     CallType,
-    Reference,
-    ReferenceType,
-    Import,
-    ImportType,
-    TypeRelationship,
-    TypeRelationshipType,
+    DatabaseRelationship,
+    DatabaseRelationshipType,
     Endpoint,
     EndpointId,
     EndpointMethod,
-    DatabaseRelationship,
-    DatabaseRelationshipType,
-    ResourceId,
+    EventId,
     EventPublication,
     EventPublicationType,
     EventSubscription,
     EventSubscriptionType,
-    EventId,
+    File,
+    FileId,
+    Import,
+    ImportType,
+    Reference,
+    ReferenceType,
+    RepositoryFacts,
+    ResourceId,
+    Symbol,
+    SymbolId,
+    SymbolKind,
     TestRelationship,
     TestRelationshipType,
-    RepositoryFacts,
+    TypeRelationship,
+    TypeRelationshipType,
 )
-from engine.repository.query import InMemoryRepository
 from engine.repository.overlay import RepositoryOverlay, RepositoryView
+from engine.repository.query import InMemoryRepository
 
 
 def test_overlay_view_query_delegation():

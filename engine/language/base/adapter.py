@@ -4,14 +4,13 @@ import hashlib
 from abc import ABC, abstractmethod
 from typing import Any
 
+from engine.language.base.graph_patcher import GraphPatcher
 from engine.repository.model import (
-    RepositoryModel,
-    RepositoryGraph,
     FileContribution,
+    RepositoryGraph,
+    RepositoryModel,
     SymbolKind,
 )
-from engine.language.base.graph_patcher import GraphPatcher
-from engine.language.base.semantic_compiler import SemanticCompiler
 
 
 class BaseLanguageAdapter(ABC):
@@ -30,7 +29,6 @@ class BaseLanguageAdapter(ABC):
         Returns:
             Language identifier (e.g., "python", "java")
         """
-        pass
 
     @abstractmethod
     def compile(self, repository_input: dict[str, Any]) -> RepositoryModel:
@@ -46,7 +44,6 @@ class BaseLanguageAdapter(ABC):
         Returns:
             RepositoryModel: Language-independent repository representation
         """
-        pass
 
     @abstractmethod
     def get_compiler_passes(self) -> list[str]:
@@ -56,14 +53,12 @@ class BaseLanguageAdapter(ABC):
         Returns:
             List of pass names in execution order
         """
-        pass
 
     _semantic_compiler: Any
 
     @abstractmethod
     def _index_single_file(self, file_path: str, content: str, language: str) -> Any:
         """Parse and run indexing passes on a single source file."""
-        pass
 
     def _build_index(self, files: dict[str, str], language: str) -> Any:
         """Build repository index from files."""
@@ -131,10 +126,10 @@ class BaseLanguageAdapter(ABC):
         Returns:
             RepositoryGraph: The patched, updated RepositoryGraph.
         """
-        import time
         import os
-        from core.logging import pipeline_logger
-        from core.logging import timer
+        import time
+
+        from core.logging import pipeline_logger, timer
 
         start_compile = time.perf_counter()
         pipeline_logger.log_pipeline(
@@ -167,8 +162,7 @@ class BaseLanguageAdapter(ABC):
             if repo_prefix and k.startswith(repo_prefix):
                 norm_k = k[len(repo_prefix) :]
             norm_k = norm_k.replace("\\", "/")
-            if norm_k.startswith("/"):
-                norm_k = norm_k[1:]
+            norm_k = norm_k.removeprefix("/")
             head_files_content[norm_k] = v
 
         base_files = set(base_graph.files.keys())

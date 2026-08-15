@@ -6,8 +6,8 @@ from typing import Any
 
 from engine.behavior.model import BehaviorModel
 from engine.change.model import ChangeModel, RepositoryDelta
-from engine.repository.model import RepositoryModel, Symbol
 from engine.operational.model import OperationalChangeModel
+from engine.repository.model import RepositoryModel, Symbol
 
 
 @dataclass
@@ -217,7 +217,6 @@ class OperationalCompilerPass(ABC):
     @abstractmethod
     def name(self) -> str:
         """Return the name of this pass."""
-        pass
 
     @abstractmethod
     def run(self, context: OperationalPassContext) -> OperationalPassContext:
@@ -230,7 +229,6 @@ class OperationalCompilerPass(ABC):
         Returns:
             Updated pass context
         """
-        pass
 
     def validate_input(self, context: OperationalPassContext) -> bool:
         """

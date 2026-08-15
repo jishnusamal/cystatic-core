@@ -9,22 +9,14 @@ Architecture:
 """
 
 import ast
-import hashlib
 import time
 from typing import Any
 
+from core.logging import timer
 from engine.language.base import BaseLanguageAdapter
 from engine.language.base.file_context import FileContext
 from engine.language.base.index_compiler import IndexCompiler
 from engine.language.base.semantic_compiler import SemanticCompiler
-from engine.language.base.graph_patcher import GraphPatcher
-from engine.repository.model import (
-    RepositoryModel,
-    FileContribution,
-    RepositoryGraph,
-    SymbolKind,
-)
-from engine.repository.model.repository_index import RepositoryIndex, FileIndex
 from engine.language.python.passes import (
     PythonCallIndexPass,
     PythonConfigurationIndexPass,
@@ -37,7 +29,10 @@ from engine.language.python.passes import (
     PythonTypeIndexPass,
 )
 from engine.language.python.visitors import PythonVisitor
-from core.logging import timer
+from engine.repository.model import (
+    RepositoryModel,
+)
+from engine.repository.model.repository_index import FileIndex, RepositoryIndex
 
 
 class PythonLanguageAdapter(BaseLanguageAdapter):
@@ -151,7 +146,7 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
         Returns:
             RepositoryIndex containing structural facts
         """
-        py_files = [f for f in files.keys() if f.endswith(".py")]
+        py_files = [f for f in files if f.endswith(".py")]
         num_python_files = len(py_files)
         files_skipped = len(files) - num_python_files
         files_failed = 0
@@ -217,7 +212,7 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
         log(f"[adapter] Average Parse Time: {avg_parse_time * 1000:.2f}ms/file")
 
         if slow_files:
-            log(f"[adapter] Slow Parses (>100ms):")
+            log("[adapter] Slow Parses (>100ms):")
             for file_path, parse_time in sorted(
                 slow_files, key=lambda x: x[1], reverse=True
             )[:10]:

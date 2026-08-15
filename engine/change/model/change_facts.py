@@ -3,11 +3,11 @@
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
+
 from engine.repository.facts import (
     Call,
-    Reference,
     Import,
-    Symbol,
+    Reference,
     SymbolKind,
     SymbolVisibility,
 )

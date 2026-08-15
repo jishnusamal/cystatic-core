@@ -16,14 +16,12 @@ This is the public operational surface.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, cast
 
 from engine.operational.compiler.passes.base import (
     OperationalCompilerPass,
     OperationalPassContext,
 )
-from engine.repository.model import EntryPoint, EntryPointKind, RepositoryModel, Symbol
-from engine.operational.model import OperationalChangeModel
+from engine.repository.model import EntryPointKind, RepositoryModel
 
 
 @dataclass(frozen=True)

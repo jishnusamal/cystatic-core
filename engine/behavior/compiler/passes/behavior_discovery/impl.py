@@ -2,8 +2,9 @@
 
 from collections import deque
 
-from ..base import BehaviorCompilerPass, BehaviorPassContext
 from engine.behavior.model import Behavior, BehaviorKind
+
+from ..base import BehaviorCompilerPass, BehaviorPassContext
 
 
 class BehaviorCompilationPass(BehaviorCompilerPass):

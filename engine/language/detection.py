@@ -72,7 +72,7 @@ class LanguageAdapterFactory:
 
         # Count file extensions
         extension_counts: dict[str, int] = {}
-        for file_path in files.keys():
+        for file_path in files:
             ext = self._get_extension(file_path)
             if ext:
                 extension_counts[ext] = extension_counts.get(ext, 0) + 1

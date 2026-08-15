@@ -4,14 +4,15 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from .symbol import Symbol
+from core.runtime import assert_new_architecture
+
+from .configuration import ConfigurationReference
+from .events import EventConstruct
 from .evidence import Evidence, FileLocation
 from .graphs import CallGraph, ReferenceGraph, TypeRelationshipGraph
 from .persistence import PersistenceModel, RepositoryMethod
-from .events import EventConstruct
+from .symbol import Symbol
 from .tests import TestDefinition
-from .configuration import ConfigurationReference
-from core.runtime import assert_new_architecture
 
 
 class EntryPointKind(str, Enum):

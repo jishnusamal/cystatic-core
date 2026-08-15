@@ -5,7 +5,6 @@ from typing import Any
 
 from engine.language.base import BaseExtractor
 
-
 # HTTP methods that indicate a REST endpoint decorator
 HTTP_METHODS = frozenset({"get", "post", "put", "delete", "patch"})
 

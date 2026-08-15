@@ -1,19 +1,18 @@
-from typing import Any, List, Dict
-from engine.repository.facts import RepositoryFacts, File, Symbol
+from engine.repository.facts import RepositoryFacts
 from engine.repository.indexing.indexer import RepositoryIndexer
 from engine.repository.model.repository_index import (
-    RepositoryIndex,
-    FileIndex,
-    SymbolEntry,
-    ImportEntry,
-    RawReference,
     CallEntry,
     EntrypointEntry,
-    TypeRelationshipEntry,
-    PersistenceEntry,
-    RepositoryMethodEntry,
     EventEntry,
+    FileIndex,
+    ImportEntry,
+    PersistenceEntry,
+    RawReference,
+    RepositoryIndex,
+    RepositoryMethodEntry,
+    SymbolEntry,
     TestEntry,
+    TypeRelationshipEntry,
 )
 
 
@@ -57,7 +56,7 @@ class FactsToIndexAdapter:
 
     def convert(self, facts: RepositoryFacts, language: str) -> RepositoryIndex:
         """Convert RepositoryFacts to RepositoryIndex."""
-        file_indices: List[FileIndex] = []
+        file_indices: list[FileIndex] = []
 
         # Create symbol lookup mapping
         symbol_map = {s.id: s for s in facts.symbols}
@@ -67,16 +66,16 @@ class FactsToIndexAdapter:
             file_id = file_fact.id
 
             # Lists for this file's entries
-            symbols_entries: List[SymbolEntry] = []
-            imports_entries: List[ImportEntry] = []
-            references_entries: List[RawReference] = []
-            calls_entries: List[CallEntry] = []
-            entrypoints_entries: List[EntrypointEntry] = []
-            type_relationships_entries: List[TypeRelationshipEntry] = []
-            persistence_entries: List[PersistenceEntry] = []
-            repository_methods_entries: List[RepositoryMethodEntry] = []
-            event_entries: List[EventEntry] = []
-            test_entries: List[TestEntry] = []
+            symbols_entries: list[SymbolEntry] = []
+            imports_entries: list[ImportEntry] = []
+            references_entries: list[RawReference] = []
+            calls_entries: list[CallEntry] = []
+            entrypoints_entries: list[EntrypointEntry] = []
+            type_relationships_entries: list[TypeRelationshipEntry] = []
+            persistence_entries: list[PersistenceEntry] = []
+            repository_methods_entries: list[RepositoryMethodEntry] = []
+            event_entries: list[EventEntry] = []
+            test_entries: list[TestEntry] = []
 
             # 1. Symbols
             for sym in facts.symbols:

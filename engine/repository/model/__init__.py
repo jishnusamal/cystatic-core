@@ -1,14 +1,16 @@
 """Model package - language-independent repository representation."""
 
-from .symbol import Symbol, SymbolKind, SymbolVisibility
+from .configuration import ConfigReferenceKind, ConfigurationReference
+from .events import EventConstruct, EventOperationKind
 from .evidence import (
+    AnnotationReference,
+    CallReference,
     Evidence,
     FileLocation,
-    SymbolReference,
-    CallReference,
     ImportReference,
-    AnnotationReference,
+    SymbolReference,
 )
+from .file_contribution import FileContribution
 from .graphs import (
     CallEdge,
     CallGraph,
@@ -17,38 +19,36 @@ from .graphs import (
     TypeRelationshipEdge,
     TypeRelationshipGraph,
 )
-from .repository_model import (
-    RepositoryModel,
-    EntryPoint,
-    EntryPointKind,
-    AsyncEntryPoint,
-)
 from .persistence import (
     PersistenceModel,
     PersistenceModelKind,
     RepositoryMethod,
     RepositoryMethodKind,
 )
-from .events import EventConstruct, EventOperationKind
-from .tests import TestDefinition, TestFramework, TestFixture
-from .configuration import ConfigurationReference, ConfigReferenceKind
-from .file_contribution import FileContribution
 from .repository_graph import RepositoryGraph
 from .repository_index import (
-    RepositoryIndex,
-    FileIndex,
-    SymbolEntry,
-    ImportEntry,
-    RawReference,
     CallEntry,
-    EntrypointEntry,
-    TypeRelationshipEntry,
-    PersistenceEntry,
-    RepositoryMethodEntry,
-    EventEntry,
-    TestEntry,
     ConfigEntry,
+    EntrypointEntry,
+    EventEntry,
+    FileIndex,
+    ImportEntry,
+    PersistenceEntry,
+    RawReference,
+    RepositoryIndex,
+    RepositoryMethodEntry,
+    SymbolEntry,
+    TestEntry,
+    TypeRelationshipEntry,
 )
+from .repository_model import (
+    AsyncEntryPoint,
+    EntryPoint,
+    EntryPointKind,
+    RepositoryModel,
+)
+from .symbol import Symbol, SymbolKind, SymbolVisibility
+from .tests import TestDefinition, TestFixture, TestFramework
 
 __all__ = [
     # Symbol

@@ -27,26 +27,20 @@ Given the same ReviewContext, this compiler always produces the exact same LLMCo
 from __future__ import annotations
 
 import re
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from engine.review_context.model import (
-    ReviewContext,
     ChangeContext,
     ChangeSummary,
-    FileChange,
-    Change,
-    SymbolRef,
-    ExecutionContext,
-    EntryPointExecution,
-    ExecutionStep,
-    SymbolReference,
-    ReachedComponents,
-    DeepestExecution,
     Discovery,
-    Reference,
+    EntryPointExecution,
+    ExecutionContext,
+    ExecutionStep,
+    FileChange,
+    ReviewContext,
 )
 
-from .model import LLMContext, StringTable, ExecutionGraph, ENUM_REVERSE
+from .model import ENUM_REVERSE, ExecutionGraph, LLMContext, StringTable
 
 if TYPE_CHECKING:
     from core.config import CompilerSettings
@@ -59,17 +53,13 @@ _LOCATION_RE = re.compile(r"^(.+?)(?::(\d+)(?:-(\d+))?)?$")
 # Review-scope pruning (imported from review_scope_builder to avoid circularity)
 # ---------------------------------------------------------------------------
 from .review_scope_builder import (
-    build_review_scope,
-    prune_review_context,
-    is_compiler_metadata,
-    classify_symbol,
-    LANGUAGE_PRIMITIVES,
-    STD_LIBS,
     FRAMEWORK_MODULES,
     FRAMEWORK_NAMES,
+    LANGUAGE_PRIMITIVES,
     ORM_MODULES,
     ORM_NAMES,
-    NOISE_CATEGORIES,
+    STD_LIBS,
+    build_review_scope,
 )
 
 

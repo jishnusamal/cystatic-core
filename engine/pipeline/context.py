@@ -6,23 +6,23 @@ No compiler logic - pure orchestration state.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from core.runtime import RunContext
 
 if TYPE_CHECKING:
-    from engine.repository.model import RepositoryModel
-    from engine.change.model import ChangeModel, RepositoryDelta, ChangeFacts
-    from engine.repository.query import RepositoryQuery
     from engine.behavior.model.impact_surface import ImpactSurface
-    from engine.operational.model import (
-        OperationalChangeModel,
-        EngineeringDiscoveryModel,
-    )
-    from engine.operational.discovery.model import DiscoveryIR
-    from engine.review_context.model import ReviewContext
+    from engine.change.model import ChangeFacts, ChangeModel, RepositoryDelta
     from engine.llm_context.model import LLMContext
+    from engine.operational.discovery.model import DiscoveryIR
+    from engine.operational.model import (
+        EngineeringDiscoveryModel,
+        OperationalChangeModel,
+    )
+    from engine.repository.model import RepositoryModel
+    from engine.repository.query import RepositoryQuery
+    from engine.review_context.model import ReviewContext
 
 
 @dataclass

@@ -57,12 +57,12 @@ async def _process_pr_analysis(
     delivery_id: str | None,
 ) -> None:
     """Async implementation of PR analysis pipeline execution."""
+    from core.config import get_settings
+    from engine.pipeline.pipeline import Pipeline
     from integrations.base.registry import get_registry
     from integrations.github.provider import GitHubIntegration
-    from engine.pipeline.pipeline import Pipeline
-    from models.core import RepositoryReference, PullRequestReference
     from models.analysis import AnalysisRequest, AnalysisTrigger
-    from core.config import get_settings
+    from models.core import PullRequestReference, RepositoryReference
 
     settings = get_settings()
 

@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Any
+
 from engine.repository.query import RepositoryQuery
 
 
@@ -19,7 +19,6 @@ class RepositoryStore(RepositoryQuery):
         Returns:
             repository_id: The ID of the created repository.
         """
-        pass
 
     @abstractmethod
     def create_version(self, repository_id: str, commit_sha: str) -> str:
@@ -29,11 +28,9 @@ class RepositoryStore(RepositoryQuery):
         Returns:
             version_id: The ID of the created version.
         """
-        pass
 
     @abstractmethod
     def set_version_context(self, repository_id: str, version_id: str) -> None:
         """
         Scope all queries and writes to this version context.
         """
-        pass

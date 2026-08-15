@@ -1,13 +1,14 @@
 import gc
 import weakref
+
 import pytest
+
 from engine.language.python.adapter import PythonLanguageAdapter
 from engine.repository.indexing import (
-    RepositoryIndexer,
-    InMemoryFactSink,
     FactsToIndexAdapter,
+    InMemoryFactSink,
+    RepositoryIndexer,
 )
-from engine.repository.facts import SymbolKind
 
 
 @pytest.fixture

@@ -1,18 +1,17 @@
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Mapping
 
-from .ids import FileId, SymbolId, EventId, ResourceId, EndpointId
-from .file import File
-from .symbol import Symbol
 from .call import Call
-from .reference import Reference
-from .imports import Import
-from .type_relationship import TypeRelationship
-from .endpoint import Endpoint
 from .database import DatabaseRelationship
+from .endpoint import Endpoint
 from .event import EventPublication, EventSubscription
+from .file import File
+from .ids import EventId, FileId, SymbolId
+from .imports import Import
+from .reference import Reference
+from .symbol import Symbol
 from .test import TestRelationship
+from .type_relationship import TypeRelationship
 
 
 @dataclass(frozen=True)

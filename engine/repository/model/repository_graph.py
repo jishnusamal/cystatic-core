@@ -1,20 +1,21 @@
 """Repository graph - the patchable, long-lived representation of a code repository."""
 
-import pickle
 import contextlib
+import pickle
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from .symbol import Symbol
-from .graphs import CallGraph, ReferenceGraph, TypeRelationshipGraph
-from .repository_model import RepositoryModel, EntryPoint, AsyncEntryPoint
-from .persistence import PersistenceModel, RepositoryMethod
-from .events import EventConstruct
-from .tests import TestDefinition
-from .configuration import ConfigurationReference
-from .file_contribution import FileContribution
 from core.runtime import assert_new_architecture
+
+from .configuration import ConfigurationReference
+from .events import EventConstruct
+from .file_contribution import FileContribution
+from .graphs import CallGraph, ReferenceGraph, TypeRelationshipGraph
+from .persistence import PersistenceModel, RepositoryMethod
+from .repository_model import AsyncEntryPoint, EntryPoint, RepositoryModel
+from .symbol import Symbol
+from .tests import TestDefinition
 
 
 @dataclass
@@ -121,8 +122,7 @@ class RepositoryGraph:
             elapsed = time.perf_counter_ns() - start
             stats.reads += 1
             stats.total_lookup_time_ns += elapsed
-            if elapsed > stats.max_lookup_time_ns:
-                stats.max_lookup_time_ns = elapsed
+            stats.max_lookup_time_ns = max(stats.max_lookup_time_ns, elapsed)
 
     @property
     def symbol_to_callers(self) -> dict[str, set[str]]:
@@ -293,6 +293,7 @@ class RepositoryGraph:
     def to_model(self) -> RepositoryModel:
         """Convert to the immutable RepositoryModel expected by downstream compilers."""
         import time
+
         from core.logging import pipeline_logger
 
         start = time.perf_counter()

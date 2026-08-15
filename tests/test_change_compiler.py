@@ -1,31 +1,23 @@
 """Tests for the Change Compiler."""
 
-import pytest
 from dataclasses import dataclass
 
 from engine.language.model import (
+    CallGraph,
+    ReferenceGraph,
+    RepositoryModel,
     Symbol,
     SymbolKind,
     SymbolVisibility,
-    RepositoryModel,
-    CallGraph,
-    ReferenceGraph,
 )
+
+from engine.change.compiler import ChangeCompiler
 from engine.change.model import (
-    ChangeModel,
-    ModifiedSymbol,
-    ImportChange,
-    EndpointChange,
-    FunctionBodyChange,
+    DecoratorChange,
     SignatureChange,
     VisibilityChange,
-    DecoratorChange,
-    SuperclassChange,
-    InterfaceChange,
-    EndpointAnnotationChange,
 )
 from engine.change.model.repository_comparison import RepositoryComparison
-from engine.change.compiler import ChangeCompiler
 
 
 @dataclass(frozen=True)

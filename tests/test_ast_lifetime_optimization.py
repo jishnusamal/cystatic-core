@@ -1,12 +1,8 @@
-import pytest
 import ast
-from typing import Any, Iterable
 
 from engine.language.base.file_context import FileContext
 from engine.language.base.index_compiler import IndexCompiler
 from engine.language.python.adapter import PythonLanguageAdapter
-from engine.language.python.visitors import PythonVisitor
-from engine.repository.model.repository_index import FileIndex, RepositoryIndex
 
 
 class OneTimeGenerator:

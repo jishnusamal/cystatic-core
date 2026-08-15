@@ -14,9 +14,6 @@ from engine.operational.compiler.passes.base import (
     OperationalPassContext,
 )
 from engine.operational.model import OperationalChangeModel
-from engine.repository.model import RepositoryModel
-from engine.change.model import ChangeModel
-from engine.behavior.model import BehaviorModel
 
 
 class ModelCompositionPass(OperationalCompilerPass):

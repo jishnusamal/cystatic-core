@@ -1,7 +1,6 @@
 import os
-import sys
 import subprocess
-import pytest
+import sys
 
 
 def run_indexing_in_subprocess(num_files: int) -> float:

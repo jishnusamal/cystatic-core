@@ -4,36 +4,25 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
-
-from engine.review_context.model import (
-    ReviewContext,
-    ChangeContext,
-    ChangeSummary,
-    FileChange,
-    Change,
-    SymbolRef,
-    ExecutionContext,
-    EntryPointExecution,
-    ExecutionStep,
-    SymbolReference,
-    ReachedComponents,
-    DeepestExecution,
-    Discovery,
-    Reference,
-)
-from engine.llm_context.compiler import LLMContextCompiler
-from engine.llm_context.model import LLMContext, StringTable, ExecutionGraph
-from engine.llm_context.model import ENUM_REVERSE
-
 
 # ---------------------------------------------------------------------------
 # Re-use helper from existing test module
 # ---------------------------------------------------------------------------
-
 from test_llm_context_compiler import TestHelper
+
+from engine.llm_context.compiler import LLMContextCompiler
+from engine.llm_context.model import (
+    ExecutionGraph,
+    LLMContext,
+    StringTable,
+)
+from engine.review_context.model import (
+    ExecutionStep,
+    ReachedComponents,
+    ReviewContext,
+    SymbolReference,
+)
 
 
 def _make_step(
@@ -597,20 +586,18 @@ class TestLLMContextTokenReduction:
     def _compile_old(self, rc):
         """Runs the old (baseline) LLMContext compilation logic to measure token baseline."""
         from engine.llm_context.compiler import (
-            build_review_scope,
             _collect_discovery_references,
-            _parse_location,
-            _StringBuilder,
-            _enum_id,
-            _resolve_symbol_name_from_uri,
-            _is_noise_string,
             _collect_live_string_indices,
+            _enum_id,
+            _is_noise_string,
+            _parse_location,
+            _resolve_symbol_name_from_uri,
+            _StringBuilder,
+            build_review_scope,
         )
         from engine.llm_context.model import (
-            LLMContext,
-            StringTable,
-            ExecutionGraph,
             ENUM_METHOD,
+            LLMContext,
         )
 
         compiler = LLMContextCompiler()
@@ -903,7 +890,7 @@ class TestLLMContextTokenReduction:
             ),
         )
 
-        from engine.pipeline.pipeline import PipelineContext, Pipeline
+        from engine.pipeline.pipeline import Pipeline, PipelineContext
 
         pipeline = Pipeline()
 
@@ -964,7 +951,7 @@ class TestLLMContextTokenReduction:
             change=TestHelper.create_change_context(files=(file_change,)),
         )
 
-        from engine.pipeline.pipeline import PipelineContext, Pipeline
+        from engine.pipeline.pipeline import Pipeline, PipelineContext
 
         pipeline = Pipeline()
         context = PipelineContext(run_context=None, repository="test/repo")
@@ -1012,6 +999,7 @@ class TestLLMContextTokenReduction:
                 pass
 
         import sys
+
         import core.config
 
         class MockSettings:

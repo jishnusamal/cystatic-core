@@ -9,14 +9,11 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from integrations.base import InstallationProvider, OutputProvider, RepositoryProvider
+from core.errors import InvalidWebhook, MissingWebhookPayload, PipelineExecutionError
+from engine.pipeline.pipeline import Pipeline
 from integrations.base.registry import get_registry
 from integrations.github.client import GitHubClient
-from core.errors import InvalidWebhook, MissingWebhookPayload, PipelineExecutionError
-from models.analysis import AnalysisRequest, AnalysisTrigger
-from engine.pipeline.context import PipelineContext
-from engine.pipeline.pipeline import Pipeline
-from analysis.schemas import RepositoryResponse
+from models.analysis import AnalysisRequest
 
 router = APIRouter(tags=["github"])
 
@@ -29,8 +26,8 @@ def get_registry_instance() -> Any:
     """Get or create the global integration registry."""
     global _registry
     if _registry is None:
-        from integrations.github.provider import GitHubIntegration
         from core.config import get_settings
+        from integrations.github.provider import GitHubIntegration
 
         _registry = get_registry()
 
@@ -195,6 +192,7 @@ async def analyze_repository(
     analysis_request: dict[str, Any],
 ) -> JSONResponse:
     import uuid
+
     from core.profile import MemoryProfiler
 
     metadata_dict = analysis_request.get("metadata") or {}
@@ -213,10 +211,10 @@ async def analyze_repository(
     try:
         # Convert API request to runtime model
         from models import (
-            RepositoryReference,
-            PullRequestReference,
-            DiffSnapshot,
             AnalysisTrigger,
+            DiffSnapshot,
+            PullRequestReference,
+            RepositoryReference,
         )
         from models.core import DiffFile, DiffHunk
 

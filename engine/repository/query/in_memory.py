@@ -1,11 +1,14 @@
 from collections import defaultdict
+
 from engine.repository.facts import RepositoryFacts
 from engine.repository.model.repository_model import EntryPoint, EntryPointKind
+
 from .repository import RepositoryQuery
 from .types import (
     Call,
     DatabaseRelationship,
     Endpoint,
+    EventId,
     EventPublication,
     EventSubscription,
     File,
@@ -14,7 +17,6 @@ from .types import (
     Reference,
     Symbol,
     SymbolId,
-    EventId,
     TestRelationship,
     TypeRelationship,
 )

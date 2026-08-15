@@ -11,26 +11,29 @@ from typing import Any
 
 import pytest
 
+from engine.llm_context.compiler import LLMContextCompiler
+from engine.llm_context.model import (
+    ENUM_REVERSE,
+    ExecutionGraph,
+    LLMContext,
+    StringTable,
+)
 from engine.review_context.model import (
-    ReviewContext,
+    Change,
     ChangeContext,
     ChangeSummary,
-    FileChange,
-    Change,
-    SymbolRef,
-    ExecutionContext,
-    EntryPointExecution,
-    ExecutionStep,
-    SymbolReference,
-    ReachedComponents,
     DeepestExecution,
     Discovery,
+    EntryPointExecution,
+    ExecutionContext,
+    ExecutionStep,
+    FileChange,
+    ReachedComponents,
     Reference,
+    ReviewContext,
+    SymbolRef,
+    SymbolReference,
 )
-from engine.llm_context.compiler import LLMContextCompiler
-from engine.llm_context.model import LLMContext, StringTable, ExecutionGraph
-from engine.llm_context.model import ENUM_REVERSE
-
 
 # ---------------------------------------------------------------------------
 # Enum lookup helpers for tests
@@ -1720,8 +1723,8 @@ class TestReviewScopeMetrics:
 
     def test_serialized_size_decreases_after_pruning(self):
         """JSON-serialized LLMContext is smaller after pruning than without it."""
-        import json
         import dataclasses
+        import json
 
         noisy_rc = self._build_noisy_review_context()
 

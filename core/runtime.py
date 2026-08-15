@@ -66,7 +66,7 @@ class RunContext:
         base_dir: Path | str = "logs",
         started_at: datetime | None = None,
         run_id: str | None = None,
-    ) -> "RunContext":
+    ) -> RunContext:
         """Create a new RunContext with an isolated log directory and LogManager."""
         if started_at is None:
             started_at = datetime.now()
@@ -83,8 +83,8 @@ class RunContext:
 
 
 __all__ = [
-    "generate_run_id",
-    "RunContext",
     "PREVENT_LEGACY_ARCHITECTURE",
+    "RunContext",
     "assert_new_architecture",
+    "generate_run_id",
 ]

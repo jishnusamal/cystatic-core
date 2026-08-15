@@ -6,7 +6,6 @@ from engine.repository.model.repository_model import EntryPoint
 from engine.repository.query.types import (
     DatabaseRelationship,
     EventPublication,
-    SymbolId,
 )
 
 

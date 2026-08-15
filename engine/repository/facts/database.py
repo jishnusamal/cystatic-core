@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
-from .ids import SymbolId, ResourceId
+
+from .ids import ResourceId, SymbolId
 
 
 class DatabaseRelationshipType(str, Enum):

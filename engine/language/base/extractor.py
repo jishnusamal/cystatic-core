@@ -24,4 +24,3 @@ class BaseExtractor(ABC):
         Returns:
             List of extracted data dictionaries
         """
-        pass

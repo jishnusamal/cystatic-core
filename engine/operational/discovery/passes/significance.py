@@ -36,12 +36,11 @@ from __future__ import annotations
 
 from engine.operational.discovery.model import (
     Discovery,
-    DiscoveryKind,
     DiscoverySupport,
 )
 from engine.operational.discovery.passes.base import (
-    DiscoveryPassContext,
     DiscoveryCompilerPass,
+    DiscoveryPassContext,
 )
 
 

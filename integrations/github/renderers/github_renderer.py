@@ -9,13 +9,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, FileSystemLoader, Template
+from jinja2 import Environment, FileSystemLoader
 
-from engine.operational.model import (
-    OperationalChangeModel,
-    EngineeringDiscoveryArtifact,
-)
 from core.errors import RendererFailed
+from engine.operational.model import (
+    EngineeringDiscoveryArtifact,
+    OperationalChangeModel,
+)
 
 
 class GitHubRenderer:

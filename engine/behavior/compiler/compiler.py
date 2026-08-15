@@ -2,20 +2,21 @@
 
 from typing import Any
 
-from .passes import (
-    BehaviorPassContext,
-    BehaviorCompilationPass,
-    BehaviorGraphPass,
-    ExecutionChainPass,
-    EntryPointPass,
-    TerminalPointPass,
-    SharedExecutionPass,
-    ReachableUnitsPass,
-)
 from engine.behavior.model import BehaviorModel
 from engine.change.model import RepositoryDelta
 from engine.repository.model import RepositoryModel
+
 from .impact_engine import ImpactEngine
+from .passes import (
+    BehaviorCompilationPass,
+    BehaviorGraphPass,
+    BehaviorPassContext,
+    EntryPointPass,
+    ExecutionChainPass,
+    ReachableUnitsPass,
+    SharedExecutionPass,
+    TerminalPointPass,
+)
 
 
 class BehaviorCompiler:
@@ -131,8 +132,7 @@ class BehaviorCompiler:
         max_depth = 0
         for chain in context.execution_chains:
             chain_depth = chain.get_max_depth()
-            if chain_depth > max_depth:
-                max_depth = chain_depth
+            max_depth = max(max_depth, chain_depth)
 
         return BehaviorModel(
             behaviors=tuple(context.behaviors),

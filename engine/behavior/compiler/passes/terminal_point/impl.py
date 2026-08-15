@@ -1,7 +1,8 @@
 """Terminal Point Pass - identifies where execution ends."""
 
+from engine.behavior.model import ExecutionGraph, TerminalPoint
+
 from ..base import BehaviorCompilerPass, BehaviorPassContext
-from engine.behavior.model import TerminalPoint, ExecutionGraph
 
 
 class TerminalPointPass(BehaviorCompilerPass):

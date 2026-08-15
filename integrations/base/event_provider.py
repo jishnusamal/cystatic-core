@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-from models.analysis import AnalysisRequest, AnalysisTrigger
+from models.analysis import AnalysisRequest
 
 
 class EventProvider(ABC):
@@ -29,7 +29,6 @@ class EventProvider(ABC):
         Returns:
             True if signature is valid
         """
-        pass
 
     @abstractmethod
     async def parse(self, payload: dict[str, Any]) -> AnalysisRequest:
@@ -41,4 +40,3 @@ class EventProvider(ABC):
         Returns:
             AnalysisRequest object
         """
-        pass

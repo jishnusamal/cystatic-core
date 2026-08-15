@@ -1,16 +1,17 @@
 import os
+import threading
 import time
 import tracemalloc
-import psutil
-import threading
-from typing import Optional, Dict, Any
 from contextvars import ContextVar
+
+import psutil
+
 from core.config import get_settings
 from core.logging import pipeline_logger
 
 
 class MemoryProfiler:
-    def __init__(self, analysis_id: Optional[str] = None):
+    def __init__(self, analysis_id: str | None = None):
         self.enabled = get_settings().MEMORY_PROFILING
         self.analysis_id = analysis_id or "unknown"
         self.base_rss = 0.0
@@ -18,13 +19,13 @@ class MemoryProfiler:
         self.peak_rss = 0.0
         self.process = psutil.Process(os.getpid())
         self.tracemalloc_started = False
-        self.checkpoints: Dict[str, Dict[str, float]] = {}
+        self.checkpoints: dict[str, dict[str, float]] = {}
 
         self.tracking_sub_peak = False
         self.sub_peak_rss = 0.0
 
         self._stop_event = threading.Event()
-        self._monitor_thread: Optional[threading.Thread] = None
+        self._monitor_thread: threading.Thread | None = None
 
         if self.enabled:
             # Initialize RSS values
@@ -56,8 +57,7 @@ class MemoryProfiler:
         while not self._stop_event.is_set():
             try:
                 rss_mb = self.process.memory_info().rss / (1024 * 1024)
-                if rss_mb > self.peak_rss:
-                    self.peak_rss = rss_mb
+                self.peak_rss = max(self.peak_rss, rss_mb)
                 if self.tracking_sub_peak and rss_mb > self.sub_peak_rss:
                     self.sub_peak_rss = rss_mb
             except Exception:
@@ -78,8 +78,7 @@ class MemoryProfiler:
 
         rss_mb = self.process.memory_info().rss / (1024 * 1024)
         delta_mb = rss_mb - self.prev_rss
-        if rss_mb > self.peak_rss:
-            self.peak_rss = rss_mb
+        self.peak_rss = max(self.peak_rss, rss_mb)
 
         self.prev_rss = rss_mb
         self.checkpoints[stage] = {"current_rss": rss_mb, "peak_rss": self.peak_rss}
@@ -103,7 +102,7 @@ class MemoryProfiler:
                     f"[TRACEMALLOC][analysis={self.analysis_id}] current={current_mb:.1f} MB peak={peak_mb:.1f} MB",
                     to_terminal=True,
                 )
-            except Exception as e:
+            except Exception:
                 pass
 
     def log_tracemalloc_difference(self, stage: str, limit: int = 15):
@@ -164,10 +163,10 @@ class MemoryProfiler:
         _current_profiler.set(None)
 
 
-_current_profiler: ContextVar[Optional[MemoryProfiler]] = ContextVar(
+_current_profiler: ContextVar[MemoryProfiler | None] = ContextVar(
     "current_profiler", default=None
 )
 
 
-def get_current_profiler() -> Optional[MemoryProfiler]:
+def get_current_profiler() -> MemoryProfiler | None:
     return _current_profiler.get()

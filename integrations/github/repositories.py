@@ -4,19 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from github import Auth, Github, GithubException
-
+from core.errors import RepositoryAccessDenied, RepositoryNotFound
+from github import GithubException
 from integrations.base import RepositoryProvider
 from integrations.github.auth import GitHubAppAuth
 from integrations.github.client import GitHubClient
 from models.core import (
-    RepositoryReference,
-    RepositorySnapshot,
-    DiffSnapshot,
     DiffFile,
     DiffHunk,
+    DiffSnapshot,
+    RepositoryReference,
+    RepositorySnapshot,
 )
-from core.errors import RepositoryNotFound, RepositoryAccessDenied
 
 
 class GitHubRepositoryProvider(RepositoryProvider):
@@ -86,8 +85,8 @@ class GitHubRepositoryProvider(RepositoryProvider):
         Returns:
             Repository snapshot at the specified commit
         """
-        import zipfile
         import io
+        import zipfile
 
         print(
             f"[repositories] fetch_repository_at_sha: {repo_ref.full_name}, sha={sha}"
@@ -151,7 +150,7 @@ class GitHubRepositoryProvider(RepositoryProvider):
             binary_count = 0
             for name in all_names:
                 relative_name = (
-                    name[len(root_prefix) :] if name.startswith(root_prefix) else name
+                    name.removeprefix(root_prefix)
                 )
 
                 if not relative_name:
@@ -376,8 +375,8 @@ class GitHubRepositoryProvider(RepositoryProvider):
         Returns:
             File content as string
         """
-        from urllib.parse import quote
         import base64
+        from urllib.parse import quote
 
         client = self._get_client()
         try:

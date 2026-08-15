@@ -1,26 +1,30 @@
+
 import pytest
-import os
+
 from core.runtime import PREVENT_LEGACY_ARCHITECTURE
-from engine.repository.store import SQLiteRepositoryStore, PersistentFactSink
+from engine.pipeline.pipeline import Pipeline
 from engine.repository.facts import (
+    Call,
+    CallType,
+    Endpoint,
+    EndpointId,
+    EndpointMethod,
     File,
     FileId,
     Symbol,
     SymbolId,
     SymbolKind,
-    SymbolVisibility,
-    Call,
-    CallType,
-    Reference,
     TestRelationship,
     TestRelationshipType,
-    Endpoint,
-    EndpointMethod,
-    EndpointId,
 )
-from engine.repository.model import EntryPoint, EntryPointKind
-from engine.pipeline.pipeline import Pipeline
-from models import RepositoryReference, PullRequestReference, DiffSnapshot, AnalysisRequest, AnalysisTrigger
+from engine.repository.store import PersistentFactSink, SQLiteRepositoryStore
+from models import (
+    AnalysisRequest,
+    AnalysisTrigger,
+    DiffSnapshot,
+    PullRequestReference,
+    RepositoryReference,
+)
 from models.core import DiffFile, DiffHunk
 
 

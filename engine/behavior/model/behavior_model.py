@@ -8,11 +8,11 @@ from dataclasses import dataclass, field
 
 from .behavior import Behavior
 from .execution import (
-    ExecutionUnit,
-    ExecutionChain,
     EntryPoint,
-    TerminalPoint,
+    ExecutionChain,
+    ExecutionUnit,
     SharedExecution,
+    TerminalPoint,
 )
 from .execution_graph import ExecutionGraph
 

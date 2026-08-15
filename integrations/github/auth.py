@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import time
-from typing import Any
 
 import jwt
-from github import Auth, Github, GithubException
+
+from github import Auth, Github
 
 
 class GitHubAppAuth:

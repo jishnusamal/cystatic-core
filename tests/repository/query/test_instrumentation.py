@@ -1,15 +1,15 @@
 from engine.repository.facts import (
-    FileId,
-    SymbolId,
     File,
-    Symbol,
-    SymbolKind,
+    FileId,
     RepositoryFacts,
+    Symbol,
+    SymbolId,
+    SymbolKind,
 )
 from engine.repository.query import (
     InMemoryRepository,
-    QueryInstrumenter,
     InstrumentedRepository,
+    QueryInstrumenter,
 )
 
 

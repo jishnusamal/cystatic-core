@@ -18,20 +18,17 @@ These are observable metrics, not scores or judgments.
 
 from __future__ import annotations
 
-from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import cast
 
+from engine.operational.compiler.passes.api.impl import APIModel
 from engine.operational.compiler.passes.base import (
     OperationalCompilerPass,
     OperationalPassContext,
 )
-from engine.repository.model import Symbol
-from engine.operational.model import OperationalChangeModel
-from engine.operational.compiler.passes.dependency.impl import DependencyModel
 from engine.operational.compiler.passes.data.impl import DataModel
+from engine.operational.compiler.passes.dependency.impl import DependencyModel
 from engine.operational.compiler.passes.events.impl import EventModel
-from engine.operational.compiler.passes.api.impl import APIModel
 from engine.operational.compiler.passes.validation.impl import ValidationModel
 
 

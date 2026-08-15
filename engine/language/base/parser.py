@@ -29,7 +29,6 @@ class BaseParser(ABC):
         Raises:
             SyntaxError: If the source file contains syntax errors
         """
-        pass
 
     @abstractmethod
     def supports_file(self, file_path: str) -> bool:
@@ -42,4 +41,3 @@ class BaseParser(ABC):
         Returns:
             True if the file extension/language is supported
         """
-        pass

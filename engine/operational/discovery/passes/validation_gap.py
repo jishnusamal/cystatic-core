@@ -13,13 +13,13 @@ from __future__ import annotations
 
 from engine.operational.discovery.model import (
     Discovery,
+    DiscoveryEvidence,
     DiscoveryKind,
     DiscoverySupport,
-    DiscoveryEvidence,
 )
 from engine.operational.discovery.passes.base import (
-    DiscoveryPassContext,
     DiscoveryCompilerPass,
+    DiscoveryPassContext,
 )
 
 
@@ -68,7 +68,8 @@ class ValidationGapPass(DiscoveryCompilerPass):
         # --- Discovery 1: Execution paths without end-to-end validation ---
         # For each behavior with an execution chain, check if there's e2e coverage
         for chain in execution_chains:
-            from typing import Any, Sequence
+            from collections.abc import Sequence
+            from typing import Any
 
             units: Sequence[Any] = getattr(chain, "units", [])
             if len(units) < 2:

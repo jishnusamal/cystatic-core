@@ -1,35 +1,26 @@
 """GraphPatcher - incrementally patches RepositoryGraph with file contributions."""
 
-from collections import deque
-import sys
-from typing import Any
+import dataclasses
 import os
 import time
-import dataclasses
+from typing import Any
 
+from core.runtime import assert_new_architecture
+from engine.language.base.semantic_compiler import SemanticCompiler, _build_symbol_id
 from engine.repository.model import (
-    Symbol,
-    SymbolKind,
     CallEdge,
     CallGraph,
-    ReferenceEdge,
-    ReferenceGraph,
-    TypeRelationshipEdge,
-    TypeRelationshipGraph,
-    EntryPoint,
-    AsyncEntryPoint,
-    PersistenceModel,
-    RepositoryMethod,
-    EventConstruct,
-    TestDefinition,
-    ConfigurationReference,
     Evidence,
     FileLocation,
+    ReferenceEdge,
+    ReferenceGraph,
+    Symbol,
+    SymbolKind,
+    TypeRelationshipEdge,
+    TypeRelationshipGraph,
 )
 from engine.repository.model.file_contribution import FileContribution
 from engine.repository.model.repository_graph import RepositoryGraph
-from engine.language.base.semantic_compiler import SemanticCompiler, _build_symbol_id
-from core.runtime import assert_new_architecture
 
 
 class GraphPatcher:
@@ -50,8 +41,7 @@ class GraphPatcher:
         if not p:
             return ""
         norm = p.replace("\\", "/")
-        if norm.startswith("/"):
-            norm = norm[1:]
+        norm = norm.removeprefix("/")
         return norm.lower()
 
     def _is_affected(self, path: str, affected_files: set[str]) -> bool:
@@ -97,7 +87,7 @@ class GraphPatcher:
 
         # Detect repo prefix
         repo_prefix = ""
-        for cf in changed_files.keys():
+        for cf in changed_files:
             if os.path.isabs(cf):
                 for gf in graph.files.keys():
                     cf_norm = cf.replace("\\", "/")
@@ -121,8 +111,7 @@ class GraphPatcher:
             if repo_prefix and k.startswith(repo_prefix):
                 norm_k = k[len(repo_prefix) :]
             norm_k = norm_k.replace("\\", "/")
-            if norm_k.startswith("/"):
-                norm_k = norm_k[1:]
+            norm_k = norm_k.removeprefix("/")
 
             if v is not None:
                 normalized_contrib = dataclasses.replace(v, file_path=norm_k)

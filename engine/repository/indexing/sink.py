@@ -1,19 +1,20 @@
 from abc import ABC, abstractmethod
+
 from engine.repository.facts import (
-    FileId,
-    SymbolId,
-    File,
-    Symbol,
     Call,
-    Reference,
-    Import,
-    TypeRelationship,
-    Endpoint,
     DatabaseRelationship,
+    Endpoint,
     EventPublication,
     EventSubscription,
-    TestRelationship,
+    File,
+    FileId,
+    Import,
+    Reference,
     RepositoryFacts,
+    Symbol,
+    SymbolId,
+    TestRelationship,
+    TypeRelationship,
 )
 
 
@@ -28,65 +29,52 @@ class RepositoryFactSink(ABC):
     @abstractmethod
     def add_file(self, file: File) -> FileId:
         """Add a source file fact to the sink."""
-        pass
 
     def begin(self) -> None:
         """Begin a transaction/batch of facts."""
-        pass
 
     def flush(self) -> None:
         """Flush/commit buffered facts."""
-        pass
 
     @abstractmethod
     def add_symbol(self, symbol: Symbol) -> SymbolId:
         """Add a code symbol fact to the sink."""
-        pass
 
     @abstractmethod
     def add_call(self, call: Call) -> None:
         """Add a call dependency fact to the sink."""
-        pass
 
     @abstractmethod
     def add_reference(self, reference: Reference) -> None:
         """Add a reference fact to the sink."""
-        pass
 
     @abstractmethod
     def add_import(self, import_fact: Import) -> None:
         """Add an import fact to the sink."""
-        pass
 
     @abstractmethod
     def add_type_relationship(self, type_rel: TypeRelationship) -> None:
         """Add a type relationship fact to the sink."""
-        pass
 
     @abstractmethod
     def add_endpoint(self, endpoint: Endpoint) -> None:
         """Add an endpoint fact to the sink."""
-        pass
 
     @abstractmethod
     def add_database_relationship(self, db_rel: DatabaseRelationship) -> None:
         """Add a database relationship fact to the sink."""
-        pass
 
     @abstractmethod
     def add_event_publication(self, pub: EventPublication) -> None:
         """Add an event publication fact to the sink."""
-        pass
 
     @abstractmethod
     def add_event_subscription(self, sub: EventSubscription) -> None:
         """Add an event subscription fact to the sink."""
-        pass
 
     @abstractmethod
     def add_test_relationship(self, test_rel: TestRelationship) -> None:
         """Add a test relationship fact to the sink."""
-        pass
 
 
 class InMemoryFactSink(RepositoryFactSink):

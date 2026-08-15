@@ -1,30 +1,29 @@
 import pytest
+
 from core.runtime import PREVENT_LEGACY_ARCHITECTURE
-from engine.repository.model import (
-    RepositoryGraph,
-    RepositoryModel,
-    CallGraph,
-    ReferenceGraph,
-)
 from engine.language.base.graph_patcher import GraphPatcher
-from engine.repository.store import SQLiteRepositoryStore
-from engine.repository.store.sink import PersistentFactSink
+from engine.pipeline.pipeline import Pipeline
 from engine.repository.facts import (
     File,
     FileId,
     Symbol,
     SymbolId,
     SymbolKind,
-    Call,
-    CallType,
 )
-from engine.pipeline.pipeline import Pipeline
+from engine.repository.model import (
+    CallGraph,
+    ReferenceGraph,
+    RepositoryGraph,
+    RepositoryModel,
+)
+from engine.repository.store import SQLiteRepositoryStore
+from engine.repository.store.sink import PersistentFactSink
 from models import (
-    RepositoryReference,
-    PullRequestReference,
-    DiffSnapshot,
     AnalysisRequest,
     AnalysisTrigger,
+    DiffSnapshot,
+    PullRequestReference,
+    RepositoryReference,
 )
 from models.core import DiffFile, DiffHunk
 
@@ -173,6 +172,7 @@ async def test_pipeline_on_demand_base_indexing(tmp_path):
     and caches it for subsequent queries.
     """
     from unittest.mock import AsyncMock, MagicMock
+
     from models.core import RepositorySnapshot
 
     db_file = str(tmp_path / "test_store_ondemand.db")

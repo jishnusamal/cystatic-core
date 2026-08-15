@@ -49,7 +49,6 @@ class ChangeCompilerPass(ABC):
     @abstractmethod
     def name(self) -> str:
         """Return the name of this pass."""
-        pass
 
     @abstractmethod
     def run(self, context: ChangePassContext) -> ChangePassContext:
@@ -62,7 +61,6 @@ class ChangeCompilerPass(ABC):
         Returns:
             Updated pass context
         """
-        pass
 
     def validate_input(self, context: ChangePassContext) -> bool:
         """

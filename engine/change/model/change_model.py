@@ -1,17 +1,17 @@
 """Change model - identifies what changed from a code diff."""
 
 from dataclasses import dataclass, field
-from typing import FrozenSet
 
 from engine.repository.model import Symbol
+
 from .changes import (
-    FunctionBodyChange,
-    SignatureChange,
-    VisibilityChange,
     DecoratorChange,
-    SuperclassChange,
-    InterfaceChange,
     EndpointAnnotationChange,
+    FunctionBodyChange,
+    InterfaceChange,
+    SignatureChange,
+    SuperclassChange,
+    VisibilityChange,
 )
 
 

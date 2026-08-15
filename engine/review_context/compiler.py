@@ -20,28 +20,28 @@ from __future__ import annotations
 
 from typing import Any
 
-from engine.change.model import ChangeModel
 from engine.behavior.model import BehaviorModel
 from engine.behavior.model.impact_surface import ImpactSurface
+from engine.change.model import ChangeModel
+from engine.discovery.model import DiscoveryModel
+from engine.operational.discovery.model import DiscoveryIR
 from engine.operational.model import OperationalChangeModel
-from engine.discovery.model import DiscoveryModel, Discovery as DiscoveryModelDiscovery
-from engine.operational.discovery.model import DiscoveryIR, Discovery as OldDiscovery
 
 from .model import (
-    ReviewContext,
+    Change,
     ChangeContext,
     ChangeSummary,
-    FileChange,
-    Change,
-    SymbolRef,
-    ExecutionContext,
-    EntryPointExecution,
-    ExecutionStep,
-    SymbolReference,
-    ReachedComponents,
     DeepestExecution,
     Discovery,
+    EntryPointExecution,
+    ExecutionContext,
+    ExecutionStep,
+    FileChange,
+    ReachedComponents,
     Reference,
+    ReviewContext,
+    SymbolRef,
+    SymbolReference,
 )
 
 # Maximum number of references to expose per discovery in ReviewContext.
@@ -364,8 +364,7 @@ class ReviewContextCompiler:
             for unit in units:
                 symbol_id = unit.symbol_id if hasattr(unit, "symbol_id") else ""
                 depth = unit.order if hasattr(unit, "order") else 0
-                if depth > max_depth:
-                    max_depth = depth
+                max_depth = max(max_depth, depth)
 
                 # Look up symbol metadata from repository model
                 sym_obj = symbol_lookup.get(symbol_id)

@@ -9,8 +9,8 @@ import time
 from typing import Any
 
 from engine.language.base.file_context import FileContext
-from engine.language.base.passes import BaseIndexPass
 from engine.language.base.instrumentation import get_instrumentation
+from engine.language.base.passes import BaseIndexPass
 from engine.repository.model.repository_index import CallEntry
 
 
@@ -187,7 +187,7 @@ class PythonCallIndexPass(BaseIndexPass):
             for node in ast.walk(tree):
                 for child in ast.iter_child_nodes(node):
                     pm[id(child)] = node
-            setattr(tree, "_parent_map", pm)
+            tree._parent_map = pm
 
         return pm
 

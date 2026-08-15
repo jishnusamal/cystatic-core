@@ -16,14 +16,12 @@ This is evidence, not recommendations.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, cast
 
 from engine.operational.compiler.passes.base import (
     OperationalCompilerPass,
     OperationalPassContext,
 )
 from engine.repository.model import RepositoryModel, Symbol, SymbolKind
-from engine.operational.model import OperationalChangeModel
 
 
 @dataclass(frozen=True)

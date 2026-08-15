@@ -1,15 +1,11 @@
 import time
-import pytest
+
+from engine.language.python.adapter import PythonLanguageAdapter
 from engine.repository.model import (
-    CallGraph,
     CallEdge,
-    ReferenceGraph,
-    ReferenceEdge,
+    CallGraph,
     RepositoryGraph,
 )
-from engine.language.python.adapter import PythonLanguageAdapter
-from engine.language.base.graph_patcher import GraphPatcher
-from engine.repository.model.file_contribution import FileContribution
 
 
 def test_lazy_indexes():

@@ -13,7 +13,6 @@ Checks:
 This is compiler validation, not business validation.
 """
 
-from typing import cast
 
 from engine.operational.compiler.passes.base import (
     OperationalCompilerPass,

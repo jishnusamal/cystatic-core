@@ -9,13 +9,11 @@ Initially filesystem-based, designed for future database replacement.
 from __future__ import annotations
 
 import hashlib
-import json
 import pickle
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
 
-from engine.repository.model import RepositoryModel, RepositoryGraph
+from engine.repository.model import RepositoryGraph, RepositoryModel
 
 
 class RepositoryStore(ABC):
@@ -40,7 +38,6 @@ class RepositoryStore(ABC):
         Returns:
             RepositoryModel or RepositoryGraph if cached, None otherwise
         """
-        pass
 
     @abstractmethod
     async def save(
@@ -54,7 +51,6 @@ class RepositoryStore(ABC):
             ref: Git reference
             model: Compiled RepositoryModel or RepositoryGraph to cache
         """
-        pass
 
     @abstractmethod
     async def exists(self, repository: str, ref: str) -> bool:
@@ -68,7 +64,6 @@ class RepositoryStore(ABC):
         Returns:
             True if cached, False otherwise
         """
-        pass
 
     @abstractmethod
     async def invalidate(self, repository: str, ref: str | None = None) -> None:
@@ -79,7 +74,6 @@ class RepositoryStore(ABC):
             repository: Repository identifier
             ref: Git reference, or None to invalidate all refs for the repository
         """
-        pass
 
     @abstractmethod
     def _make_key(self, repository: str, ref: str) -> str:
@@ -93,7 +87,6 @@ class RepositoryStore(ABC):
         Returns:
             Cache key string
         """
-        pass
 
 
 class FilesystemRepositoryStore(RepositoryStore):

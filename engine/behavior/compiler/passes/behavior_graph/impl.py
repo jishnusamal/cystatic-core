@@ -2,9 +2,9 @@
 
 from collections import deque
 
+from engine.behavior.model import ExecutionEdge, ExecutionGraph, ExecutionNode
+
 from ..base import BehaviorCompilerPass, BehaviorPassContext
-from engine.behavior.model import ExecutionGraph, ExecutionNode, ExecutionEdge
-from engine.repository.model import Evidence, FileLocation
 
 
 class BehaviorGraphPass(BehaviorCompilerPass):

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
-from .ids import SymbolId, EndpointId
+
+from .ids import EndpointId, SymbolId
 
 
 class EndpointMethod(str, Enum):

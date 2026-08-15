@@ -9,9 +9,6 @@ This is the linker and compilation stage in the factor-api compilation pipeline.
 
 from typing import Any, cast
 
-from engine.behavior.model import BehaviorModel
-from engine.change.model import ChangeModel, RepositoryDelta
-from engine.repository.model import RepositoryModel
 from engine.operational.model import OperationalChangeModel
 
 from .passes import (

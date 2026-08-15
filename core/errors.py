@@ -6,7 +6,6 @@ All error imports throughout the codebase should reference core.errors.
 
 from __future__ import annotations
 
-
 # ─── Base errors ────────────────────────────────────────────────────────────
 
 
@@ -25,7 +24,6 @@ class FactorError(Exception):
 class AuthenticationError(FactorError):
     """Raised when authentication fails."""
 
-    pass
 
 
 # ─── Repository errors ───────────────────────────────────────────────────────
@@ -34,19 +32,16 @@ class AuthenticationError(FactorError):
 class RepositoryError(FactorError):
     """Base exception for repository errors."""
 
-    pass
 
 
 class RepositoryNotFound(RepositoryError):
     """Raised when a repository cannot be found."""
 
-    pass
 
 
 class RepositoryAccessDenied(RepositoryError):
     """Raised when access to a repository is denied."""
 
-    pass
 
 
 # ─── Webhook errors ──────────────────────────────────────────────────────────
@@ -55,13 +50,11 @@ class RepositoryAccessDenied(RepositoryError):
 class WebhookError(FactorError):
     """Base exception for webhook errors."""
 
-    pass
 
 
 class WebhookVerificationError(WebhookError):
     """Raised when webhook signature verification fails."""
 
-    pass
 
 
 # ─── Renderer errors ─────────────────────────────────────────────────────────
@@ -70,13 +63,11 @@ class WebhookVerificationError(WebhookError):
 class RendererError(FactorError):
     """Base exception for renderer errors."""
 
-    pass
 
 
 class RenderingError(RendererError):
     """Raised when rendering fails."""
 
-    pass
 
 
 # ─── Pipeline errors ─────────────────────────────────────────────────────────
@@ -85,13 +76,11 @@ class RenderingError(RendererError):
 class PipelineError(FactorError):
     """Base exception for all pipeline errors."""
 
-    pass
 
 
 class PipelineExecutionError(PipelineError):
     """Raised when pipeline execution fails."""
 
-    pass
 
 
 # ─── Pipeline sub-errors (from runtime/errors.py) ────────────────────────────
@@ -100,85 +89,71 @@ class PipelineExecutionError(PipelineError):
 class RepositoryNotSupported(PipelineError):
     """Raised when a repository language is not supported."""
 
-    pass
 
 
 class RepositoryCompilationFailed(PipelineError):
     """Raised when repository model compilation fails."""
 
-    pass
 
 
 class RepositoryNotInstalled(PipelineError):
     """Raised when required language tooling is not installed."""
 
-    pass
 
 
 class DiffFetchFailed(PipelineError):
     """Raised when fetching a diff fails."""
 
-    pass
 
 
 class InvalidDiff(PipelineError):
     """Raised when diff data is malformed."""
 
-    pass
 
 
 class InvalidWebhook(PipelineError):
     """Raised when webhook verification fails."""
 
-    pass
 
 
 class MissingWebhookPayload(PipelineError):
     """Raised when required webhook payload fields are missing."""
 
-    pass
 
 
 class LanguageNotSupported(PipelineError):
     """Raised when a language adapter is not available."""
 
-    pass
 
 
 class LanguageDetectionFailed(PipelineError):
     """Raised when language detection fails."""
 
-    pass
 
 
 class RendererFailed(PipelineError):
     """Raised when rendering fails."""
 
-    pass
 
 
 class JSONSerializationFailed(PipelineError):
     """Raised when JSON serialization fails."""
 
-    pass
 
 
 class CacheReadFailed(PipelineError):
     """Raised when reading from cache fails."""
 
-    pass
 
 
 class CacheWriteFailed(PipelineError):
     """Raised when writing to cache fails."""
 
-    pass
 
 
 class CompilationTimeout(PipelineError):
     """Raised when compilation exceeds timeout."""
 
-    pass
 
 
 __all__ = [

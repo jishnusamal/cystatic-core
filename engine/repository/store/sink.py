@@ -1,21 +1,23 @@
-from engine.repository.indexing.sink import RepositoryFactSink
+from typing import Any
+
 from engine.repository.facts import (
-    File,
-    FileId,
-    Symbol,
-    SymbolId,
     Call,
-    Reference,
-    Import,
-    TypeRelationship,
-    Endpoint,
     DatabaseRelationship,
+    Endpoint,
     EventPublication,
     EventSubscription,
+    File,
+    FileId,
+    Import,
+    Reference,
+    Symbol,
+    SymbolId,
     TestRelationship,
+    TypeRelationship,
 )
+from engine.repository.indexing.sink import RepositoryFactSink
+
 from .sqlite import SQLiteRepositoryStore
-from typing import Any
 
 
 def _enum_val(val: Any) -> str:

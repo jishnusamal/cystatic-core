@@ -2,16 +2,16 @@
 
 from .compiler import BehaviorCompiler
 from .passes import (
-    BehaviorPassContext,
-    BehaviorCompilerPass,
     BehaviorCompilationPass,
+    BehaviorCompilerPass,
     BehaviorGraphPass,
+    BehaviorPassContext,
 )
 
 __all__ = [
-    "BehaviorCompiler",
-    "BehaviorPassContext",
-    "BehaviorCompilerPass",
     "BehaviorCompilationPass",
+    "BehaviorCompiler",
+    "BehaviorCompilerPass",
     "BehaviorGraphPass",
+    "BehaviorPassContext",
 ]

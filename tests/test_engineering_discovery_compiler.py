@@ -4,46 +4,43 @@ Tests that EngineeringDiscoveryCompiler correctly projects OperationalChangeMode
 into EngineeringDiscoveryModel with all execution-oriented abstractions.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
-
 from engine.language.model import (
+    CallEdge,
+    CallGraph,
+    EntryPointKind,
+    ReferenceGraph,
     RepositoryModel,
     Symbol,
     SymbolKind,
     SymbolVisibility,
-    CallGraph,
-    CallEdge,
-    ReferenceGraph,
+)
+from engine.language.model import (
     EntryPoint as RepoEntryPoint,
-    EntryPointKind,
-    Evidence,
-    FileLocation,
 )
-from engine.change.model import (
-    ChangeModel,
-    ModifiedSymbol,
-    ImportChange,
-    EndpointChange,
-)
+
 from engine.behavior.model import (
     Behavior,
     BehaviorKind,
     BehaviorModel,
-    ExecutionGraph,
-    ExecutionNode,
-    ExecutionEdge,
-    ExecutionUnit,
-    ExecutionChain,
     EntryPoint,
-    TerminalPoint,
+    ExecutionChain,
+    ExecutionGraph,
+    ExecutionUnit,
     SharedExecution,
+    TerminalPoint,
 )
-from engine.operational.model import OperationalChangeModel, EngineeringDiscoveryModel
+from engine.change.model import (
+    ChangeModel,
+    EndpointChange,
+    ImportChange,
+    ModifiedSymbol,
+)
 from engine.operational.compiler import EngineeringDiscoveryCompiler
-
+from engine.operational.model import EngineeringDiscoveryModel, OperationalChangeModel
 
 # ---------------------------------------------------------------------------
 # Test helpers

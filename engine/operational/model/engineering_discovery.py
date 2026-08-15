@@ -11,11 +11,11 @@ from dataclasses import dataclass, field
 from engine.behavior.model import (
     Behavior,
     BehaviorModel,
-    ExecutionUnit,
-    ExecutionChain,
     EntryPoint,
-    TerminalPoint,
+    ExecutionChain,
+    ExecutionUnit,
     SharedExecution,
+    TerminalPoint,
 )
 from engine.change.model import ChangeModel
 from engine.repository.model import RepositoryModel

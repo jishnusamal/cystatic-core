@@ -18,19 +18,19 @@ from engine.language.base.file_context import FileContext
 from engine.language.base.index_compiler import IndexCompiler
 from engine.language.base.semantic_compiler import SemanticCompiler
 from engine.language.java.parser import JavaParser
+from engine.language.java.passes import (
+    JavaCallIndexPass,
+    JavaConfigurationIndexPass,
+    JavaEntrypointIndexPass,
+    JavaEventIndexPass,
+    JavaImportIndexPass,
+    JavaPersistenceIndexPass,
+    JavaSymbolIndexPass,
+    JavaTestIndexPass,
+    JavaTypeIndexPass,
+)
 from engine.repository.model import RepositoryModel
 from engine.repository.model.repository_index import RepositoryIndex
-from engine.language.java.passes import (
-    JavaSymbolIndexPass,
-    JavaImportIndexPass,
-    JavaCallIndexPass,
-    JavaEntrypointIndexPass,
-    JavaTypeIndexPass,
-    JavaPersistenceIndexPass,
-    JavaEventIndexPass,
-    JavaTestIndexPass,
-    JavaConfigurationIndexPass,
-)
 
 
 class JavaLanguageAdapter(BaseLanguageAdapter):
@@ -141,7 +141,7 @@ class JavaLanguageAdapter(BaseLanguageAdapter):
         Returns:
             RepositoryIndex containing structural facts
         """
-        java_files = [f for f in files.keys() if f.endswith(".java")]
+        java_files = [f for f in files if f.endswith(".java")]
 
         def generate_contexts():
             for file_path in java_files:

@@ -1,9 +1,7 @@
 """File contribution - structural facts owned by a single source file."""
 
-from dataclasses import dataclass, field
-from typing import Any
-
 import sys
+from dataclasses import dataclass, field
 
 from .repository_index import (
     CallEntry,

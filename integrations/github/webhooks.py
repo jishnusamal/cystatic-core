@@ -10,10 +10,9 @@ from integrations.base import EventProvider
 from models.analysis import (
     AnalysisRequest,
     AnalysisTrigger,
-    RepositoryReference,
     PullRequestReference,
+    RepositoryReference,
 )
-from core.errors import WebhookVerificationError
 
 
 class GitHubWebhookProvider(EventProvider):

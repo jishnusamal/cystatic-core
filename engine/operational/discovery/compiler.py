@@ -22,31 +22,30 @@ Every pass:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from engine.operational.model import EngineeringDiscoveryModel
 from engine.operational.discovery.model import (
+    DiscoveryEvidence,
     DiscoveryIR,
-    Discovery,
     DiscoveryMetadata,
     DiscoverySummary,
-    DiscoveryEvidence,
 )
 from engine.operational.discovery.passes.base import (
-    DiscoveryPassContext,
     DiscoveryCompilerPass,
+    DiscoveryPassContext,
 )
+from engine.operational.discovery.passes.boundary_invariant import BoundaryInvariantPass
+from engine.operational.discovery.passes.compression import CompressionPass
+from engine.operational.discovery.passes.dominant_execution import DominantExecutionPass
 from engine.operational.discovery.passes.hidden_relationship import (
     HiddenRelationshipPass,
 )
-from engine.operational.discovery.passes.dominant_execution import DominantExecutionPass
-from engine.operational.discovery.passes.boundary_invariant import BoundaryInvariantPass
-from engine.operational.discovery.passes.validation_gap import ValidationGapPass
+from engine.operational.discovery.passes.ranking import RankingPass
 from engine.operational.discovery.passes.shared_execution import SharedExecutionPass
 from engine.operational.discovery.passes.significance import SignificanceEvaluationPass
-from engine.operational.discovery.passes.ranking import RankingPass
 from engine.operational.discovery.passes.surprise import SurpriseDetectionPass
-from engine.operational.discovery.passes.compression import CompressionPass
+from engine.operational.discovery.passes.validation_gap import ValidationGapPass
+from engine.operational.model import EngineeringDiscoveryModel
 
 
 class DiscoveryCompiler:
@@ -156,7 +155,7 @@ class DiscoveryCompiler:
         # Build metadata
         metadata = DiscoveryMetadata(
             compiler_version=self.COMPILER_VERSION,
-            compiled_at=datetime.now(timezone.utc).isoformat(),
+            compiled_at=datetime.now(UTC).isoformat(),
             discovery_count=len(discoveries),
             evidence_count=total_evidence,
             pass_count=len(self.passes),

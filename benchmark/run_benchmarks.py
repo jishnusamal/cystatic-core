@@ -1,28 +1,127 @@
+import asyncio
+import json
 import os
 import sys
-import json
 import time
-import asyncio
-import psutil
-import re
 
 # PYTHONPATH=. infisical run -- uv run python benchmark/run_benchmarks.py
 
 # Add workspace root to Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from core.config import get_settings
 from api.routes.github import _fetch_pr_details_from_url
+from core.config import get_settings
+from core.profile import MemoryProfiler
 from engine.pipeline.pipeline import Pipeline
-from models.core import RepositoryReference, PullRequestReference
 from models.analysis import AnalysisRequest, AnalysisTrigger
-from core.profile import MemoryProfiler, get_current_profiler
+from models.core import PullRequestReference, RepositoryReference
+
+
+def get_view_metrics(view):
+    """
+    Extract symbol_count, call_edge_count, and ref_edge_count from the RepositoryView.
+    Handles base query being SQLiteRepositoryStore or InMemoryRepository.
+    """
+    if view is None:
+        return 0, 0, 0
+    base = view.base
+    overlay = view.overlay
+    
+    # 1. Symbols
+    base_symbol_ids = set()
+    if hasattr(base, "conn"):  # SQLiteRepositoryStore
+        if hasattr(base, "repository_id") and base.repository_id is not None:
+            repo_id = base.repository_id
+            version_id = base.version_id
+        else:
+            repo_id, version_id = base._get_context()
+        cur = base.conn.cursor()
+        cur.execute(
+            "SELECT id, file_id FROM symbols WHERE repository_id = ? AND version_id = ?",
+            (repo_id, version_id)
+        )
+        base_symbol_ids = {row["id"] for row in cur.fetchall() if row["file_id"] not in overlay.removed_files and row["file_id"] not in overlay.modified_files}
+    elif hasattr(base, "_facts"):  # InMemoryRepository
+        base_symbol_ids = {s.id for s in base._facts.symbols if s.file_id not in overlay.removed_files and s.file_id not in overlay.modified_files}
+        
+    active_symbols = (base_symbol_ids - overlay.removed_symbols) | set(overlay.added_symbols.keys())
+    symbol_count = len(active_symbols)
+    
+    # 2. Call Edges
+    base_calls = []
+    if hasattr(base, "conn"):
+        if hasattr(base, "repository_id") and base.repository_id is not None:
+            repo_id = base.repository_id
+            version_id = base.version_id
+        else:
+            repo_id, version_id = base._get_context()
+        cur = base.conn.cursor()
+        cur.execute(
+            "SELECT caller_id, callee_id FROM calls WHERE repository_id = ? AND version_id = ?",
+            (repo_id, version_id)
+        )
+        base_calls = [(row["caller_id"], row["callee_id"]) for row in cur.fetchall()]
+    elif hasattr(base, "_facts"):
+        base_calls = [(c.caller_id, c.callee_id) for c in base._facts.calls]
+        
+    from engine.repository.facts import Call
+    active_calls = set()
+    for caller_id, callee_id in base_calls:
+        if view._should_skip_base_for_symbol(caller_id) or caller_id not in active_symbols:
+            continue
+        if view._should_skip_base_for_symbol(callee_id) or callee_id not in active_symbols:
+            continue
+        call_obj = Call(caller_id=caller_id, callee_id=callee_id)
+        if call_obj in overlay.removed_calls:
+            continue
+        active_calls.add((caller_id, callee_id))
+        
+    for c in overlay.added_calls:
+        active_calls.add((c.caller_id, c.callee_id))
+        
+    call_edge_count = len(active_calls)
+    
+    # 3. Reference Edges
+    base_refs = []
+    if hasattr(base, "conn"):
+        if hasattr(base, "repository_id") and base.repository_id is not None:
+            repo_id = base.repository_id
+            version_id = base.version_id
+        else:
+            repo_id, version_id = base._get_context()
+        cur = base.conn.cursor()
+        cur.execute(
+            'SELECT source_id, target_id FROM "references" WHERE repository_id = ? AND version_id = ?',
+            (repo_id, version_id)
+        )
+        base_refs = [(row["source_id"], row["target_id"]) for row in cur.fetchall()]
+    elif hasattr(base, "_facts"):
+        base_refs = [(r.source_id, r.target_id) for r in base._facts.references]
+        
+    from engine.repository.facts import Reference
+    active_refs = set()
+    for source_id, target_id in base_refs:
+        if view._should_skip_base_for_symbol(source_id) or source_id not in active_symbols:
+            continue
+        if view._should_skip_base_for_symbol(target_id) or target_id not in active_symbols:
+            continue
+        ref_obj = Reference(source_id=source_id, target_id=target_id)
+        if ref_obj in overlay.removed_references:
+            continue
+        active_refs.add((source_id, target_id))
+        
+    for r in overlay.added_references:
+        active_refs.add((r.source_id, r.target_id))
+        
+    ref_edge_count = len(active_refs)
+    
+    return symbol_count, call_edge_count, ref_edge_count
 
 
 async def run_pr_analysis_direct(pr_url: str):
-    print(f"\n==================================================")
+    print("\n==================================================")
     print(f"Running direct memory benchmark for: {pr_url}")
-    print(f"==================================================")
+    print("==================================================")
 
     # Enable memory profiling for this benchmark run
     os.environ["MEMORY_PROFILING"] = "true"
@@ -84,6 +183,17 @@ async def run_pr_analysis_direct(pr_url: str):
         output_provider=output_provider,
     )
 
+    # Pre-fetch base snapshot for repository metadata metrics
+    print("Fetching base repository snapshot for metrics...")
+    file_count = 0
+    source_bytes = 0
+    try:
+        snapshot = await repository_provider.fetch_repository_at_sha(repo_ref, base_sha)
+        file_count = len(snapshot.files)
+        source_bytes = sum(len(content) for content in snapshot.files.values())
+    except Exception as e:
+        print(f"Failed to fetch base snapshot: {e}")
+
     wall_clock_start = time.perf_counter()
     context = None
     llm_comment = None
@@ -120,23 +230,17 @@ async def run_pr_analysis_direct(pr_url: str):
         wall_clock_duration = time.perf_counter() - wall_clock_start
 
         # Get metrics
-        file_count = 0
-        source_bytes = 0
         symbol_count = 0
         call_edge_count = 0
         ref_edge_count = 0
 
         if context:
-            if context.base_repository_snapshot and hasattr(
-                context.base_repository_snapshot, "files"
-            ):
-                file_count = len(context.base_repository_snapshot.files)
-                source_bytes = sum(
-                    len(content)
-                    for content in context.base_repository_snapshot.files.values()
-                )
-
-            if context.head_repository_model:
+            if context.repository_view:
+                try:
+                    symbol_count, call_edge_count, ref_edge_count = get_view_metrics(context.repository_view)
+                except Exception as e:
+                    print(f"Failed to extract metrics from RepositoryView: {e}")
+            elif context.head_repository_model:
                 if context.head_repository_model.symbols:
                     symbol_count = len(context.head_repository_model.symbols)
                 if (
@@ -252,6 +356,18 @@ def generate_markdown_report(results):
         # Sort/order checkpoints logically
         ordered_stages = [
             "request start",
+            "After repository facts & overlay load",
+            "After Change Compiler",
+            "After Behavior Compiler",
+            "After Operational Compiler",
+            "After Engineering Discovery Compiler",
+            "After Discovery IR Compiler",
+            "After system-model construction",
+            "After ReviewContext Compiler",
+            "After LLMContext Compiler",
+            "After context generation",
+            "before LLM request",
+            "after LLM request",
             "After base repository download",
             "After parsing",
             "After symbol extraction",
@@ -266,15 +382,6 @@ def generate_markdown_report(results):
             "After graph clone",
             "After GraphPatcher",
             "After head RepositoryModel",
-            "After Change Compiler",
-            "After Behavior Compiler",
-            "After Operational Compiler",
-            "After Engineering Discovery Compiler",
-            "After Discovery IR Compiler",
-            "After ReviewContext Compiler",
-            "After LLMContext Compiler",
-            "before LLM request",
-            "after LLM request",
         ]
 
         for stage in ordered_stages:

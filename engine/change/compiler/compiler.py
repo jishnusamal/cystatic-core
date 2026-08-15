@@ -1,15 +1,15 @@
 """Change compiler - orchestrates local fact comparison."""
 
-from typing import Any, Dict, List, Tuple
+from typing import Any
+
 from engine.change.model import (
-    ChangeFacts,
     ChangedSymbol,
+    ChangeFacts,
     ContractChange,
-    ChangeKind,
 )
-from engine.repository.query import RepositoryQuery
-from engine.repository.facts import Call, Reference, Import, Symbol, FileId, SymbolId
 from engine.change.model.repository_comparison import RepositoryComparison
+from engine.repository.facts import Call, FileId, Import, Reference, SymbolId
+from engine.repository.query import RepositoryQuery
 
 
 class RepositoryModelQuery(RepositoryQuery):
@@ -347,9 +347,7 @@ class ChangeCompiler:
                     b_props = getattr(b_sym, "properties", {})
                     h_props = getattr(h_sym, "properties", {})
 
-                    if b_range != h_range or b_vis != h_vis:
-                        modified = True
-                    elif b_props != h_props:
+                    if b_range != h_range or b_vis != h_vis or b_props != h_props:
                         modified = True
 
                     if modified:

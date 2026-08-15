@@ -1,26 +1,26 @@
-import os
-import sys
+import ast
+import asyncio
 import gc
 import json
-import time
-import asyncio
+import os
 import pickle
+import sys
+import time
+from typing import Any
+
 import psutil
-import ast
-from typing import Dict, Any, List
 
 # Add workspace root to Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from core.config import get_settings
 from api.routes.github import _fetch_pr_details_from_url
-from engine.pipeline.pipeline import Pipeline
-from models.core import RepositoryReference, PullRequestReference
-from models.analysis import AnalysisRequest, AnalysisTrigger
-from core.profile import MemoryProfiler
 from benchmark.size_estimator import get_retained_size
+from core.config import get_settings
 from engine.pipeline.context import PipelineContext
+from engine.pipeline.pipeline import Pipeline
 from engine.repository.model.file_contribution import FileContribution
+from models.analysis import AnalysisRequest, AnalysisTrigger
+from models.core import PullRequestReference, RepositoryReference
 
 # Diagnostic outputs target directories
 os.makedirs("profiling/phase2", exist_ok=True)
@@ -30,8 +30,8 @@ class DiagnosticProfiler:
     def __init__(self, pr_url: str):
         self.pr_url = pr_url
         self.process = psutil.Process(os.getpid())
-        self.metrics: Dict[str, Any] = {}
-        self.checkpoints: List[Dict[str, Any]] = []
+        self.metrics: dict[str, Any] = {}
+        self.checkpoints: list[dict[str, Any]] = []
 
     def get_rss(self) -> float:
         gc.collect()
@@ -39,8 +39,9 @@ class DiagnosticProfiler:
 
     def count_reachable_source(self) -> tuple[int, int]:
         import gc
-        from models.core import RepositorySnapshot
+
         from engine.language.base.file_context import FileContext
+        from models.core import RepositorySnapshot
 
         snapshots = [
             obj for obj in gc.get_objects() if isinstance(obj, RepositorySnapshot)

@@ -11,9 +11,9 @@ import os
 import sys
 import traceback
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional, TextIO, TypeVar
+from typing import Any, TextIO, TypeVar
 
 T = TypeVar("T")
 
@@ -110,7 +110,7 @@ class LogManager:
     ) -> None:
         """Log a structured JSON event to pipeline log."""
         event_data = {
-            "time": datetime.now(timezone.utc).isoformat(),
+            "time": datetime.now(UTC).isoformat(),
             "run_id": self.run_id,
             "phase": phase,
             "event": event,
@@ -164,7 +164,7 @@ class LogManager:
                 except Exception:
                     pass
 
-    def __enter__(self) -> "LogManager":
+    def __enter__(self) -> LogManager:
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
@@ -181,28 +181,28 @@ class PipelineLogger:
     """
 
     def __init__(self) -> None:
-        self._run_context_var: ContextVar[Optional[Any]] = ContextVar(
+        self._run_context_var: ContextVar[Any | None] = ContextVar(
             "run_context", default=None
         )
-        self._pipeline_logs_var: ContextVar[Optional[list[str]]] = ContextVar(
+        self._pipeline_logs_var: ContextVar[list[str] | None] = ContextVar(
             "pipeline_logs", default=None
         )
-        self._visitor_logs_var: ContextVar[Optional[list[str]]] = ContextVar(
+        self._visitor_logs_var: ContextVar[list[str] | None] = ContextVar(
             "visitor_logs", default=None
         )
-        self._semantic_logs_var: ContextVar[Optional[list[str]]] = ContextVar(
+        self._semantic_logs_var: ContextVar[list[str] | None] = ContextVar(
             "semantic_logs", default=None
         )
-        self._resolver_logs_var: ContextVar[Optional[list[str]]] = ContextVar(
+        self._resolver_logs_var: ContextVar[list[str] | None] = ContextVar(
             "resolver_logs", default=None
         )
-        self._performance_logs_var: ContextVar[Optional[list[str]]] = ContextVar(
+        self._performance_logs_var: ContextVar[list[str] | None] = ContextVar(
             "performance_logs", default=None
         )
-        self._timings_var: ContextVar[Optional[list[dict[str, Any]]]] = ContextVar(
+        self._timings_var: ContextVar[list[dict[str, Any]] | None] = ContextVar(
             "timings", default=None
         )
-        self._call_resolutions_var: ContextVar[Optional[list[dict[str, Any]]]] = (
+        self._call_resolutions_var: ContextVar[list[dict[str, Any]] | None] = (
             ContextVar("call_resolutions", default=None)
         )
 
@@ -216,7 +216,7 @@ class PipelineLogger:
         self._global_call_resolutions: list[dict[str, Any]] = []
 
     def _get_list(
-        self, var: ContextVar[Optional[list[T]]], fallback: list[T]
+        self, var: ContextVar[list[T] | None], fallback: list[T]
     ) -> list[T]:
         val = var.get()
         if val is None:
@@ -224,10 +224,10 @@ class PipelineLogger:
         return val
 
     @property
-    def current_context(self) -> Optional[Any]:
+    def current_context(self) -> Any | None:
         return self._run_context_var.get()
 
-    def set_context(self, ctx: Optional[Any]) -> None:
+    def set_context(self, ctx: Any | None) -> None:
         self._run_context_var.set(ctx)
 
     @property
@@ -274,7 +274,7 @@ class PipelineLogger:
             or "--debug" in sys.argv
         )
 
-    def start_run(self, run_context: Optional[Any] = None) -> None:
+    def start_run(self, run_context: Any | None = None) -> None:
         self._run_context_var.set(run_context)
         self._pipeline_logs_var.set([])
         self._visitor_logs_var.set([])
@@ -375,8 +375,8 @@ pipeline_logger = PipelineLogger()
 
 
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
 
 
 class Timer:
@@ -387,10 +387,10 @@ class Timer:
         self._stack: list[tuple[str, float, dict[str, Any]]] = []
         self._depth: int = 0
 
-    def start(self, name: str, metadata: Optional[dict[str, Any]] = None) -> None:
+    def start(self, name: str, metadata: dict[str, Any] | None = None) -> None:
         self._stack.append((name, time.perf_counter(), metadata or {}))
 
-    def end(self, name: str) -> Optional[float]:
+    def end(self, name: str) -> float | None:
         if not self._stack:
             return None
         active_name, start_time, metadata = self._stack.pop()
@@ -414,7 +414,7 @@ class Timer:
 
     @contextmanager
     def timed(
-        self, name: str, metadata: Optional[dict[str, Any]] = None
+        self, name: str, metadata: dict[str, Any] | None = None
     ) -> Generator[None, None, None]:
         self.start(name, metadata)
         self._depth += 1
@@ -476,4 +476,4 @@ class Timer:
 timer = Timer()
 
 
-__all__ = ["LogManager", "PipelineLogger", "pipeline_logger", "Timer", "timer"]
+__all__ = ["LogManager", "PipelineLogger", "Timer", "pipeline_logger", "timer"]

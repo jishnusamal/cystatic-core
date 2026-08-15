@@ -6,51 +6,46 @@ No compiler logic - pure orchestration.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
-import asyncio
 from typing import TYPE_CHECKING, Any
 
-from core.logging import timer
-from core.runtime import PREVENT_LEGACY_ARCHITECTURE
-from engine.change.compiler import ChangeCompiler
-from engine.change.model.repository_comparison import RepositoryComparison
-from engine.change.model.repository_delta import RepositoryDelta
-from engine.change.model.change_facts import ChangeFacts
-from engine.behavior.compiler import BehaviorCompiler
-from engine.operational.compiler import (
-    OperationalCompiler,
-    EngineeringDiscoveryCompiler,
-)
-from engine.operational.discovery import DiscoveryCompiler
-from engine.review_context.compiler import ReviewContextCompiler
-from engine.llm_context.compiler import LLMContextCompiler
+import tiktoken
+
 from core.errors import (
-    CompilationTimeout,
     DiffFetchFailed,
     InvalidDiff,
-    LanguageDetectionFailed,
-    LanguageNotSupported,
     PipelineExecutionError,
     RepositoryCompilationFailed,
     RepositoryNotInstalled,
-    RepositoryNotSupported,
 )
+from core.logging import timer
+from core.runtime import PREVENT_LEGACY_ARCHITECTURE
+from engine.behavior.compiler import BehaviorCompiler
+from engine.change.compiler import ChangeCompiler
+from engine.change.model.repository_comparison import RepositoryComparison
 from engine.language.detection import LanguageAdapterFactory, get_language_factory
-from models import AnalysisRequest, AnalysisTrigger
+from engine.llm_context.compiler import LLMContextCompiler
+from engine.operational.compiler import (
+    EngineeringDiscoveryCompiler,
+    OperationalCompiler,
+)
+from engine.operational.discovery import DiscoveryCompiler
 from engine.pipeline.context import PipelineContext
+from engine.repository.facts import File
+from engine.repository.indexing import InMemoryFactSink, RepositoryIndexer
+from engine.repository.overlay import RepositoryOverlay, RepositoryView
+from engine.repository.query import InMemoryRepository, RepositoryQuery
+from engine.repository.store import (
+    PersistentFactSink,
+    RepositoryStore,
+    SQLiteRepositoryStore,
+)
+from engine.review_context.compiler import ReviewContextCompiler
 from integrations.github.renderers.github_renderer import GitHubRenderer
 from integrations.github.renderers.json_renderer import JSONRenderer
-from engine.repository.store import (
-    SQLiteRepositoryStore,
-    RepositoryStore,
-    PersistentFactSink,
-)
-from engine.repository.query import RepositoryQuery, InMemoryRepository
-from engine.repository.facts import File, FileId, SymbolId
-from engine.repository.indexing import RepositoryIndexer, InMemoryFactSink
-from engine.repository.overlay import RepositoryOverlay, RepositoryView
-import tiktoken
+from models import AnalysisRequest
 
 
 # Custom print wrapper to avoid polluting stdout
@@ -64,12 +59,9 @@ def print(*args, **kwargs):
 
 if TYPE_CHECKING:
     from integrations.base import (
-        EventProvider,
-        InstallationProvider,
         OutputProvider,
         RepositoryProvider,
     )
-    from engine.repository.model import RepositoryModel
 
 
 class Pipeline:
@@ -142,8 +134,9 @@ class Pipeline:
             PipelineContext with all results
         """
         from datetime import datetime
-        from core.runtime import RunContext
+
         from core.logging import pipeline_logger
+        from core.runtime import RunContext
         from engine.language.base.instrumentation import get_instrumentation
 
         started_at = datetime.now()
@@ -226,7 +219,7 @@ class Pipeline:
                     )
 
             if context.diff_data is None and self.repository_provider:
-                print(f"[pipeline] Step 2: Fetching diff from provider")
+                print("[pipeline] Step 2: Fetching diff from provider")
                 await self._fetch_diff(context, request)
                 print(
                     f"[pipeline] Step 2 done: {len(context.diff_data.get('files', []))} files in diff"
@@ -237,9 +230,9 @@ class Pipeline:
             # Step 3: Change Compilation
             change_start = time.perf_counter()
             with timer.timed("Change Compilation"):
-                print(f"[pipeline] Step 3: Change facts compilation")
+                print("[pipeline] Step 3: Change facts compilation")
                 await self._compile_change(context)
-                print(f"[pipeline] Step 3 done")
+                print("[pipeline] Step 3 done")
                 timer.print_progress()
             change_time = time.perf_counter() - change_start
             if profiler:
@@ -248,9 +241,9 @@ class Pipeline:
             # Step 4: Behavior Compilation
             behavior_start = time.perf_counter()
             with timer.timed("Behavior Compilation"):
-                print(f"[pipeline] Step 4: Behavior model compilation")
+                print("[pipeline] Step 4: Behavior model compilation")
                 await self._compile_behavior(context)
-                print(f"[pipeline] Step 4 done")
+                print("[pipeline] Step 4 done")
                 timer.print_progress()
             behavior_time = time.perf_counter() - behavior_start
             if profiler:
@@ -259,9 +252,9 @@ class Pipeline:
             # Step 5: Operational Compilation
             operational_start = time.perf_counter()
             with timer.timed("Operational Compilation"):
-                print(f"[pipeline] Step 5: Operational model compilation")
+                print("[pipeline] Step 5: Operational model compilation")
                 await self._compile_operational(context)
-                print(f"[pipeline] Step 5 done")
+                print("[pipeline] Step 5 done")
                 timer.print_progress()
             operational_time = time.perf_counter() - operational_start
             if profiler:
@@ -270,9 +263,9 @@ class Pipeline:
             # Step 6: Engineering Discovery Compilation
             discovery_start = time.perf_counter()
             with timer.timed("Engineering Discovery Compilation"):
-                print(f"[pipeline] Step 6: Engineering discovery model compilation")
+                print("[pipeline] Step 6: Engineering discovery model compilation")
                 await self._compile_discovery(context)
-                print(f"[pipeline] Step 6 done")
+                print("[pipeline] Step 6 done")
                 timer.print_progress()
             discovery_time = time.perf_counter() - discovery_start
             if profiler:
@@ -281,9 +274,9 @@ class Pipeline:
             # Step 7: Discovery IR Compilation
             discovery_ir_start = time.perf_counter()
             with timer.timed("Discovery IR Compilation"):
-                print(f"[pipeline] Step 7: Discovery IR compilation")
+                print("[pipeline] Step 7: Discovery IR compilation")
                 await self._compile_discovery_ir(context)
-                print(f"[pipeline] Step 7 done")
+                print("[pipeline] Step 7 done")
                 timer.print_progress()
             discovery_ir_time = time.perf_counter() - discovery_ir_start
             if profiler:
@@ -295,9 +288,9 @@ class Pipeline:
             # Step 8: ReviewContext Compilation
             review_start = time.perf_counter()
             with timer.timed("ReviewContext Compilation"):
-                print(f"[pipeline] Step 8: ReviewContext compilation")
+                print("[pipeline] Step 8: ReviewContext compilation")
                 await self._compile_review_context(context)
-                print(f"[pipeline] Step 8 done")
+                print("[pipeline] Step 8 done")
                 timer.print_progress()
             review_time = time.perf_counter() - review_start
             if profiler:
@@ -306,9 +299,9 @@ class Pipeline:
             # Step 9: LLMContext Compilation
             llm_start = time.perf_counter()
             with timer.timed("LLMContext Compilation"):
-                print(f"[pipeline] Step 9: LLMContext compilation")
+                print("[pipeline] Step 9: LLMContext compilation")
                 await self._compile_llm_context(context)
-                print(f"[pipeline] Step 9 done")
+                print("[pipeline] Step 9 done")
                 timer.print_progress()
             llm_time = time.perf_counter() - llm_start
             if profiler:
@@ -447,7 +440,7 @@ class Pipeline:
             "files": snapshot.files,
             "commit_sha": base_sha,
         }
-        print(f"[pipeline] Compiling base RepositoryGraph...")
+        print("[pipeline] Compiling base RepositoryGraph...")
         try:
             from core.profile import get_current_profiler
 
@@ -526,8 +519,9 @@ class Pipeline:
             profiler.log_memory("After head source load")
 
         # Clone base_graph using pickle to avoid mutating cache
-        from core.logging import pipeline_logger
         import pickle
+
+        from core.logging import pipeline_logger
 
         pipeline_logger.log_pipeline(
             "[pipeline] Step 1.2: Cloning base RepositoryGraph for head compilation...",
@@ -669,7 +663,7 @@ class Pipeline:
                             f"[pipeline] Loaded base facts for {candidate_version} from RepositoryStore"
                         )
                         break
-                    except Exception as exc:
+                    except Exception:
                         pass
 
             # If not in persistent store, fetch on-demand or use base snapshot from context
@@ -806,8 +800,8 @@ class Pipeline:
             head_indexer = RepositoryIndexer(head_sink)
 
             # Sync head_indexer with base_query to ensure stable file and symbol IDs
-            from engine.repository.indexing.indexer import build_symbol_fqn
             from engine.repository.facts import FileId, SymbolId
+            from engine.repository.indexing.indexer import build_symbol_fqn
             if hasattr(base_query, "conn"):
                 try:
                     cur = base_query.conn.cursor()
@@ -1852,6 +1846,7 @@ class Pipeline:
 
         try:
             from openai import OpenAI
+
             from core.config import get_settings
 
             settings = get_settings()
@@ -1988,7 +1983,7 @@ class Pipeline:
         adapter = self.language_factory.create_adapter(language)
 
         # Build base facts
-        from engine.repository.indexing import RepositoryIndexer, InMemoryFactSink
+        from engine.repository.indexing import InMemoryFactSink, RepositoryIndexer
         from engine.repository.query import InMemoryRepository
 
         base_sink = InMemoryFactSink()
@@ -2046,8 +2041,8 @@ class Pipeline:
         head_facts = head_sink.build_facts()
 
         # 4. Construct RepositoryOverlay
-        from engine.repository.overlay import RepositoryOverlay, RepositoryView
         from engine.repository.facts import File
+        from engine.repository.overlay import RepositoryOverlay, RepositoryView
 
         added_files = {}
         removed_files = set()

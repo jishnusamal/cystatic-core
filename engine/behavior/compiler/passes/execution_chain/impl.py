@@ -1,7 +1,8 @@
 """Execution Chain Pass - builds ordered execution chains from execution graphs."""
 
+from engine.behavior.model import ExecutionChain, ExecutionGraph, ExecutionUnit
+
 from ..base import BehaviorCompilerPass, BehaviorPassContext
-from engine.behavior.model import ExecutionChain, ExecutionUnit, ExecutionGraph
 
 
 class ExecutionChainPass(BehaviorCompilerPass):

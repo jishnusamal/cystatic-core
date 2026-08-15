@@ -22,7 +22,6 @@ class InstallationProvider(ABC):
         Returns:
             Installation information
         """
-        pass
 
     @abstractmethod
     async def authenticate(self, installation_id: str) -> str:
@@ -34,4 +33,3 @@ class InstallationProvider(ABC):
         Returns:
             Authentication token
         """
-        pass

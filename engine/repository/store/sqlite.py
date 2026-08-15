@@ -1,41 +1,41 @@
-import sqlite3
 import datetime
+import sqlite3
 from typing import Any
+
+from engine.repository.model.repository_model import EntryPoint, EntryPointKind
 from engine.repository.query.types import (
     Call,
+    CallType,
     DatabaseRelationship,
+    DatabaseRelationshipType,
     Endpoint,
+    EndpointId,
+    EndpointMethod,
+    EventId,
     EventPublication,
+    EventPublicationType,
     EventSubscription,
+    EventSubscriptionType,
     File,
     FileId,
     Import,
+    ImportType,
     Reference,
+    ReferenceType,
+    ResourceId,
     Symbol,
     SymbolId,
     SymbolKind,
     SymbolVisibility,
-    ResourceId,
-    EventId,
-    EndpointId,
-    EndpointMethod,
-    EventSubscriptionType,
-    EventPublicationType,
-    DatabaseRelationshipType,
-    CallType,
-    ReferenceType,
-    ImportType,
     TestRelationship,
     TestRelationshipType,
     TypeRelationship,
     TypeRelationshipType,
 )
-from engine.repository.model.repository_model import EntryPoint, EntryPointKind
-from engine.repository.model.evidence import Evidence, FileLocation
 
-from .store import RepositoryStore
-from .schema import CREATE_TABLES_SQL, CREATE_INDEXES_SQL
 from .errors import RepositoryNotFoundError, VersionNotFoundError
+from .schema import CREATE_INDEXES_SQL, CREATE_TABLES_SQL
+from .store import RepositoryStore
 
 
 class SQLiteRepositoryStore(RepositoryStore):
@@ -77,7 +77,7 @@ class SQLiteRepositoryStore(RepositoryStore):
         self, repository_id: str, commit_sha: str, parent_sha: str | None = None
     ) -> str:
         version_id = f"{repository_id}@{commit_sha}"
-        created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        created_at = datetime.datetime.now(datetime.UTC).isoformat()
 
         parent_version_id = None
         if parent_sha:

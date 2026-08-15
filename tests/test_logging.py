@@ -1,20 +1,19 @@
 """Integration tests for run-scoped live-streaming logging architecture v2."""
 
 import os
-import shutil
-import pytest
-from datetime import datetime
 from unittest.mock import MagicMock
 
+import pytest
+
 from engine.pipeline.pipeline import Pipeline
-from models.analysis import (
-    AnalysisRequest,
-    RepositoryReference,
-    PullRequestReference,
-    AnalysisTrigger,
-)
 from engine.repository.indexing import MemoryRepositoryStore
 from integrations.base import RepositoryProvider
+from models.analysis import (
+    AnalysisRequest,
+    AnalysisTrigger,
+    PullRequestReference,
+    RepositoryReference,
+)
 
 
 class MockRepositoryProvider(RepositoryProvider):

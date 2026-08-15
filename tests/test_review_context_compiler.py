@@ -7,68 +7,71 @@ or recomputation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
-
 from engine.language.model import (
+    CallEdge,
+    CallGraph,
+    EntryPointKind,
+    ReferenceGraph,
     RepositoryModel,
     Symbol,
     SymbolKind,
     SymbolVisibility,
-    CallGraph,
-    CallEdge,
-    ReferenceGraph,
+)
+from engine.language.model import (
     EntryPoint as RepoEntryPoint,
-    EntryPointKind,
 )
-from engine.change.model import (
-    ChangeModel,
-    ModifiedSymbol,
-    ImportChange,
-    EndpointChange,
-)
-from engine.change.model.changes import FunctionBodyChange
+
 from engine.behavior.model import (
     Behavior,
     BehaviorKind,
     BehaviorModel,
-    ExecutionGraph,
-    ExecutionNode,
-    ExecutionEdge,
-    ExecutionUnit,
-    ExecutionChain,
     EntryPoint,
-    TerminalPoint,
+    ExecutionChain,
+    ExecutionGraph,
+    ExecutionUnit,
     SharedExecution,
+    TerminalPoint,
 )
-from engine.operational.model import OperationalChangeModel, EngineeringDiscoveryModel
+from engine.change.model import (
+    ChangeModel,
+    EndpointChange,
+    ImportChange,
+    ModifiedSymbol,
+)
+from engine.change.model.changes import FunctionBodyChange
 from engine.discovery.model import (
-    DiscoveryModel,
     Discovery as IRDiscovery,
-    DiscoveryKind as IRDiscoveryKind,
+)
+from engine.discovery.model import (
     DiscoveryFact,
+    DiscoveryModel,
     DiscoveryReference,
 )
+from engine.discovery.model import (
+    DiscoveryKind as IRDiscoveryKind,
+)
+from engine.operational.model import EngineeringDiscoveryModel, OperationalChangeModel
 from engine.review_context.compiler import ReviewContextCompiler
 from engine.review_context.model import (
-    ReviewContext,
+    Change,
     ChangeContext,
     ChangeSummary,
-    FileChange,
-    Change,
-    SymbolRef,
-    ExecutionContext,
-    EntryPointExecution,
-    ExecutionStep,
-    SymbolReference,
-    ReachedComponents,
     DeepestExecution,
     Discovery,
+    EntryPointExecution,
+    ExecutionContext,
+    ExecutionStep,
+    FileChange,
+    ReachedComponents,
     Reference,
+    ReviewContext,
+    SymbolRef,
+    SymbolReference,
 )
-
 
 # ---------------------------------------------------------------------------
 # Test helpers
@@ -859,8 +862,7 @@ class TestExecutionContextHierarchical:
         result = compiler.compile(behavior_model=sample_behavior_model)
         max_depth = 0
         for ep in result.execution.entry_points:
-            if ep.max_depth > max_depth:
-                max_depth = ep.max_depth
+            max_depth = max(max_depth, ep.max_depth)
         assert result.execution.deepest_execution.depth == max_depth
 
     def test_execution_order_preserved(self, sample_behavior_model):

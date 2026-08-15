@@ -32,7 +32,6 @@ class OutputProvider(ABC):
         Returns:
             Published content identifier (e.g., comment ID) or None
         """
-        pass
 
     @abstractmethod
     async def update(
@@ -51,7 +50,6 @@ class OutputProvider(ABC):
         Returns:
             Updated content identifier or None
         """
-        pass
 
     @abstractmethod
     async def delete(
@@ -65,4 +63,3 @@ class OutputProvider(ABC):
             destination: Destination information
             content_id: Published content identifier
         """
-        pass

@@ -1,15 +1,13 @@
-import pytest
 from engine.behavior.compiler.impact_engine import ImpactEngine, TraversalConfig
-from engine.behavior.model.impact_surface import ImpactSurface
-from engine.repository.query.repository import RepositoryQuery
 from engine.repository.model.repository_model import EntryPoint, EntryPointKind
+from engine.repository.query.repository import RepositoryQuery
 from engine.repository.query.types import (
     Call,
     CallType,
-    SymbolId,
+    EventId,
     EventPublication,
     EventPublicationType,
-    EventId,
+    SymbolId,
 )
 
 

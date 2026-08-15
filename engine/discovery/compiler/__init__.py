@@ -26,28 +26,28 @@ Every pass:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any
 
 from engine.operational.model import OperationalChangeModel
 
 from ..model import (
-    DiscoveryModel,
     Discovery,
-    DiscoveryKind,
     DiscoveryFact,
+    DiscoveryKind,
+    DiscoveryModel,
     DiscoveryReference,
 )
-from .passes.base import DiscoveryPassContext, DiscoveryCompilerPass
-from .passes.shared_execution import SharedExecutionPass
-from .passes.validation_gap import ValidationGapPass
+from .passes.base import DiscoveryCompilerPass, DiscoveryPassContext
 from .passes.boundary_crossing import BoundaryCrossingPass
-from .passes.hidden_relationship import HiddenRelationshipPass
 from .passes.deep_execution import DeepExecutionPass
-from .passes.shared_dependency import SharedDependencyPass
 from .passes.event_publication import EventPublicationPass
-from .passes.state_mutation import StateMutationPass
+from .passes.hidden_relationship import HiddenRelationshipPass
 from .passes.public_interface_change import PublicInterfaceChangePass
+from .passes.shared_dependency import SharedDependencyPass
+from .passes.shared_execution import SharedExecutionPass
+from .passes.state_mutation import StateMutationPass
+from .passes.validation_gap import ValidationGapPass
 
 
 class DiscoveryCompiler:
@@ -123,7 +123,7 @@ class DiscoveryCompiler:
         # Build metadata
         metadata = {
             "compiler_version": self.COMPILER_VERSION,
-            "compiled_at": datetime.now(timezone.utc).isoformat(),
+            "compiled_at": datetime.now(UTC).isoformat(),
             "discovery_count": len(discoveries),
             "pass_count": len(self.passes),
         }

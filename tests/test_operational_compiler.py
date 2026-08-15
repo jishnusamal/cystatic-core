@@ -1,43 +1,42 @@
 """Tests for the Operational Compiler."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
-
 from engine.language.model import (
+    CallEdge,
+    CallGraph,
+    EntryPoint,
+    EntryPointKind,
+    ReferenceGraph,
     RepositoryModel,
     Symbol,
     SymbolKind,
     SymbolVisibility,
-    CallGraph,
-    CallEdge,
-    ReferenceGraph,
-    EntryPoint,
-    EntryPointKind,
 )
-from engine.change.model import (
-    ChangeModel,
-    ModifiedSymbol,
-    ImportChange,
-    EndpointChange,
-)
+
 from engine.behavior.model import (
     Behavior,
     BehaviorKind,
     BehaviorModel,
+    ExecutionEdge,
     ExecutionGraph,
     ExecutionNode,
-    ExecutionEdge,
 )
-from engine.operational.model import OperationalChangeModel
+from engine.change.model import (
+    ChangeModel,
+    EndpointChange,
+    ImportChange,
+    ModifiedSymbol,
+)
 from engine.operational.compiler import OperationalCompiler
 from engine.operational.compiler.passes import (
-    ModelCompositionPass,
     ConsistencyValidationPass,
+    ModelCompositionPass,
     OperationalPassContext,
 )
-
+from engine.operational.model import OperationalChangeModel
 
 # ---------------------------------------------------------------------------
 # Test helpers

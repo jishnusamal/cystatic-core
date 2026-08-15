@@ -7,9 +7,9 @@ import pytest
 from core.errors import LanguageDetectionFailed, LanguageNotSupported
 from engine.language.detection import LanguageAdapterFactory
 from engine.pipeline.pipeline import PipelineContext
-from integrations.github.renderers.json_renderer import JSONRenderer
-from integrations.github.renderers.github_renderer import GitHubRenderer
 from engine.repository.indexing import MemoryRepositoryStore
+from integrations.github.renderers.github_renderer import GitHubRenderer
+from integrations.github.renderers.json_renderer import JSONRenderer
 
 
 class TestLanguageDetection:
@@ -253,8 +253,9 @@ class TestJSONRenderer:
             ReferenceGraph,
             TypeRelationshipGraph,
         )
-        from engine.change.model import ChangeModel
+
         from engine.behavior.model import BehaviorModel
+        from engine.change.model import ChangeModel
         from engine.operational.model import OperationalChangeModel
 
         repository = RepositoryModel(
@@ -300,16 +301,15 @@ class TestGitHubRenderer:
     def test_render_simple(self):
         """Test rendering a simple summary."""
         from engine.language.model import RepositoryModel, Symbol, SymbolKind
-        from engine.change.model import ChangeModel, ModifiedSymbol
-        from engine.behavior.model import BehaviorModel
-        from engine.operational.model import OperationalChangeModel
-
-        from engine.language.model import RepositoryModel
         from engine.language.model.graphs import (
             CallGraph,
             ReferenceGraph,
             TypeRelationshipGraph,
         )
+
+        from engine.behavior.model import BehaviorModel
+        from engine.change.model import ChangeModel, ModifiedSymbol
+        from engine.operational.model import OperationalChangeModel
 
         repository = RepositoryModel(
             symbols=frozenset(),
@@ -388,7 +388,7 @@ class TestPipelineTokenCount:
         assert token_counts["f"] > 0
         assert token_counts["sym"] > 0
         assert token_counts["total"] >= sum(
-            token_counts[k] for k in test_context.keys()
+            token_counts[k] for k in test_context
         )
 
     def test_calculate_llm_context_tokens_empty(self):

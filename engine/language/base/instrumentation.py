@@ -5,9 +5,10 @@ Provides detailed timing, counting, and hotspot analysis for compiler passes.
 
 import time
 import tracemalloc
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import wraps
+from typing import Any, TypeVar
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -168,12 +169,12 @@ class PassInstrumentation:
             )
 
             if stats.slowest_files:
-                log(f"  Slowest files:")
+                log("  Slowest files:")
                 for file_path, file_time in stats.slowest_files[:5]:
                     log(f"    {file_path:<50} {file_time:.2f}s")
 
             if stats.counters:
-                log(f"  Counters:")
+                log("  Counters:")
                 for counter, value in sorted(stats.counters.items()):
                     log(f"    {counter}: {value}")
 
@@ -355,7 +356,7 @@ class PassInstrumentation:
                 )
 
         # Detect potential algorithmic issues
-        log(f"\nPotential Algorithmic Hotspots:")
+        log("\nPotential Algorithmic Hotspots:")
 
         # Check for repeated AST walks
         for pass_name, pass_stats in self.pass_stats.items():
@@ -393,8 +394,8 @@ class PassInstrumentation:
     def print_profile_summary(self):
         """Print a concise profile summary for the terminal when in profiling mode."""
         import sys
-        from core.logging import pipeline_logger
-        from core.logging import timer
+
+        from core.logging import pipeline_logger, timer
 
         visitor_timings = [t for t in timer.get_timings() if t["name"] == "Visitor"]
         visitor_time = (

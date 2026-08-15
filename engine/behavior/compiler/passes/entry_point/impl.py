@@ -1,7 +1,8 @@
 """Entry Point Pass - identifies where execution begins."""
 
+from engine.behavior.model import Behavior, EntryPoint
+
 from ..base import BehaviorCompilerPass, BehaviorPassContext
-from engine.behavior.model import EntryPoint, Behavior
 
 
 class EntryPointPass(BehaviorCompilerPass):

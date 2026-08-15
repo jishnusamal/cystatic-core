@@ -1,17 +1,16 @@
 """Tests for the Incremental Repository Compiler and GraphPatcher."""
 
 import hashlib
+import os
 import tempfile
 import time
-import os
+
 import pytest
-from engine.language.python.adapter import PythonLanguageAdapter
 from engine.language.model import (
-    SymbolKind,
-    SymbolVisibility,
     RepositoryGraph,
-    FileContribution,
 )
+
+from engine.language.python.adapter import PythonLanguageAdapter
 
 
 @pytest.fixture
@@ -75,8 +74,8 @@ class TestIncrementalCompiler:
             assert graph.files[path].source_hash == expected_hash
 
         # Verify symbol resolution in the graph
-        assert f"python://service.py::confirm_checkout" in graph.symbols
-        assert f"python://processor.py::charge_card" in graph.symbols
+        assert "python://service.py::confirm_checkout" in graph.symbols
+        assert "python://processor.py::charge_card" in graph.symbols
 
         # Verify call graph edges
         assert len(graph.call_graph.edges) > 0
@@ -352,16 +351,16 @@ def helper():
     @pytest.mark.asyncio
     async def test_pipeline_incremental_orchestration(self, base_source_files):
         """Test end-to-end pipeline run utilizing incremental compilation."""
+        from unittest.mock import AsyncMock, MagicMock
+
         from engine.pipeline.pipeline import Pipeline
-        from engine.repository.indexing import MemoryRepositoryStore
         from models import (
             AnalysisRequest,
-            RepositoryReference,
-            PullRequestReference,
-            DiffSnapshot,
             DiffFile,
+            DiffSnapshot,
+            PullRequestReference,
+            RepositoryReference,
         )
-        from unittest.mock import AsyncMock, MagicMock
 
         # Setup mocks
         repo_ref = RepositoryReference(

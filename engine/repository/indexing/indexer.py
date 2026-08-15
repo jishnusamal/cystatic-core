@@ -1,23 +1,24 @@
 import gc
+from typing import Any
 from zlib import adler32
-from typing import Any, Dict, Iterable, Callable
-from engine.repository.indexing.sink import RepositoryFactSink
+
 from engine.repository.facts import (
-    FileId,
-    SymbolId,
-    File,
-    Symbol,
     Call,
-    Reference,
-    Import,
-    ImportType,
-    TypeRelationship,
-    Endpoint,
     DatabaseRelationship,
+    Endpoint,
     EventPublication,
     EventSubscription,
+    File,
+    FileId,
+    Import,
+    ImportType,
+    Reference,
+    Symbol,
+    SymbolId,
     TestRelationship,
+    TypeRelationship,
 )
+from engine.repository.indexing.sink import RepositoryFactSink
 
 
 def build_symbol_fqn(
@@ -44,11 +45,11 @@ class RepositoryIndexer:
 
     def __init__(self, sink: RepositoryFactSink) -> None:
         self.sink = sink
-        self._file_id_map: Dict[str, FileId] = {}
+        self._file_id_map: dict[str, FileId] = {}
         self._next_file_id = 1
 
-        self._symbol_id_map: Dict[str, SymbolId] = {}
-        self._symbol_fqn_map: Dict[SymbolId, str] = {}
+        self._symbol_id_map: dict[str, SymbolId] = {}
+        self._symbol_fqn_map: dict[SymbolId, str] = {}
         self._next_symbol_id = 1
 
     def get_or_create_file_id(self, path: str) -> FileId:
@@ -73,7 +74,7 @@ class RepositoryIndexer:
         """Retrieve the canonical FQN string for a SymbolId."""
         return self._symbol_fqn_map.get(symbol_id)
 
-    def index_repository(self, repository_input: Dict[str, Any], adapter: Any) -> None:
+    def index_repository(self, repository_input: dict[str, Any], adapter: Any) -> None:
         """
         Streamingly index a repository snapshot using the provided adapter.
 
@@ -133,7 +134,7 @@ class RepositoryIndexer:
                 )
                 parent_id = self.get_or_create_symbol_id(parent_fqn)
 
-            from engine.repository.facts import SymbolVisibility, SymbolKind
+            from engine.repository.facts import SymbolKind, SymbolVisibility
 
             try:
                 kind = SymbolKind(sym.kind)

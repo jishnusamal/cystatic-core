@@ -6,21 +6,21 @@ into an EngineeringDiscoveryModel with all execution-oriented abstractions.
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import cast
 
 from engine.behavior.model import BehaviorModel
 from engine.change.model import ChangeModel, RepositoryDelta
+from engine.operational.model import EngineeringDiscoveryModel, OperationalChangeModel
 from engine.repository.model import RepositoryModel
-from engine.operational.model import OperationalChangeModel, EngineeringDiscoveryModel
 
 from .passes import (
-    OperationalPassContext,
-    DependencyCompilationPass,
-    DataCompilationPass,
-    EventCompilationPass,
     APICompilationPass,
-    ValidationCompilationPass,
+    DataCompilationPass,
+    DependencyCompilationPass,
+    EventCompilationPass,
     MetricsCompilationPass,
+    OperationalPassContext,
+    ValidationCompilationPass,
 )
 
 

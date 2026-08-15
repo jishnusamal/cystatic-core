@@ -10,27 +10,16 @@ This is an embarrassingly parallel stage — each file is independent.
 """
 
 import time
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from engine.language.base.file_context import FileContext
-from engine.language.base.passes import BaseIndexPass
 from engine.language.base.instrumentation import get_instrumentation
+from engine.language.base.passes import BaseIndexPass
 from engine.repository.model.repository_index import (
-    CallEntry,
-    ConfigEntry,
-    EntrypointEntry,
-    EventEntry,
     FileIndex,
-    ImportEntry,
-    PersistenceEntry,
-    RawReference,
     RepositoryIndex,
-    RepositoryMethodEntry,
-    SymbolEntry,
-    TestEntry,
-    TypeRelationshipEntry,
 )
-
 
 # Type alias for the mutable builder dict used during indexing.
 # Keys match FileIndex field names exactly.

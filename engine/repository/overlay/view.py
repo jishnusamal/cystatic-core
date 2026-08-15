@@ -1,7 +1,5 @@
 from collections import defaultdict
-from typing import Dict, List, Set, Tuple
 
-from engine.repository.query import RepositoryQuery
 from engine.repository.facts import (
     Call,
     DatabaseRelationship,
@@ -20,6 +18,7 @@ from engine.repository.facts import (
 )
 from engine.repository.model.repository_model import EntryPoint, EntryPointKind
 from engine.repository.overlay.overlay import RepositoryOverlay
+from engine.repository.query import RepositoryQuery
 
 
 class RepositoryView(RepositoryQuery):
@@ -35,56 +34,56 @@ class RepositoryView(RepositoryQuery):
         self.overlay = overlay
 
         # Pre-index added facts by query lookup key
-        self._added_calls_from: Dict[SymbolId, List[Call]] = defaultdict(list)
-        self._added_calls_to: Dict[SymbolId, List[Call]] = defaultdict(list)
+        self._added_calls_from: dict[SymbolId, list[Call]] = defaultdict(list)
+        self._added_calls_to: dict[SymbolId, list[Call]] = defaultdict(list)
         for c in overlay.added_calls:
             self._added_calls_from[c.caller_id].append(c)
             self._added_calls_to[c.callee_id].append(c)
 
-        self._added_refs_from: Dict[SymbolId, List[Reference]] = defaultdict(list)
-        self._added_refs_to: Dict[SymbolId, List[Reference]] = defaultdict(list)
+        self._added_refs_from: dict[SymbolId, list[Reference]] = defaultdict(list)
+        self._added_refs_to: dict[SymbolId, list[Reference]] = defaultdict(list)
         for r in overlay.added_references:
             self._added_refs_from[r.source_id].append(r)
             self._added_refs_to[r.target_id].append(r)
 
-        self._added_imports_from: Dict[FileId, List[Import]] = defaultdict(list)
-        self._added_imports_to: Dict[FileId, List[Import]] = defaultdict(list)
+        self._added_imports_from: dict[FileId, list[Import]] = defaultdict(list)
+        self._added_imports_to: dict[FileId, list[Import]] = defaultdict(list)
         for i in overlay.added_imports:
             self._added_imports_from[i.source_file_id].append(i)
             if i.target_file_id is not None:
                 self._added_imports_to[i.target_file_id].append(i)
 
-        self._added_type_from: Dict[SymbolId, List[TypeRelationship]] = defaultdict(
+        self._added_type_from: dict[SymbolId, list[TypeRelationship]] = defaultdict(
             list
         )
-        self._added_type_to: Dict[SymbolId, List[TypeRelationship]] = defaultdict(list)
+        self._added_type_to: dict[SymbolId, list[TypeRelationship]] = defaultdict(list)
         for tr in overlay.added_type_relationships:
             self._added_type_from[tr.source_id].append(tr)
             self._added_type_to[tr.target_id].append(tr)
 
-        self._added_endpoints: Dict[SymbolId, List[Endpoint]] = defaultdict(list)
+        self._added_endpoints: dict[SymbolId, list[Endpoint]] = defaultdict(list)
         for ep in overlay.added_endpoints:
             self._added_endpoints[ep.symbol_id].append(ep)
 
-        self._added_db_rels: Dict[SymbolId, List[DatabaseRelationship]] = defaultdict(
+        self._added_db_rels: dict[SymbolId, list[DatabaseRelationship]] = defaultdict(
             list
         )
         for db in overlay.added_database_relationships:
             self._added_db_rels[db.symbol_id].append(db)
 
-        self._added_event_pubs: Dict[SymbolId, List[EventPublication]] = defaultdict(
+        self._added_event_pubs: dict[SymbolId, list[EventPublication]] = defaultdict(
             list
         )
         for pub in overlay.added_event_publications:
             self._added_event_pubs[pub.symbol_id].append(pub)
 
-        self._added_event_subs: Dict[EventId, List[EventSubscription]] = defaultdict(
+        self._added_event_subs: dict[EventId, list[EventSubscription]] = defaultdict(
             list
         )
         for sub in overlay.added_event_subscriptions:
             self._added_event_subs[sub.event_id].append(sub)
 
-        self._added_tests: Dict[SymbolId, List[TestRelationship]] = defaultdict(list)
+        self._added_tests: dict[SymbolId, list[TestRelationship]] = defaultdict(list)
         for t in overlay.added_test_relationships:
             self._added_tests[t.target_symbol_id].append(t)
 

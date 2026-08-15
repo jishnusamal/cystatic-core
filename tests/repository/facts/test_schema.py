@@ -1,35 +1,15 @@
 import dataclasses
 import json
+
 import pytest
 
 from engine.repository.facts import (
-    FileId,
-    SymbolId,
-    EventId,
-    ResourceId,
-    EndpointId,
     File,
+    FileId,
     Symbol,
+    SymbolId,
     SymbolKind,
     SymbolVisibility,
-    Call,
-    CallType,
-    Reference,
-    ReferenceType,
-    Import,
-    ImportType,
-    TypeRelationship,
-    TypeRelationshipType,
-    Endpoint,
-    EndpointMethod,
-    DatabaseRelationship,
-    DatabaseRelationshipType,
-    EventPublication,
-    EventPublicationType,
-    EventSubscription,
-    EventSubscriptionType,
-    TestRelationship,
-    TestRelationshipType,
 )
 
 

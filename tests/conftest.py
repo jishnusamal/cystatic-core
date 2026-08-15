@@ -1,4 +1,5 @@
 import sys
+
 import engine.repository.model
 
 sys.modules["engine.language.model"] = engine.repository.model

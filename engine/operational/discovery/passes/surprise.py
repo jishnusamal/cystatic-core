@@ -60,8 +60,8 @@ from engine.operational.discovery.model import (
     DiscoverySupport,
 )
 from engine.operational.discovery.passes.base import (
-    DiscoveryPassContext,
     DiscoveryCompilerPass,
+    DiscoveryPassContext,
 )
 
 

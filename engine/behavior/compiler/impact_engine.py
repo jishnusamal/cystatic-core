@@ -1,11 +1,10 @@
 """Impact Engine - calculates impact surfaces using bounded traversal over RepositoryQuery."""
 
-from typing import Any
 from collections import deque
 from dataclasses import dataclass
 
-from engine.repository.query.repository import RepositoryQuery
 from engine.behavior.model.impact_surface import ImpactSurface
+from engine.repository.query.repository import RepositoryQuery
 
 
 @dataclass

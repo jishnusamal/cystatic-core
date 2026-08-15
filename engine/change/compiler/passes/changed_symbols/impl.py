@@ -2,8 +2,9 @@
 
 from typing import Any
 
-from ..base import ChangeCompilerPass, ChangePassContext
 from engine.repository.model import Symbol
+
+from ..base import ChangeCompilerPass, ChangePassContext
 
 
 class ChangedSymbolsPass(ChangeCompilerPass):

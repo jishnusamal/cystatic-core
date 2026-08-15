@@ -1,14 +1,14 @@
 """Domain models for the Factor platform."""
 
+from .analysis import AnalysisRequest, AnalysisTrigger
 from .core import (
-    RepositoryReference,
-    RepositorySnapshot,
-    PullRequestReference,
     DiffFile,
     DiffHunk,
     DiffSnapshot,
+    PullRequestReference,
+    RepositoryReference,
+    RepositorySnapshot,
 )
-from .analysis import AnalysisRequest, AnalysisTrigger
 
 __all__ = [
     "AnalysisRequest",

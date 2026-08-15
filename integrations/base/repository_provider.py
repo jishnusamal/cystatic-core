@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-from models.core import RepositoryReference, RepositorySnapshot, DiffSnapshot
+from models.core import DiffSnapshot, RepositoryReference, RepositorySnapshot
 
 
 class RepositoryProvider(ABC):
@@ -27,7 +27,6 @@ class RepositoryProvider(ABC):
         Returns:
             Repository snapshot with tree, files, and commit info
         """
-        pass
 
     @abstractmethod
     async def fetch_repository_at_sha(
@@ -42,7 +41,6 @@ class RepositoryProvider(ABC):
         Returns:
             Repository snapshot at the specified commit
         """
-        pass
 
     @abstractmethod
     async def fetch_diff(
@@ -61,7 +59,6 @@ class RepositoryProvider(ABC):
         Returns:
             Diff snapshot with changed files and hunks
         """
-        pass
 
     @abstractmethod
     async def fetch_file(
@@ -80,7 +77,6 @@ class RepositoryProvider(ABC):
         Returns:
             File content as string
         """
-        pass
 
     @abstractmethod
     async def fetch_tree(
@@ -97,7 +93,6 @@ class RepositoryProvider(ABC):
         Returns:
             Tree structure
         """
-        pass
 
     @abstractmethod
     async def fetch_commit(
@@ -114,4 +109,3 @@ class RepositoryProvider(ABC):
         Returns:
             Commit information
         """
-        pass

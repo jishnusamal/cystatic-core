@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
-from .ids import SymbolId, EventId
+
+from .ids import EventId, SymbolId
 
 
 class EventPublicationType(str, Enum):

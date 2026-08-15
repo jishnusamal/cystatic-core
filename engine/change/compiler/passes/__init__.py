@@ -1,12 +1,12 @@
 """Change compiler passes package."""
 
-from .base import ChangePassContext, ChangeCompilerPass
-from .changed_symbols.impl import ChangedSymbolsPass
+from .base import ChangeCompilerPass, ChangePassContext
 from .change_classification.impl import ChangeClassificationPass
+from .changed_symbols.impl import ChangedSymbolsPass
 
 __all__ = [
-    "ChangePassContext",
-    "ChangeCompilerPass",
-    "ChangedSymbolsPass",
     "ChangeClassificationPass",
+    "ChangeCompilerPass",
+    "ChangePassContext",
+    "ChangedSymbolsPass",
 ]

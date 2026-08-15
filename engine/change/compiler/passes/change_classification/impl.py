@@ -2,20 +2,18 @@
 
 from typing import Any
 
-from ..base import ChangeCompilerPass, ChangePassContext
-from engine.repository.model import Symbol
 from engine.change.model import (
-    ModifiedSymbol,
-    ImportChange,
-    EndpointChange,
-    FunctionBodyChange,
-    SignatureChange,
-    VisibilityChange,
     DecoratorChange,
-    SuperclassChange,
-    InterfaceChange,
     EndpointAnnotationChange,
+    FunctionBodyChange,
+    InterfaceChange,
+    SignatureChange,
+    SuperclassChange,
+    VisibilityChange,
 )
+from engine.repository.model import Symbol
+
+from ..base import ChangeCompilerPass, ChangePassContext
 
 
 class ChangeClassificationPass(ChangeCompilerPass):

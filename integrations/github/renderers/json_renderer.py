@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from engine.operational.model import OperationalChangeModel, EngineeringDiscoveryModel
-from core.errors import JSONSerializationFailed, RendererFailed
+from core.errors import RendererFailed
+from engine.operational.model import EngineeringDiscoveryModel, OperationalChangeModel
 
 
 class JSONRenderer:
