@@ -1,150 +1,413 @@
-"""Change compiler - orchestrates compilation passes."""
+"""Change compiler - orchestrates local fact comparison."""
 
-from typing import Any
-
-from .passes import (
-    ChangePassContext,
-    ChangedSymbolsPass,
-    ChangeClassificationPass,
-)
+from typing import Any, Dict, List, Tuple
 from engine.change.model import (
-    ChangeModel,
-    ModifiedSymbol,
-    ImportChange,
-    EndpointChange,
-    FunctionBodyChange,
-    SignatureChange,
-    VisibilityChange,
-    DecoratorChange,
-    SuperclassChange,
-    InterfaceChange,
-    EndpointAnnotationChange,
+    ChangeFacts,
+    ChangedSymbol,
+    ContractChange,
+    ChangeKind,
 )
+from engine.repository.query import RepositoryQuery
+from engine.repository.facts import Call, Reference, Import, Symbol, FileId, SymbolId
 from engine.change.model.repository_comparison import RepositoryComparison
-from engine.repository.model import RepositoryModel
+
+
+class RepositoryModelQuery(RepositoryQuery):
+    """Query interface wrapper for the old RepositoryModel to support backward compatibility."""
+    def __init__(self, model):
+        self.model = model
+        self._symbols = {s.id: s for s in model.symbols}
+        
+    def get_symbol(self, symbol_id):
+        return self._symbols.get(symbol_id)
+        
+    def get_file(self, file_id):
+        return None
+        
+    def get_callers(self, symbol_id):
+        return tuple(
+            Call(caller_id=SymbolId(e.caller_id), callee_id=SymbolId(e.callee_id))
+            for e in self.model.call_graph.edges
+            if e.callee_id == symbol_id
+        )
+        
+    def get_callees(self, symbol_id):
+        return tuple(
+            Call(caller_id=SymbolId(e.caller_id), callee_id=SymbolId(e.callee_id))
+            for e in self.model.call_graph.edges
+            if e.caller_id == symbol_id
+        )
+        
+    def get_references_from(self, symbol_id):
+        return tuple(
+            Reference(source_id=SymbolId(e.source_id), target_id=SymbolId(e.target_id))
+            for e in self.model.reference_graph.edges
+            if e.source_id == symbol_id
+        )
+        
+    def get_references_to(self, symbol_id):
+        return tuple(
+            Reference(source_id=SymbolId(e.source_id), target_id=SymbolId(e.target_id))
+            for e in self.model.reference_graph.edges
+            if e.target_id == symbol_id
+        )
+        
+    def get_imports(self, file_id):
+        return tuple(
+            Import(
+                source_file_id=FileId(s.file),
+                target_file_id=None,
+                module=s.properties.get("module", ""),
+                imported_name=s.name
+            )
+            for s in self.model.symbols
+            if s.kind == "import" and s.file == file_id
+        )
+        
+    def get_importers(self, file_id):
+        return ()
+        
+    def get_type_relationships(self, symbol_id):
+        return ()
+        
+    def get_type_dependents(self, symbol_id):
+        return ()
+        
+    def get_endpoints(self, symbol_id):
+        symbol = self.get_symbol(symbol_id)
+        if symbol and ("endpoint" in symbol.properties or "http_method" in symbol.properties):
+            from engine.repository.facts import Endpoint, EndpointId, EndpointMethod
+            method_str = symbol.properties.get("http_method", "GET")
+            try:
+                method = EndpointMethod(method_str)
+            except Exception:
+                method = EndpointMethod.ANY
+            return (Endpoint(
+                id=EndpointId(hash(symbol_id) & 0xffffffff),
+                symbol_id=SymbolId(symbol_id),
+                method=method,
+                path=symbol.properties.get("endpoint", ""),
+                framework="",
+            ),)
+        return ()
+        
+    def get_database_relationships(self, symbol_id):
+        return ()
+        
+    def get_published_events(self, symbol_id):
+        return ()
+        
+    def get_event_consumers(self, event_id):
+        return ()
+        
+    def get_tests(self, symbol_id):
+        return ()
 
 
 class ChangeCompiler:
     """
-    Compiles a git diff into a Change Model.
+    Rebuilt ChangeCompiler.
     
-    This is the main entry point for change compilation.
-    It orchestrates the execution of all compilation passes in order.
-    
-    Input: Git diff data with old and new repository models
-    Output: ChangeModel containing the complete change representation
+    Processes the diff (local files modified) and compares facts locally 
+    using RepositoryQuery instead of repository-wide full model comparisons.
     """
-    
-    def __init__(self):
-        """Initialize the compiler with all passes."""
-        self.passes = [
-            ChangedSymbolsPass(),
-            ChangeClassificationPass(),
-        ]
     
     def compile(
         self,
-        comparison: RepositoryComparison
-    ) -> ChangeModel:
+        diff: Any = None,
+        repository: Any = None, # BASE query interface
+        head_repository: Any = None, # HEAD query interface
+        comparison: RepositoryComparison | None = None, # legacy support
+    ) -> ChangeFacts:
         """
-        Compile a git diff into a Change Model.
-        
-        Args:
-            comparison: RepositoryComparison containing base model, head model, and diff
-            
-        Returns:
-            ChangeModel containing the complete change representation
-            
-        Raises:
-            ValueError: If comparison is invalid
+        Compile changes between base and head states.
         """
-        # Validate the comparison (frozen dataclass ensures immutability)
-        if comparison.is_same_commit():
-            # This is allowed but worth noting
-            pass
+        # 1. Unpack comparison input if provided for legacy tests/pipeline
+        if isinstance(diff, RepositoryComparison):
+            comparison = diff
+            diff = None
+
+        if comparison is not None:
+            base_query = RepositoryModelQuery(comparison.base_model)
+            head_query = RepositoryModelQuery(comparison.head_model)
+            diff_data = comparison.diff
+        else:
+            base_query = repository
+            head_query = head_repository
+            diff_data = diff or {}
+            
+        # Ensure we have queries to compare
+        if base_query is None or head_query is None:
+            return ChangeFacts()
+
+        # 2. Localize set of changed files to prevent repository-wide comparison
+        changed_files = set()
+        if isinstance(diff_data, dict) and "files" in diff_data:
+            for f in diff_data["files"]:
+                changed_files.add(f.get("file_path"))
         
-        # Initialize pass context with comparison data
-        context = ChangePassContext(
-            diff_data=comparison.diff,
-            metadata={
-                'diff_data': comparison.diff,
-                'old_repository_model': comparison.base_model,
-                'new_repository_model': comparison.head_model,
-                'base_sha': comparison.base_sha,
-                'head_sha': comparison.head_sha,
-            }
+        # If no explicit diff files, find them from symbols
+        if not changed_files:
+            if hasattr(base_query, "model") and hasattr(head_query, "model"):
+                changed_files = {s.file for s in base_query.model.symbols} | {s.file for s in head_query.model.symbols}
+            elif hasattr(base_query, "_facts") and hasattr(head_query, "_facts"):
+                changed_files = {f.path for f in base_query._facts.files} | {f.path for f in head_query._facts.files}
+
+        changed_symbols = []
+        added_calls = []
+        removed_calls = []
+        added_references = []
+        removed_references = []
+        added_imports = []
+        removed_imports = []
+        contract_changes = []
+
+        # Helper to extract all symbol IDs for changed files
+        base_symbols_by_file = {}
+        head_symbols_by_file = {}
+
+        # 3. Retrieve symbols scoped only to changed files
+        if hasattr(base_query, "model"):
+            for s in base_query.model.symbols:
+                if s.file in changed_files:
+                    base_symbols_by_file.setdefault(s.file, []).append(s)
+        elif hasattr(base_query, "_facts"):
+            for s in base_query._facts.symbols:
+                file_fact = base_query.get_file(s.file_id)
+                if file_fact and file_fact.path in changed_files:
+                    base_symbols_by_file.setdefault(file_fact.path, []).append(s)
+
+        if hasattr(head_query, "model"):
+            for s in head_query.model.symbols:
+                if s.file in changed_files:
+                    head_symbols_by_file.setdefault(s.file, []).append(s)
+        elif hasattr(head_query, "_facts"):
+            for s in head_query._facts.symbols:
+                file_fact = head_query.get_file(s.file_id)
+                if file_fact and file_fact.path in changed_files:
+                    head_symbols_by_file.setdefault(file_fact.path, []).append(s)
+
+        # 4. Compare symbols and facts file-by-file locally
+        for file_path in changed_files:
+            base_syms = {s.id: s for s in base_symbols_by_file.get(file_path, [])}
+            head_syms = {s.id: s for s in head_symbols_by_file.get(file_path, [])}
+
+            # Added symbols
+            for sid, h_sym in head_syms.items():
+                if sid not in base_syms:
+                    changed_symbols.append(ChangedSymbol(symbol_id=sid, change_type="ADDED", file_id=file_path))
+                    
+                    # Inspect added calls, references, and contracts
+                    added_calls.extend(head_query.get_callees(sid))
+                    added_references.extend(head_query.get_references_from(sid))
+                    
+                    for ep in head_query.get_endpoints(sid):
+                        contract_changes.append(ContractChange(
+                            symbol_id=sid,
+                            contract_type="api",
+                            change_kind="added",
+                            details={"new_endpoint": ep.path, "new_method": ep.method.value if hasattr(ep.method, "value") else str(ep.method)}
+                        ))
+                    for db in head_query.get_database_relationships(sid):
+                        contract_changes.append(ContractChange(
+                            symbol_id=sid,
+                            contract_type="database",
+                            change_kind="added",
+                            details={"resource_id": str(db.resource_id)}
+                        ))
+                    for epub in head_query.get_published_events(sid):
+                        contract_changes.append(ContractChange(
+                            symbol_id=sid,
+                            contract_type="event_publish",
+                            change_kind="added",
+                            details={"event_id": str(epub.event_id)}
+                        ))
+
+            # Removed symbols
+            for sid, b_sym in base_syms.items():
+                if sid not in head_syms:
+                    changed_symbols.append(ChangedSymbol(symbol_id=sid, change_type="REMOVED", file_id=file_path))
+                    
+                    # Inspect removed calls, references, and contracts
+                    removed_calls.extend(base_query.get_callees(sid))
+                    removed_references.extend(base_query.get_references_from(sid))
+                    
+                    for ep in base_query.get_endpoints(sid):
+                        contract_changes.append(ContractChange(
+                            symbol_id=sid,
+                            contract_type="api",
+                            change_kind="removed",
+                            details={"old_endpoint": ep.path, "old_method": ep.method.value if hasattr(ep.method, "value") else str(ep.method)}
+                        ))
+                    for db in base_query.get_database_relationships(sid):
+                        contract_changes.append(ContractChange(
+                            symbol_id=sid,
+                            contract_type="database",
+                            change_kind="removed",
+                            details={"resource_id": str(db.resource_id)}
+                        ))
+                    for epub in base_query.get_published_events(sid):
+                        contract_changes.append(ContractChange(
+                            symbol_id=sid,
+                            contract_type="event_publish",
+                            change_kind="removed",
+                            details={"event_id": str(epub.event_id)}
+                        ))
+
+            # Modified symbols
+            for sid, h_sym in head_syms.items():
+                if sid in base_syms:
+                    b_sym = base_syms[sid]
+                    
+                    # Detect structural symbol modifications
+                    modified = False
+                    if b_sym.range != h_sym.range or b_sym.visibility != h_sym.visibility:
+                        modified = True
+                    elif b_sym.properties != h_sym.properties:
+                        modified = True
+                        
+                    if modified:
+                        changed_symbols.append(ChangedSymbol(symbol_id=sid, change_type="MODIFIED", file_id=file_path))
+
+                        # Compare range (body)
+                        if b_sym.range != h_sym.range:
+                            contract_changes.append(ContractChange(
+                                symbol_id=sid,
+                                contract_type="body",
+                                change_kind="modified",
+                                details={
+                                    "old_body_hash": b_sym.properties.get("body_hash", ""),
+                                    "new_body_hash": h_sym.properties.get("body_hash", ""),
+                                }
+                            ))
+
+                        # Compare visibility
+                        if b_sym.visibility != h_sym.visibility:
+                            contract_changes.append(ContractChange(
+                                symbol_id=sid,
+                                contract_type="visibility",
+                                change_kind="modified",
+                                details={
+                                    "old_visibility": b_sym.visibility.value if hasattr(b_sym.visibility, "value") else str(b_sym.visibility),
+                                    "new_visibility": h_sym.visibility.value if hasattr(h_sym.visibility, "value") else str(h_sym.visibility),
+                                }
+                            ))
+
+                        # Compare decorators
+                        b_decs = b_sym.properties.get("decorators", [])
+                        h_decs = h_sym.properties.get("decorators", [])
+                        if b_decs != h_decs:
+                            contract_changes.append(ContractChange(
+                                symbol_id=sid,
+                                contract_type="decorators",
+                                change_kind="modified",
+                                details={
+                                    "old_decorators": tuple(b_decs),
+                                    "new_decorators": tuple(h_decs),
+                                }
+                            ))
+
+                        # Compare signature
+                        if b_sym.properties.get("signature") != h_sym.properties.get("signature"):
+                            contract_changes.append(ContractChange(
+                                symbol_id=sid,
+                                contract_type="signature",
+                                change_kind="modified",
+                                details={
+                                    "old_signature": b_sym.properties.get("signature"),
+                                    "new_signature": h_sym.properties.get("signature"),
+                                }
+                            ))
+
+                        # Compare endpoints
+                        b_eps = {ep.id: ep for ep in base_query.get_endpoints(sid)}
+                        h_eps = {ep.id: ep for ep in head_query.get_endpoints(sid)}
+                        for eid, hep in h_eps.items():
+                            if eid not in b_eps:
+                                contract_changes.append(ContractChange(
+                                    symbol_id=sid,
+                                    contract_type="api",
+                                    change_kind="added",
+                                    details={"new_endpoint": hep.path, "new_method": hep.method.value if hasattr(hep.method, "value") else str(hep.method)}
+                                ))
+                            elif b_eps[eid].path != hep.path or b_eps[eid].method != hep.method:
+                                contract_changes.append(ContractChange(
+                                    symbol_id=sid,
+                                    contract_type="api",
+                                    change_kind="modified",
+                                    details={
+                                        "old_endpoint": b_eps[eid].path,
+                                        "new_endpoint": hep.path,
+                                        "old_method": b_eps[eid].method.value if hasattr(b_eps[eid].method, "value") else str(b_eps[eid].method),
+                                        "new_method": hep.method.value if hasattr(hep.method, "value") else str(hep.method),
+                                    }
+                                ))
+                        for eid, bep in b_eps.items():
+                            if eid not in h_eps:
+                                contract_changes.append(ContractChange(
+                                    symbol_id=sid,
+                                    contract_type="api",
+                                    change_kind="removed",
+                                    details={"old_endpoint": bep.path, "old_method": bep.method.value if hasattr(bep.method, "value") else str(bep.method)}
+                                ))
+
+                        # Compare calls
+                        b_calls = {(c.caller_id, c.callee_id): c for c in base_query.get_callees(sid)}
+                        h_calls = {(c.caller_id, c.callee_id): c for c in head_query.get_callees(sid)}
+                        for key, hc in h_calls.items():
+                            if key not in b_calls:
+                                added_calls.append(hc)
+                        for key, bc in b_calls.items():
+                            if key not in h_calls:
+                                removed_calls.append(bc)
+
+                        # Compare references
+                        b_refs = {(r.source_id, r.target_id): r for r in base_query.get_references_from(sid)}
+                        h_refs = {(r.source_id, r.target_id): r for r in head_query.get_references_from(sid)}
+                        for key, hr in h_refs.items():
+                            if key not in b_refs:
+                                added_references.append(hr)
+                        for key, br in b_refs.items():
+                            if key not in h_refs:
+                                removed_references.append(br)
+
+            # Compare imports for the file
+            file_id_b = None
+            if hasattr(base_query, "_facts"):
+                for f in base_query._facts.files:
+                    if f.path == file_path:
+                        file_id_b = f.id
+                        break
+            if file_id_b is None:
+                file_id_b = file_path
+
+            file_id_h = None
+            if hasattr(head_query, "_facts"):
+                for f in head_query._facts.files:
+                    if f.path == file_path:
+                        file_id_h = f.id
+                        break
+            if file_id_h is None:
+                file_id_h = file_path
+
+            b_imports = {imp.module: imp for imp in base_query.get_imports(file_id_b)}
+            h_imports = {imp.module: imp for imp in head_query.get_imports(file_id_h)}
+            
+            for mod, imp in h_imports.items():
+                if mod not in b_imports:
+                    added_imports.append(imp)
+            for mod, imp in b_imports.items():
+                if mod not in h_imports:
+                    removed_imports.append(imp)
+
+        return ChangeFacts(
+            changed_symbols=tuple(changed_symbols),
+            added_calls=tuple(added_calls),
+            removed_calls=tuple(removed_calls),
+            added_references=tuple(added_references),
+            removed_references=tuple(removed_references),
+            added_imports=tuple(added_imports),
+            removed_imports=tuple(removed_imports),
+            contract_changes=tuple(contract_changes),
+            files_changed=len(changed_files)
         )
-        
-        # Execute each pass in sequence
-        for compiler_pass in self.passes:
-            context = compiler_pass.run(context)
-        
-        # Create and return the change model
-        return self._build_change_model(context)
-    
-    def _build_change_model(self, context: ChangePassContext) -> ChangeModel:
-        """
-        Build the final ChangeModel from the pass context.
-        
-        Args:
-            context: Final pass context with all change data
-            
-        Returns:
-            Complete ChangeModel
-        """
-        # Convert modified symbols to ModifiedSymbol objects
-        modified_symbols = []
-        for modified_data in context.modified_symbols:
-            symbol = modified_data['symbol']
-            symbol_id = symbol.id
-            
-            # Get classified changes for this symbol
-            changes = context.symbol_changes.get(symbol_id, [])
-            
-            modified_symbols.append(ModifiedSymbol(
-                symbol=symbol,
-                changes=tuple(changes)
-            ))
-        
-        # Convert import changes to ImportChange objects
-        changed_imports = [
-            ImportChange(
-                file=imp['file'],
-                old_import=imp['old_import'],
-                new_import=imp['new_import'],
-                change_type=imp['change_type']
-            )
-            for imp in context.changed_imports
-        ]
-        
-        # Convert endpoint changes to EndpointChange objects
-        changed_endpoints = [
-            EndpointChange(
-                symbol_id=ep['symbol_id'],
-                old_endpoint=ep['old_endpoint'],
-                new_endpoint=ep['new_endpoint'],
-                old_method=ep['old_method'],
-                new_method=ep['new_method'],
-                change_type=ep['change_type']
-            )
-            for ep in context.changed_endpoints
-        ]
-        
-        # Count files changed from diff data
-        files_changed = 0
-        diff_data = context.metadata.get('diff_data', {})
-        if diff_data and 'files' in diff_data:
-            files_changed = len(diff_data['files'])
-        
-        return ChangeModel(
-            added_symbols=tuple(context.added_symbols),
-            removed_symbols=tuple(context.removed_symbols),
-            modified_symbols=tuple(modified_symbols),
-            changed_imports=tuple(changed_imports),
-            changed_endpoints=tuple(changed_endpoints),
-            files_changed=files_changed
-        )
-    
-    def get_pass_names(self) -> list[str]:
-        """Get the names of all passes in execution order."""
-        return [pass_.name for pass_ in self.passes]

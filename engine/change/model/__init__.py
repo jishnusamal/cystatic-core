@@ -1,6 +1,7 @@
 """Change model package."""
 
 from .change_model import ChangeModel, ModifiedSymbol, ImportChange, EndpointChange
+from .change_facts import ChangeFacts, ChangedSymbol, ChangeKind, ContractChange
 from .changes import (
     FunctionBodyChange,
     SignatureChange,
@@ -18,6 +19,10 @@ __all__ = [
     "ModifiedSymbol",
     "ImportChange",
     "EndpointChange",
+    "ChangeFacts",
+    "ChangedSymbol",
+    "ChangeKind",
+    "ContractChange",
     "FunctionBodyChange",
     "SignatureChange",
     "VisibilityChange",
