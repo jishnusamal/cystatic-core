@@ -31,6 +31,7 @@ class PersistentFactSink(RepositoryFactSink):
         self.version_id = version_id
         self.conn = store.conn
         self._in_transaction = False
+        self._current_file_id: int | None = None
 
     def begin(self) -> None:
         """Starts a new SQLite transaction if not already in one."""
@@ -50,11 +51,12 @@ class PersistentFactSink(RepositoryFactSink):
             self.conn.rollback()
             self._in_transaction = False
 
-    def add_file(self, file: File) -> FileId:
+    def add_file(self, file: File, state: str = "active") -> FileId:
         self.begin()
+        self._current_file_id = int(file.id)
         self.conn.execute(
-            "INSERT OR REPLACE INTO files (repository_id, version_id, id, path, language) VALUES (?, ?, ?, ?, ?)",
-            (self.repository_id, self.version_id, int(file.id), file.path, file.language)
+            "INSERT OR REPLACE INTO files (repository_id, version_id, id, path, language, state) VALUES (?, ?, ?, ?, ?, ?)",
+            (self.repository_id, self.version_id, int(file.id), file.path, file.language, state)
         )
         return file.id
 
@@ -82,15 +84,15 @@ class PersistentFactSink(RepositoryFactSink):
     def add_call(self, call: Call) -> None:
         self.begin()
         self.conn.execute(
-            "INSERT INTO calls (repository_id, version_id, caller_id, callee_id, call_type) VALUES (?, ?, ?, ?, ?)",
-            (self.repository_id, self.version_id, int(call.caller_id), int(call.callee_id), call.call_type.value)
+            "INSERT INTO calls (repository_id, version_id, file_id, caller_id, callee_id, call_type) VALUES (?, ?, ?, ?, ?, ?)",
+            (self.repository_id, self.version_id, self._current_file_id, int(call.caller_id), int(call.callee_id), call.call_type.value)
         )
 
     def add_reference(self, reference: Reference) -> None:
         self.begin()
         self.conn.execute(
-            "INSERT INTO \"references\" (repository_id, version_id, source_id, target_id, relation_type) VALUES (?, ?, ?, ?, ?)",
-            (self.repository_id, self.version_id, int(reference.source_id), int(reference.target_id), reference.relation_type.value)
+            "INSERT INTO \"references\" (repository_id, version_id, file_id, source_id, target_id, relation_type) VALUES (?, ?, ?, ?, ?, ?)",
+            (self.repository_id, self.version_id, self._current_file_id, int(reference.source_id), int(reference.target_id), reference.relation_type.value)
         )
 
     def add_import(self, import_fact: Import) -> None:
@@ -112,18 +114,19 @@ class PersistentFactSink(RepositoryFactSink):
     def add_type_relationship(self, type_rel: TypeRelationship) -> None:
         self.begin()
         self.conn.execute(
-            "INSERT INTO type_relationships (repository_id, version_id, source_id, target_id, relationship_type) VALUES (?, ?, ?, ?, ?)",
-            (self.repository_id, self.version_id, int(type_rel.source_id), int(type_rel.target_id), type_rel.relationship_type.value)
+            "INSERT INTO type_relationships (repository_id, version_id, file_id, source_id, target_id, relationship_type) VALUES (?, ?, ?, ?, ?, ?)",
+            (self.repository_id, self.version_id, self._current_file_id, int(type_rel.source_id), int(type_rel.target_id), type_rel.relationship_type.value)
         )
 
     def add_endpoint(self, endpoint: Endpoint) -> None:
         self.begin()
         self.conn.execute(
-            "INSERT OR REPLACE INTO endpoints (repository_id, version_id, id, symbol_id, method, path, framework) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO endpoints (repository_id, version_id, id, file_id, symbol_id, method, path, framework) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 self.repository_id,
                 self.version_id,
                 int(endpoint.id),
+                self._current_file_id,
                 int(endpoint.symbol_id),
                 endpoint.method.value,
                 endpoint.path,
@@ -134,27 +137,27 @@ class PersistentFactSink(RepositoryFactSink):
     def add_database_relationship(self, db_rel: DatabaseRelationship) -> None:
         self.begin()
         self.conn.execute(
-            "INSERT INTO database_relationships (repository_id, version_id, symbol_id, resource_id, relationship_type) VALUES (?, ?, ?, ?, ?)",
-            (self.repository_id, self.version_id, int(db_rel.symbol_id), int(db_rel.resource_id), db_rel.relationship_type.value)
+            "INSERT INTO database_relationships (repository_id, version_id, file_id, symbol_id, resource_id, relationship_type) VALUES (?, ?, ?, ?, ?, ?)",
+            (self.repository_id, self.version_id, self._current_file_id, int(db_rel.symbol_id), int(db_rel.resource_id), db_rel.relationship_type.value)
         )
 
     def add_event_publication(self, pub: EventPublication) -> None:
         self.begin()
         self.conn.execute(
-            "INSERT INTO event_publications (repository_id, version_id, symbol_id, event_id, publication_type) VALUES (?, ?, ?, ?, ?)",
-            (self.repository_id, self.version_id, int(pub.symbol_id), int(pub.event_id), pub.publication_type.value)
+            "INSERT INTO event_publications (repository_id, version_id, file_id, symbol_id, event_id, publication_type) VALUES (?, ?, ?, ?, ?, ?)",
+            (self.repository_id, self.version_id, self._current_file_id, int(pub.symbol_id), int(pub.event_id), pub.publication_type.value)
         )
 
     def add_event_subscription(self, sub: EventSubscription) -> None:
         self.begin()
         self.conn.execute(
-            "INSERT INTO event_subscriptions (repository_id, version_id, symbol_id, event_id, subscription_type) VALUES (?, ?, ?, ?, ?)",
-            (self.repository_id, self.version_id, int(sub.symbol_id), int(sub.event_id), sub.subscription_type.value)
+            "INSERT INTO event_subscriptions (repository_id, version_id, file_id, symbol_id, event_id, subscription_type) VALUES (?, ?, ?, ?, ?, ?)",
+            (self.repository_id, self.version_id, self._current_file_id, int(sub.symbol_id), int(sub.event_id), sub.subscription_type.value)
         )
 
     def add_test_relationship(self, test_rel: TestRelationship) -> None:
         self.begin()
         self.conn.execute(
-            "INSERT INTO test_relationships (repository_id, version_id, test_symbol_id, target_symbol_id, relationship_type) VALUES (?, ?, ?, ?, ?)",
-            (self.repository_id, self.version_id, int(test_rel.test_symbol_id), int(test_rel.target_symbol_id), test_rel.relationship_type.value)
+            "INSERT INTO test_relationships (repository_id, version_id, file_id, test_symbol_id, target_symbol_id, relationship_type) VALUES (?, ?, ?, ?, ?, ?)",
+            (self.repository_id, self.version_id, self._current_file_id, int(test_rel.test_symbol_id), int(test_rel.target_symbol_id), test_rel.relationship_type.value)
         )

@@ -277,3 +277,98 @@ def test_repository_version_isolation():
     sym_res = store.get_symbol(SymbolId(1))
     assert sym_res is not None
     assert sym_res.name == "funcB"
+
+
+def test_logical_view_inheritance():
+    """
+    Verifies that HEAD inherits unchanged files from BASE, overrides modified files,
+    and updates relationships appropriately.
+    """
+    store = SQLiteRepositoryStore(":memory:")
+    repo_id = store.create_repository("github", "owner", "repo")
+    
+    # 1. Base Version setup
+    v_base = store.create_version(repo_id, "commit_base")
+    store.set_version_context(repo_id, v_base)
+    sink_base = PersistentFactSink(store, repo_id, v_base)
+    
+    # file A (unchanged in HEAD)
+    file_a = File(id=FileId(1), path="a.py", language="python")
+    sink_base.add_file(file_a)
+    sym_a = Symbol(id=SymbolId(10), name="funcA", file_id=file_a.id, kind=SymbolKind.FUNCTION, language="python", start_line=1, end_line=5)
+    sink_base.add_symbol(sym_a)
+    
+    # file B (modified in HEAD)
+    file_b = File(id=FileId(2), path="b.py", language="python")
+    sink_base.add_file(file_b)
+    sym_b = Symbol(id=SymbolId(20), name="funcB", file_id=file_b.id, kind=SymbolKind.FUNCTION, language="python", start_line=1, end_line=5)
+    sink_base.add_symbol(sym_b)
+    
+    # Call from B to A in BASE
+    call_ba = Call(caller_id=sym_b.id, callee_id=sym_a.id, call_type=CallType.DIRECT)
+    sink_base.add_call(call_ba)
+    
+    sink_base.flush()
+    
+    # 2. Head Version setup (parent = commit_base)
+    v_head = store.create_version(repo_id, "commit_head", parent_sha="commit_base")
+    store.set_version_context(repo_id, v_head)
+    sink_head = PersistentFactSink(store, repo_id, v_head)
+    
+    # Delete existing facts for file B first (simulates replace_file_facts)
+    store.delete_file_facts(repo_id, v_head, int(file_b.id))
+    
+    # Write only modified file B (without call to A)
+    sink_head.add_file(file_b)
+    sym_b_mod = Symbol(id=SymbolId(20), name="funcB_modified", file_id=file_b.id, kind=SymbolKind.FUNCTION, language="python", start_line=1, end_line=10)
+    sink_head.add_symbol(sym_b_mod)
+    sink_head.flush()
+    
+    # 3. Query under HEAD context
+    # File A should be inherited
+    assert store.get_file(file_a.id) == file_a
+    assert store.get_symbol(sym_a.id) == sym_a
+    
+    # File B should be overridden
+    assert store.get_file(file_b.id) == file_b
+    assert store.get_symbol(sym_b.id) == sym_b_mod
+    
+    # Call relationship should not be inherited because caller's file (file B) was overridden in HEAD
+    assert store.get_callees(sym_b.id) == ()
+    assert store.get_callers(sym_a.id) == ()
+    
+    # 4. Switch back to BASE context to verify base is unaffected
+    store.set_version_context(repo_id, v_base)
+    assert store.get_symbol(sym_b.id) == sym_b
+    assert store.get_callees(sym_b.id) == (call_ba,)
+    assert store.get_callers(sym_a.id) == (call_ba,)
+
+
+def test_logical_view_deletion():
+    """
+    Verifies that tombstones in HEAD prevent inheritance of deleted files/symbols.
+    """
+    store = SQLiteRepositoryStore(":memory:")
+    repo_id = store.create_repository("github", "owner", "repo")
+    
+    v_base = store.create_version(repo_id, "commit_base")
+    store.set_version_context(repo_id, v_base)
+    sink_base = PersistentFactSink(store, repo_id, v_base)
+    
+    file_a = File(id=FileId(1), path="a.py", language="python")
+    sink_base.add_file(file_a)
+    sym_a = Symbol(id=SymbolId(10), name="funcA", file_id=file_a.id, kind=SymbolKind.FUNCTION, language="python", start_line=1, end_line=5)
+    sink_base.add_symbol(sym_a)
+    sink_base.flush()
+    
+    # Create HEAD and tombstone file A
+    v_head = store.create_version(repo_id, "commit_head", parent_sha="commit_base")
+    store.set_version_context(repo_id, v_head)
+    sink_head = PersistentFactSink(store, repo_id, v_head)
+    sink_head.add_file(file_a, state="deleted")
+    sink_head.flush()
+    
+    # Querying under HEAD
+    assert store.get_file(file_a.id) is None
+    assert store.get_symbol(sym_a.id) is None
+

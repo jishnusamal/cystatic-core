@@ -368,6 +368,7 @@ class Pipeline:
                 details={"repository": request.repository.full_name, "sha": base_sha},
             ) from exc
         base_fetch_time = time.perf_counter() - base_fetch_start
+        context.base_repository_snapshot = snapshot
         print(f"[pipeline] Base snapshot fetched: {len(snapshot.files)} files")
         
         # Detect language
@@ -615,6 +616,14 @@ class Pipeline:
             if profiler:
                 profiler.log_memory("After head RepositoryModel")
             pipeline_logger.log_pipeline(f"[pipeline] Step 1.4 done: Head RepositoryModel exported in {head_export_duration:.2f}s", to_terminal=True)
+            
+            # Compile overlay and view
+            print(f"[pipeline] Compiling repository overlay and view...")
+            view, overlay_duration = await self._compile_overlay_and_view(
+                request, base_sha, head_sha, language, context
+            )
+            context.repository_view = view
+            print(f"[pipeline] Repository overlay and view compiled in {overlay_duration:.2f}s")
             
             timer.print_progress()
             
@@ -1589,3 +1598,122 @@ class Pipeline:
                 "llm_response": None,
                 "llm_raw_output": None,
             }
+
+    async def _compile_overlay_and_view(
+        self,
+        request: AnalysisRequest,
+        base_sha: str,
+        head_sha: str,
+        language: str,
+        context: PipelineContext,
+    ) -> tuple[Any, float]:
+        """Compile changed files and build RepositoryOverlay & RepositoryView directly from diff."""
+        start_time = time.perf_counter()
+        
+        # 1. Ensure base snapshot and facts are compiled
+        snapshot = context.base_repository_snapshot
+        if snapshot is None:
+            snapshot = await self.repository_provider.fetch_repository_at_sha(request.repository, base_sha)
+            context.base_repository_snapshot = snapshot
+            
+        adapter = self.language_factory.create_adapter(language)
+        
+        # Build base facts
+        from engine.repository.indexing import RepositoryIndexer, InMemoryFactSink
+        from engine.repository.query import InMemoryRepository
+        
+        base_sink = InMemoryFactSink()
+        base_indexer = RepositoryIndexer(base_sink)
+        base_indexer.index_repository({"files": snapshot.files, "language": language}, adapter)
+        base_facts = base_sink.build_facts()
+        base_query = InMemoryRepository(base_facts)
+        
+        # 2. Fetch changed files
+        changed_files_dict = {}
+        if request.pull_request:
+            if context.diff_data is None:
+                if request.has_diff:
+                    context.diff_data = self._diff_snapshot_to_dict(request.diff)
+                else:
+                    await self._fetch_diff(context, request)
+            
+            if context.diff_data and "files" in context.diff_data:
+                async def fetch_one(file_path: str):
+                    try:
+                        if self.repository_provider is None:
+                            return file_path, None
+                        content = await self.repository_provider.fetch_file(
+                            request.repository, file_path, head_sha
+                        )
+                        return file_path, content
+                    except Exception as exc:
+                        print(f"[pipeline] File {file_path} not found at head: {exc}")
+                        return file_path, None
+                
+                tasks = [fetch_one(file_info["file_path"]) for file_info in context.diff_data["files"]]
+                results = await asyncio.gather(*tasks)
+                changed_files_dict = dict(results)
+                
+        # 3. Index changed/added files using head indexer sharing base ID maps
+        head_sink = InMemoryFactSink()
+        head_indexer = RepositoryIndexer(head_sink)
+        head_indexer._file_id_map = dict(base_indexer._file_id_map)
+        head_indexer._next_file_id = base_indexer._next_file_id
+        head_indexer._symbol_id_map = dict(base_indexer._symbol_id_map)
+        head_indexer._symbol_fqn_map = dict(base_indexer._symbol_fqn_map)
+        head_indexer._next_symbol_id = base_indexer._next_symbol_id
+        
+        # Filter files to only index non-None (added/modified)
+        files_to_index = {f: c for f, c in changed_files_dict.items() if c is not None}
+        head_indexer.index_repository({"files": files_to_index, "language": language}, adapter)
+        head_facts = head_sink.build_facts()
+        
+        # 4. Construct RepositoryOverlay
+        from engine.repository.overlay import RepositoryOverlay, RepositoryView
+        from engine.repository.facts import File
+        
+        added_files = {}
+        removed_files = set()
+        modified_files = set()
+        
+        if context.diff_data:
+            for file_info in context.diff_data.get("files", []):
+                file_path = file_info["file_path"]
+                change_type = file_info.get("change_type")
+                
+                if change_type == "added":
+                    file_id = head_indexer.get_or_create_file_id(file_path)
+                    added_files[file_id] = File(id=file_id, path=file_path, language=language)
+                elif change_type == "deleted":
+                    file_id = base_indexer._file_id_map.get(file_path)
+                    if file_id is not None:
+                        removed_files.add(file_id)
+                elif change_type == "modified":
+                    file_id = base_indexer._file_id_map.get(file_path)
+                    if file_id is not None:
+                        removed_files.add(file_id)
+                        modified_files.add(file_id)
+                        added_files[file_id] = File(id=file_id, path=file_path, language=language)
+                        
+        removed_symbols = {s.id for s in base_facts.symbols if s.file_id in removed_files}
+        
+        overlay = RepositoryOverlay(
+            added_files=added_files,
+            removed_files=removed_files,
+            modified_files=modified_files,
+            added_symbols={s.id: s for s in head_facts.symbols},
+            removed_symbols=removed_symbols,
+            added_calls=set(head_facts.calls),
+            added_references=set(head_facts.references),
+            added_imports=set(head_facts.imports),
+            added_type_relationships=set(head_facts.type_relationships),
+            added_endpoints=set(head_facts.endpoints),
+            added_database_relationships=set(head_facts.database_relationships),
+            added_event_publications=set(head_facts.event_publications),
+            added_event_subscriptions=set(head_facts.event_subscriptions),
+            added_test_relationships=set(head_facts.test_relationships),
+        )
+        
+        view = RepositoryView(base_query, overlay)
+        duration = time.perf_counter() - start_time
+        return view, duration

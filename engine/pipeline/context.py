@@ -44,6 +44,7 @@ class PipelineContext:
     # Compiled repository models (immutable once set)
     base_repository_model: RepositoryModel | None = None
     head_repository_model: RepositoryModel | None = None
+    repository_view: Any | None = None
 
     # Repository delta (canonical input for downstream phases)
     repository_delta: RepositoryDelta | None = None
