@@ -38,7 +38,7 @@ from models import AnalysisRequest, AnalysisTrigger
 from engine.pipeline.context import PipelineContext
 from integrations.github.renderers.github_renderer import GitHubRenderer
 from integrations.github.renderers.json_renderer import JSONRenderer
-from engine.repository.store import SQLiteRepositoryStore, RepositoryStore
+from engine.repository.store import SQLiteRepositoryStore, RepositoryStore, PersistentFactSink
 from engine.repository.query import RepositoryQuery, InMemoryRepository
 from engine.repository.facts import File, FileId, SymbolId
 from engine.repository.indexing import RepositoryIndexer, InMemoryFactSink
@@ -557,10 +557,11 @@ class Pipeline:
             start_time = time.perf_counter()
             full_name = request.repository.full_name
             provider = getattr(request.repository, "provider", "github") or "github"
+            repo_id = f"{provider}/{full_name}" if not full_name.startswith(f"{provider}/") else full_name
             
             # Try provider/owner/repo first, then owner/repo
             possible_repo_ids = [
-                f"{provider}/{full_name}" if not full_name.startswith(f"{provider}/") else full_name,
+                repo_id,
                 full_name
             ]
             
@@ -590,11 +591,20 @@ class Pipeline:
                         pass
 
             
-            # If not in persistent store, check if base snapshot was provided in test context
+            # If not in persistent store, fetch on-demand or use base snapshot from context
             if base_query is None:
+                snapshot = None
                 if context.base_repository_snapshot is not None:
-                    # Index the provided snapshot in-memory (useful in tests)
                     snapshot = context.base_repository_snapshot
+                elif self.repository_provider is not None:
+                    try:
+                        print(f"[pipeline] Base facts for {repo_id}@{base_sha} not found in store. Fetching repository on-demand...")
+                        snapshot = await self.repository_provider.fetch_repository_at_sha(request.repository, base_sha)
+                    except Exception as exc:
+                        print(f"[pipeline] Failed to fetch repository at base SHA {base_sha}: {exc}")
+                        snapshot = None
+                
+                if snapshot is not None:
                     if context.language is None:
                         language = self.language_factory.detect_language(snapshot.files)
                         context.language = language
@@ -603,16 +613,45 @@ class Pipeline:
                         language = context.language
                     adapter = self.language_factory.create_adapter(language)
                     
-                    base_sink = InMemoryFactSink()
-                    base_indexer = RepositoryIndexer(base_sink)
-                    base_indexer.index_repository({"files": snapshot.files, "language": language}, adapter)
-                    base_facts = base_sink.build_facts()
-                    base_query = InMemoryRepository(base_facts)
+                    if self.repository_store is not None and isinstance(self.repository_store, SQLiteRepositoryStore):
+                        try:
+                            owner = getattr(request.repository, "owner", None)
+                            repo_name_only = getattr(request.repository, "repository", None)
+                            if not owner or not repo_name_only:
+                                parts = full_name.split("/", 1)
+                                owner = parts[0] if len(parts) > 1 else ""
+                                repo_name_only = parts[1] if len(parts) > 1 else parts[0]
+                            
+                            actual_repo_id = self.repository_store.create_repository(provider, owner, repo_name_only)
+                            actual_version_id = self.repository_store.create_version(actual_repo_id, base_sha)
+                            self.repository_store.set_version_context(actual_repo_id, actual_version_id)
+                            
+                            sink = PersistentFactSink(self.repository_store, actual_repo_id, actual_version_id)
+                            indexer = RepositoryIndexer(sink)
+                            indexer.index_repository({"files": snapshot.files, "language": language}, adapter)
+                            sink.flush()
+                            
+                            base_query = self.repository_store
+                            base_cached = True
+                            version_id = actual_version_id
+                            print(f"[pipeline] Successfully indexed base facts for {actual_version_id} into RepositoryStore")
+                        except Exception as exc:
+                            print(f"[pipeline] Failed to persist facts to RepositoryStore: {exc}, falling back to InMemoryRepository")
+                            base_sink = InMemoryFactSink()
+                            base_indexer = RepositoryIndexer(base_sink)
+                            base_indexer.index_repository({"files": snapshot.files, "language": language}, adapter)
+                            base_facts = base_sink.build_facts()
+                            base_query = InMemoryRepository(base_facts)
+                    else:
+                        base_sink = InMemoryFactSink()
+                        base_indexer = RepositoryIndexer(base_sink)
+                        base_indexer.index_repository({"files": snapshot.files, "language": language}, adapter)
+                        base_facts = base_sink.build_facts()
+                        base_query = InMemoryRepository(base_facts)
                 else:
-                    # In production PR-analysis, we do NOT silently download the whole repo
+                    missing_version = version_id or f"{repo_id}@{base_sha}"
                     raise RepositoryCompilationFailed(
-                        f"Base repository facts for version {version_id} not found in persistent store. "
-                        f"Repository must be indexed prior to PR analysis.",
+                        f"Base repository facts for version {missing_version} not found in persistent store and could not be fetched on-demand.",
                         details={"repository": repo_id, "sha": base_sha},
                     )
             

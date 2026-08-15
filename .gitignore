@@ -9,3 +9,4 @@ migrations/
 .infisical.json
 *_cache/
 logs/
+*.db*

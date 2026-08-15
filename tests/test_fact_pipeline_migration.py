@@ -131,3 +131,89 @@ async def test_production_pipeline_fact_architecture(tmp_path):
     view_syms = context.repository_view.get_symbols_in_file(FileId(1))
     assert len(view_syms) >= 1
     assert view_syms[0].name == "hello"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_on_demand_base_indexing(tmp_path):
+    """
+    Verifies that when base repository facts are missing from SQLite store,
+    the pipeline fetches the repository snapshot on-demand, indexes it into SQLite store,
+    and caches it for subsequent queries.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+    from models.core import RepositorySnapshot
+
+    db_file = str(tmp_path / "test_store_ondemand.db")
+    store = SQLiteRepositoryStore(db_file)
+    
+    mock_provider = MagicMock()
+    mock_snapshot = RepositorySnapshot(
+        tree={},
+        files={"main.py": "def test_func():\n    return 42\n"},
+        commit="sha-base-ondemand",
+    )
+    mock_provider.fetch_repository_at_sha = AsyncMock(return_value=mock_snapshot)
+    mock_provider.fetch_file = AsyncMock(return_value="def test_func():\n    return 99\n")
+
+    pipeline = Pipeline(
+        repository_store=store,
+        repository_provider=mock_provider,
+    )
+
+    repo_ref = RepositoryReference(
+        provider="github",
+        owner="test-org",
+        repository="ondemand-repo",
+        default_branch="main",
+    )
+    pr_ref = PullRequestReference(
+        number=1,
+        base_sha="sha-base-ondemand",
+        head_sha="sha-head-ondemand",
+        title="Test On-Demand Indexing",
+    )
+    hunk = DiffHunk(
+        file_path="main.py",
+        source_start=1,
+        source_length=2,
+        target_start=1,
+        target_length=2,
+        added_lines=("+    return 99",),
+        removed_lines=("-    return 42",),
+        lines=(" def test_func():", "-    return 42", "+    return 99"),
+    )
+    diff_file = DiffFile(
+        file_path="main.py",
+        added_lines=("+    return 99",),
+        removed_lines=("-    return 42",),
+        hunks=(hunk,),
+    )
+    diff_snapshot = DiffSnapshot(files=(diff_file,))
+
+    request = AnalysisRequest(
+        repository=repo_ref,
+        pull_request=pr_ref,
+        diff=diff_snapshot,
+        trigger=AnalysisTrigger.MANUAL,
+    )
+
+    # 1. Run pipeline - base commit is not pre-indexed
+    context = await pipeline.run(request)
+
+    # 2. Verify on-demand fetch was called and context succeeded
+    mock_provider.fetch_repository_at_sha.assert_called_once_with(repo_ref, "sha-base-ondemand")
+    assert context.error is None
+    assert context.base_query is not None
+    assert isinstance(context.base_query, SQLiteRepositoryStore)
+    assert context.repository_view is not None
+
+    # 3. Verify that base facts were persisted into SQLite store
+    store.set_version_context("github/test-org/ondemand-repo", "github/test-org/ondemand-repo@sha-base-ondemand")
+    file_fact = store.get_file(FileId(1))
+    assert file_fact is not None
+    assert file_fact.path == "main.py"
+    syms = store.get_symbols_in_file(FileId(1))
+    assert len(syms) == 1
+    assert syms[0].name == "test_func"
+
+
