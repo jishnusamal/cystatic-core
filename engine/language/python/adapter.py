@@ -135,8 +135,8 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
     def _build_index(self, files: dict[str, str], language: str) -> RepositoryIndex:
         """Build a RepositoryIndex from raw source files.
 
-        Each file is parsed exactly once. The composite visitor walks
-        the AST once and dispatches to all indexing passes.
+        Each file is parsed and indexed one by one to avoid keeping
+        all ASTs in memory simultaneously.
 
         Args:
             files: Dictionary mapping file paths to file contents
@@ -145,69 +145,70 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
         Returns:
             RepositoryIndex containing structural facts
         """
-        file_contexts: list[FileContext[Any]] = []
-        files_skipped = 0
+        py_files = [f for f in files.keys() if f.endswith('.py')]
+        num_python_files = len(py_files)
+        files_skipped = len(files) - num_python_files
         files_failed = 0
+        files_parsed = 0
         parse_times: list[float] = []
         slow_files: list[tuple[str, float]] = []
 
-        # Parse all files
-        for file_path, content in files.items():
-            if not file_path.endswith('.py'):
-                files_skipped += 1
-                continue
+        def generate_contexts():
+            nonlocal files_failed, files_parsed
+            for file_path in py_files:
+                content = files.get(file_path)
+                if content is None:
+                    continue
 
-            try:
-                start_time = time.perf_counter()
-                tree = ast.parse(content, filename=file_path)
-                parse_time = time.perf_counter() - start_time
-                parse_times.append(parse_time)
-                
-                # Log slow parses (>100ms)
-                if parse_time > 0.1:
-                    slow_files.append((file_path, parse_time))
-                
-                context = FileContext(
-                    path=file_path,
-                    source=content,
-                    ast=tree,
-                    language=language,
-                )
-                file_contexts.append(context)
-            except SyntaxError:
-                files_failed += 1
-                continue
+                try:
+                    start_time = time.perf_counter()
+                    tree = ast.parse(content, filename=file_path)
+                    parse_time = time.perf_counter() - start_time
+                    parse_times.append(parse_time)
+                    
+                    if parse_time > 0.1:
+                        slow_files.append((file_path, parse_time))
+                    
+                    context = FileContext(
+                        path=file_path,
+                        source=content,
+                        ast=tree,
+                        language=language,
+                    )
+                    files_parsed += 1
+                    yield context
+                except SyntaxError:
+                    files_failed += 1
+                    continue
 
-        # Log parsing statistics
-        total_parse_time = sum(parse_times)
-        avg_parse_time = total_parse_time / len(parse_times) if parse_times else 0
-        
         from core.profile import get_current_profiler
         profiler = get_current_profiler()
+
+        # Use composite visitor for single AST traversal per file
+        with timer.timed("Visitor", metadata={"files": num_python_files}):
+            index = self._index_compiler.compile_with_visitor(generate_contexts(), language, self._visitor)
+
+        # Log parsing & indexing statistics (after generator is exhausted)
+        total_parse_time = sum(parse_times)
+        avg_parse_time = total_parse_time / len(parse_times) if parse_times else 0
+
         if profiler:
-            profiler.log_memory("After parsing")
-        
+            profiler.log_memory("After parsing and symbol extraction")
+            profiler.log_memory("After endpoint extraction")
+            profiler.log_memory("After dependency/relationship extraction")
+
         from core.logging import pipeline_logger
         log = lambda msg: pipeline_logger.log_pipeline(msg, to_terminal=False)
-        
-        log(f"[adapter] Python Files: {len(files)} total, {len(file_contexts)} parsed, {files_skipped} skipped, {files_failed} failed")
+
+        log(f"[adapter] Python Files: {len(files)} total, {files_parsed} parsed, {files_skipped} skipped, {files_failed} failed")
         log(f"[adapter] Total AST Parse Time: {total_parse_time:.3f}s")
         log(f"[adapter] Average Parse Time: {avg_parse_time * 1000:.2f}ms/file")
-        
+
         if slow_files:
             log(f"[adapter] Slow Parses (>100ms):")
             for file_path, parse_time in sorted(slow_files, key=lambda x: x[1], reverse=True)[:10]:
                 log(f"[adapter]   {file_path}: {parse_time * 1000:.2f}ms")
 
-        # Use composite visitor for single AST traversal per file
-        with timer.timed("Visitor", metadata={"files": len(file_contexts)}):
-            index = self._index_compiler.compile_with_visitor(file_contexts, language, self._visitor)
-        
-        if profiler:
-            profiler.log_memory("After symbol extraction")
-            profiler.log_memory("After endpoint extraction")
-            profiler.log_memory("After dependency/relationship extraction")
-        
         # Log indexing statistics
         log(f"[adapter] Symbols Indexed: {len(index.all_symbols)}")
         log(f"[adapter] Imports Indexed: {len(index.all_imports)}")
@@ -217,7 +218,7 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
         log(f"[adapter] Events: {len(index.all_events)}")
         log(f"[adapter] Tests: {len(index.all_tests)}")
         log(f"[adapter] Configurations: {len(index.all_configurations)}")
-        
+
         # Print visitor instrumentation
         from engine.language.base.instrumentation import get_instrumentation
         inst = get_instrumentation()
@@ -225,11 +226,10 @@ class PythonLanguageAdapter(BaseLanguageAdapter):
         inst.print_method_summary()
         inst.print_top_operations(n=50)
         inst.print_hotspot_analysis()
-        
+
         # Print concise profile summary for terminal output in profile mode
         inst.print_profile_summary()
-        
-        # Return RepositoryIndex (semantic compilation happens in compile())
+
         return index
 
 

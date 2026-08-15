@@ -128,8 +128,8 @@ class JavaLanguageAdapter(BaseLanguageAdapter):
     def _build_index(self, files: dict[str, str], language: str) -> RepositoryIndex:
         """Build a RepositoryIndex from raw source files.
 
-        Each file is parsed exactly once. All indexing passes
-        share the same parsed representation.
+        Each file is parsed and indexed one by one to avoid keeping
+        all line representations in memory simultaneously.
 
         Args:
             files: Dictionary mapping file paths to file contents
@@ -138,26 +138,26 @@ class JavaLanguageAdapter(BaseLanguageAdapter):
         Returns:
             RepositoryIndex containing structural facts
         """
-        file_contexts: list[FileContext[list[str]]] = []
+        java_files = [f for f in files.keys() if f.endswith('.java')]
 
-        for file_path, content in files.items():
-            if not file_path.endswith('.java'):
-                continue
+        def generate_contexts():
+            for file_path in java_files:
+                content = files.get(file_path)
+                if content is None:
+                    continue
 
-            try:
-                lines = self._parser.parse(content, file_path)
-            except Exception:
-                continue
+                try:
+                    lines = self._parser.parse(content, file_path)
+                    yield FileContext(
+                        path=file_path,
+                        source=content,
+                        ast=lines,
+                        language=language,
+                    )
+                except Exception:
+                    continue
 
-            context = FileContext(
-                path=file_path,
-                source=content,
-                ast=lines,
-                language=language,
-            )
-            file_contexts.append(context)
-
-        return self._index_compiler.compile(file_contexts, language)
+        return self._index_compiler.compile(generate_contexts(), language)
 
     def _index_single_file(self, file_path: str, content: str, language: str) -> Any:
         """Parse and run indexing passes on a single source file."""

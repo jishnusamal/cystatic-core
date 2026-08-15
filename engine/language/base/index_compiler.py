@@ -10,7 +10,7 @@ This is an embarrassingly parallel stage — each file is independent.
 """
 
 import time
-from typing import Any
+from typing import Any, Iterable
 
 from engine.language.base.file_context import FileContext
 from engine.language.base.passes import BaseIndexPass
@@ -102,17 +102,17 @@ class IndexCompiler:
 
     def compile(
         self,
-        file_contexts: list[FileContext],
+        file_contexts: Iterable[FileContext],
         language: str,
         metadata: dict[str, Any] | None = None,
     ) -> RepositoryIndex:
-        """Compile a list of FileContexts into a RepositoryIndex.
+        """Compile an iterable of FileContexts into a RepositoryIndex.
 
         Each file is processed exactly once by all passes.
         The resulting FileIndex entries are aggregated into a RepositoryIndex.
 
         Args:
-            file_contexts: List of FileContexts (one per parsed file)
+            file_contexts: Iterable of FileContexts (one per parsed file)
             language: Programming language identifier
             metadata: Additional repository-level metadata
 
@@ -152,18 +152,18 @@ class IndexCompiler:
 
     def compile_with_visitor(
         self,
-        file_contexts: list[FileContext],
+        file_contexts: Iterable[FileContext],
         language: str,
         visitor: Any,
         metadata: dict[str, Any] | None = None,
     ) -> RepositoryIndex:
-        """Compile a list of FileContexts using a composite visitor.
+        """Compile an iterable of FileContexts using a composite visitor.
 
         This method enables single AST traversal per file. The visitor
         walks each AST once and dispatches to all registered indexing passes.
 
         Args:
-            file_contexts: List of FileContexts (one per parsed file)
+            file_contexts: Iterable of FileContexts (one per parsed file)
             language: Programming language identifier
             visitor: Composite visitor that walks AST and dispatches to passes
             metadata: Additional repository-level metadata
