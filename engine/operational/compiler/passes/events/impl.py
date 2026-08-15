@@ -285,7 +285,7 @@ class EventCompilationPass(OperationalCompilerPass):
                     events.append(sym.name)
 
         # Check properties for event annotations
-        props = sym.properties
+        props = getattr(sym, "properties", {})
         if props.get("decorators"):
             decorators = props["decorators"]
             if isinstance(decorators, (list, tuple)):
@@ -328,7 +328,7 @@ class EventCompilationPass(OperationalCompilerPass):
                     events.append(sym.name)
 
         # Check properties for event listener annotations
-        props = sym.properties
+        props = getattr(sym, "properties", {})
         if props.get("decorators"):
             decorators = props["decorators"]
             if isinstance(decorators, (list, tuple)):
@@ -358,7 +358,7 @@ class EventCompilationPass(OperationalCompilerPass):
         for pattern in _QUEUE_PATTERNS:
             if pattern in name_lower:
                 return sym.name
-        props = sym.properties
+        props = getattr(sym, "properties", {})
         for key in ("queue", "queue_name", "topic", "channel"):
             if key in props:
                 return str(props[key])
@@ -372,7 +372,7 @@ class EventCompilationPass(OperationalCompilerPass):
             if pattern in name_lower:
                 return True
         # Check entry points for worker kind
-        props = sym.properties
+        props = getattr(sym, "properties", {})
         if props.get("kind") == "worker_entry":
             return True
         if props.get("decorators"):

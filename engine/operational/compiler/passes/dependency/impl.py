@@ -151,10 +151,24 @@ class DependencyCompilationPass(OperationalCompilerPass):
             sid: len(set(callees_of.get(sid, []))) for sid in affected_symbol_ids
         }
 
+        # Helper to safely get file path from Symbol fact or legacy Symbol model
+        repo = model.repository
+        def get_symbol_file_path(s: Symbol) -> str:
+            if hasattr(s, "file") and s.file:
+                return s.file
+            if hasattr(s, "file_id") and s.file_id is not None:
+                if hasattr(repo, "get_file"):
+                    f = repo.get_file(s.file_id)
+                    if f is not None:
+                        return f.path
+                if isinstance(s.file_id, str):
+                    return s.file_id
+            return ""
+
         # Shared modules: modules referenced by both callers and dependents
-        caller_modules = {symbol_map[c].file for c in caller_ids if c in symbol_map}
+        caller_modules = {get_symbol_file_path(symbol_map[c]) for c in caller_ids if c in symbol_map}
         dependent_modules = {
-            symbol_map[d].file for d in dependent_ids if d in symbol_map
+            get_symbol_file_path(symbol_map[d]) for d in dependent_ids if d in symbol_map
         }
         shared_modules = tuple(sorted(caller_modules & dependent_modules))
 

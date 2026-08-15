@@ -67,9 +67,9 @@ class ChangeFacts:
     def added_symbols(self) -> tuple[Any, ...]:
         class CompatSymbol:
             def __init__(self, symbol_id: str, file_id: str):
-                self.id = symbol_id
+                self.id = str(symbol_id)
                 self.file = file_id
-                self.name = symbol_id.split("::")[-1].split("#")[-1]
+                self.name = str(symbol_id).split("::")[-1].split("#")[-1]
                 self.kind = SymbolKind.FUNCTION
                 self.visibility = SymbolVisibility.PUBLIC
                 self.language = "python"
@@ -92,9 +92,9 @@ class ChangeFacts:
     def removed_symbols(self) -> tuple[Any, ...]:
         class CompatSymbol:
             def __init__(self, symbol_id: str, file_id: str):
-                self.id = symbol_id
+                self.id = str(symbol_id)
                 self.file = file_id
-                self.name = symbol_id.split("::")[-1].split("#")[-1]
+                self.name = str(symbol_id).split("::")[-1].split("#")[-1]
                 self.kind = SymbolKind.FUNCTION
                 self.visibility = SymbolVisibility.PUBLIC
                 self.language = "python"
@@ -117,9 +117,9 @@ class ChangeFacts:
     def modified_symbols(self) -> tuple[Any, ...]:
         class CompatSymbol:
             def __init__(self, symbol_id: str, file_id: str):
-                self.id = symbol_id
+                self.id = str(symbol_id)
                 self.file = file_id
-                self.name = symbol_id.split("::")[-1].split("#")[-1]
+                self.name = str(symbol_id).split("::")[-1].split("#")[-1]
                 self.kind = SymbolKind.FUNCTION
                 self.visibility = SymbolVisibility.PUBLIC
                 self.language = "python"

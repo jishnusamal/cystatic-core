@@ -372,7 +372,7 @@ class RepositoryView(RepositoryQuery):
         return tuple(v_eps)
 
     def get_symbols_in_file(self, file_id: FileId) -> tuple[Symbol, ...]:
-        if file_id in self.overlay.removed_files:
+        if file_id in self.overlay.removed_files and file_id not in self.overlay.modified_files:
             return ()
 
         if (
@@ -386,3 +386,5 @@ class RepositoryView(RepositoryQuery):
 
         base_syms = self.base.get_symbols_in_file(file_id)
         return tuple(s for s in base_syms if s.id not in self.overlay.removed_symbols)
+
+

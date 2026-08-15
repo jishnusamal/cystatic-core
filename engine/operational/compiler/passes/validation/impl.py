@@ -179,11 +179,26 @@ class ValidationCompilationPass(OperationalCompilerPass):
             references_affected_set.update(callers_of.get(affected_id, ()))
             references_affected_set.update(callees_of.get(affected_id, ()))
 
+        # Helper to safely get file path from Symbol fact or legacy Symbol model
+        def get_symbol_file_path(s: Symbol) -> str:
+            if hasattr(s, "file") and s.file:
+                return s.file
+            if hasattr(s, "file_id") and s.file_id is not None:
+                if hasattr(repo, "get_file"):
+                    f = repo.get_file(s.file_id)
+                    if f is not None:
+                        return f.path
+                if isinstance(s.file_id, str):
+                    return s.file_id
+            return ""
+
         # Get affected files
         affected_files: set[str] = set()
         for sid in affected_symbol_ids:
             if sid in symbol_map:
-                affected_files.add(symbol_map[sid].file)
+                f_path = get_symbol_file_path(symbol_map[sid])
+                if f_path:
+                    affected_files.add(f_path)
 
         # Classify test symbols
         unit_tests: list[Symbol] = []
@@ -226,7 +241,8 @@ class ValidationCompilationPass(OperationalCompilerPass):
                         integration_tests.append(test_sym)
                     else:
                         # Fall back to name/file classification for unit/benchmark
-                        test_category = self._classify_test(test_sym)
+                        f_path = get_symbol_file_path(test_sym)
+                        test_category = self._classify_test(test_sym, f_path)
                         if test_category == "benchmark":
                             benchmarks.append(test_sym)
                         elif test_category == "e2e":
@@ -250,7 +266,8 @@ class ValidationCompilationPass(OperationalCompilerPass):
             for sym in symbols_to_scan:
                 # 1. Test classification
                 if sym.kind == SymbolKind.FUNCTION or sym.kind == SymbolKind.METHOD:
-                    test_category = self._classify_test(sym)
+                    f_path = get_symbol_file_path(sym)
+                    test_category = self._classify_test(sym, f_path)
                     if test_category is not None:
                         sym_id_str = str(sym.id)
                         if (
@@ -272,7 +289,8 @@ class ValidationCompilationPass(OperationalCompilerPass):
                     production_replays.append(replay_ref)
 
                 # 3. Coverage detection
-                cov_ref = self._detect_coverage(sym)
+                f_path = get_symbol_file_path(sym)
+                cov_ref = self._detect_coverage(sym, f_path)
                 if cov_ref:
                     coverage_links.append(cov_ref)
 
@@ -306,32 +324,32 @@ class ValidationCompilationPass(OperationalCompilerPass):
         return context
 
     @staticmethod
-    def _classify_test(sym: Symbol) -> str | None:
+    def _classify_test(sym: Symbol, file_path: str = "") -> str | None:
         """Classify a symbol into a test category."""
         name_lower = sym.name.lower()
-        file_lower = sym.file.lower()
+        file_lower = file_path.lower() if file_path else (sym.file.lower() if hasattr(sym, "file") else "")
 
         # Check benchmark patterns first
         if any(p in name_lower for p in _BENCHMARK_PATTERNS):
             return "benchmark"
-        if any(p in file_lower for p in _BENCHMARK_PATTERNS):
+        if file_lower and any(p in file_lower for p in _BENCHMARK_PATTERNS):
             return "benchmark"
 
         # Check E2E patterns
-        if any(p in file_lower for p in _E2E_PATTERNS):
+        if file_lower and any(p in file_lower for p in _E2E_PATTERNS):
             return "e2e"
         if any(p in name_lower for p in _E2E_PATTERNS):
             return "e2e"
 
         # Check integration patterns
-        if any(p in file_lower for p in _INTEGRATION_PATTERNS):
+        if file_lower and any(p in file_lower for p in _INTEGRATION_PATTERNS):
             return "integration"
         if any(p in name_lower for p in _INTEGRATION_PATTERNS):
             return "integration"
 
         # Check test file patterns for unit tests
         for pattern, category in _TEST_FILE_PATTERNS.items():
-            if pattern in file_lower or pattern in name_lower:
+            if (file_lower and pattern in file_lower) or pattern in name_lower:
                 return "unit"
 
         return None
@@ -367,21 +385,21 @@ class ValidationCompilationPass(OperationalCompilerPass):
         name_lower = sym.name.lower()
         if any(p in name_lower for p in _REPLAY_PATTERNS):
             return sym.name
-        props = sym.properties
+        props = getattr(sym, "properties", {})
         if props.get("replay") or props.get("record_replay"):
             return str(props.get("replay", props.get("record_replay")))
         return None
 
     @staticmethod
-    def _detect_coverage(sym: Symbol) -> str | None:
+    def _detect_coverage(sym: Symbol, file_path: str = "") -> str | None:
         """Detect coverage references."""
         name_lower = sym.name.lower()
         if any(p in name_lower for p in _COVERAGE_PATTERNS):
             return sym.name
-        file_lower = sym.file.lower()
-        if any(p in file_lower for p in _COVERAGE_PATTERNS):
-            return sym.file
-        props = sym.properties
+        file_lower = file_path.lower() if file_path else (sym.file.lower() if hasattr(sym, "file") else "")
+        if file_lower and any(p in file_lower for p in _COVERAGE_PATTERNS):
+            return file_lower
+        props = getattr(sym, "properties", {})
         if props.get("coverage") or props.get("coverage_file"):
             return str(props.get("coverage", props.get("coverage_file")))
         return None

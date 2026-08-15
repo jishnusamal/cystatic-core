@@ -199,7 +199,7 @@ class APICompilationPass(OperationalCompilerPass):
             sym = symbol_map.get(sid)
             if sym is None:
                 continue
-            props = sym.properties
+            props = getattr(sym, "properties", {})
             if props.get("graphql_type") or props.get("resolver_for"):
                 gql_type = props.get("graphql_type", "query")
                 field_name = props.get("resolver_for", sym.name)

@@ -805,6 +805,54 @@ class Pipeline:
             head_sink = InMemoryFactSink()
             head_indexer = RepositoryIndexer(head_sink)
 
+            # Sync head_indexer with base_query to ensure stable file and symbol IDs
+            from engine.repository.indexing.indexer import build_symbol_fqn
+            from engine.repository.facts import FileId, SymbolId
+            if hasattr(base_query, "conn"):
+                try:
+                    cur = base_query.conn.cursor()
+                    repo_id, version_id = base_query._get_context()
+
+                    # Load files
+                    cur.execute(
+                        "SELECT id, path FROM files WHERE repository_id = ? AND version_id = ?",
+                        (repo_id, version_id),
+                    )
+                    for row in cur.fetchall():
+                        f_id = row["id"]
+                        f_path = row["path"]
+                        head_indexer._file_id_map[f_path] = FileId(f_id)
+                        if f_id >= head_indexer._next_file_id:
+                            head_indexer._next_file_id = f_id + 1
+
+                    # Load symbols and reconstruct FQNs
+                    cur.execute(
+                        "SELECT s.id, s.name, s.kind, s.language, s.parent_symbol_id, f.path as file_path "
+                        "FROM symbols s JOIN files f ON s.repository_id = f.repository_id AND s.version_id = f.version_id AND s.file_id = f.id "
+                        "WHERE s.repository_id = ? AND s.version_id = ?",
+                        (repo_id, version_id),
+                    )
+                    rows = cur.fetchall()
+                    parent_map = {row["id"]: row["name"] for row in rows}
+
+                    for row in rows:
+                        sym_id = row["id"]
+                        sym_name = row["name"]
+                        sym_kind = row["kind"]
+                        sym_lang = row["language"]
+                        file_path = row["file_path"]
+                        parent_id = row["parent_symbol_id"]
+
+                        parent_name = parent_map.get(parent_id, "") if parent_id else ""
+                        fqn = build_symbol_fqn(sym_lang, file_path, sym_name, sym_kind, parent_name)
+
+                        head_indexer._symbol_id_map[fqn] = SymbolId(sym_id)
+                        head_indexer._symbol_fqn_map[SymbolId(sym_id)] = fqn
+                        if sym_id >= head_indexer._next_symbol_id:
+                            head_indexer._next_symbol_id = sym_id + 1
+                except Exception as e:
+                    print(f"[pipeline] Warning: Failed to populate head_indexer from base_query: {e}")
+
             files_to_index = {
                 f: c for f, c in changed_files_dict.items() if c is not None
             }
@@ -824,6 +872,17 @@ class Pipeline:
                     change_type = file_info.get("change_type")
 
                     base_file = base_query.get_file(file_path)
+
+                    if change_type is None:
+                        # Infer change_type based on presence in base and head
+                        head_content = changed_files_dict.get(file_path)
+                        if base_file is not None:
+                            if head_content is None:
+                                change_type = "deleted"
+                            else:
+                                change_type = "modified"
+                        else:
+                            change_type = "added"
 
                     if change_type == "added":
                         file_id = head_indexer.get_or_create_file_id(file_path)

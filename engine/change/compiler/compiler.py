@@ -154,7 +154,14 @@ class ChangeCompiler:
 
         # 2. Localize set of changed files to prevent repository-wide comparison
         changed_files = set()
-        if isinstance(diff_data, dict) and "files" in diff_data:
+        # Handle DiffSnapshot objects (new architecture) and plain dicts (legacy)
+        if hasattr(diff_data, "files"):
+            # DiffSnapshot: .files is a tuple of DiffFile objects
+            for f in diff_data.files:
+                fp = getattr(f, "file_path", None) or getattr(f, "path", None)
+                if fp:
+                    changed_files.add(fp)
+        elif isinstance(diff_data, dict) and "files" in diff_data:
             for f in diff_data["files"]:
                 changed_files.add(f.get("file_path"))
 
@@ -389,8 +396,8 @@ class ChangeCompiler:
                             )
 
                         # Compare decorators
-                        b_decs = b_sym.properties.get("decorators", [])
-                        h_decs = h_sym.properties.get("decorators", [])
+                        b_decs = b_props.get("decorators", [])
+                        h_decs = h_props.get("decorators", [])
                         if b_decs != h_decs:
                             contract_changes.append(
                                 ContractChange(
@@ -405,7 +412,7 @@ class ChangeCompiler:
                             )
 
                         # Compare signature
-                        if b_sym.properties.get("signature") != h_sym.properties.get(
+                        if b_props.get("signature") != h_props.get(
                             "signature"
                         ):
                             contract_changes.append(
@@ -414,10 +421,10 @@ class ChangeCompiler:
                                     contract_type="signature",
                                     change_kind="modified",
                                     details={
-                                        "old_signature": b_sym.properties.get(
+                                        "old_signature": b_props.get(
                                             "signature"
                                         ),
-                                        "new_signature": h_sym.properties.get(
+                                        "new_signature": h_props.get(
                                             "signature"
                                         ),
                                     },

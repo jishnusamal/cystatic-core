@@ -74,7 +74,7 @@ class EntryPoint:
                     file_location=FileLocation(
                         file=self.handler_id.split("://")[1].split("::")[0]
                         if "://" in self.handler_id
-                        else "",
+                        else "unknown",
                         start_line=1,
                         end_line=1,
                     ),
