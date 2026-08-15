@@ -13,12 +13,14 @@ from core.runtime import RunContext
 
 if TYPE_CHECKING:
     from engine.repository.model import RepositoryModel
-    from engine.change.model import ChangeModel, RepositoryDelta
+    from engine.change.model import ChangeModel, RepositoryDelta, ChangeFacts
+    from engine.repository.query import RepositoryQuery
     from engine.behavior.model.impact_surface import ImpactSurface
     from engine.operational.model import OperationalChangeModel, EngineeringDiscoveryModel
     from engine.operational.discovery.model import DiscoveryIR
     from engine.review_context.model import ReviewContext
     from engine.llm_context.model import LLMContext
+
 
 
 @dataclass
@@ -44,17 +46,20 @@ class PipelineContext:
     # Compiled repository models (immutable once set)
     base_repository_model: RepositoryModel | None = None
     head_repository_model: RepositoryModel | None = None
+    base_query: RepositoryQuery | None = None
     repository_view: Any | None = None
 
     # Repository delta (canonical input for downstream phases)
     repository_delta: RepositoryDelta | None = None
 
     # Intermediate artifacts
+    change_facts: ChangeFacts | None = None
     change_model: ChangeModel | None = None
     impact_surface: ImpactSurface | None = None
     behavior_model: Any | None = None # legacy
     ocm: OperationalChangeModel | None = None
     edm: EngineeringDiscoveryModel | None = None
+
 
     # Discovery IR (output of Discovery Compiler)
     discovery_ir: DiscoveryIR | None = None
@@ -153,6 +158,10 @@ class PipelineContext:
             "installation_id": self.installation_id,
             "has_base_model": self.base_repository_model is not None,
             "has_head_model": self.head_repository_model is not None,
+            "has_base_query": self.base_query is not None,
+            "has_repository_view": self.repository_view is not None,
+            "has_change_facts": self.change_facts is not None,
+            "architecture": "facts" if self.repository_view is not None else "legacy",
             "repository_compile_time": self.repository_compile_time,
             "change_compile_time": self.change_compile_time,
             "behavior_compile_time": self.behavior_compile_time,
@@ -165,3 +174,4 @@ class PipelineContext:
             "total_time": self.total_time,
             "has_error": self.error is not None,
         }
+

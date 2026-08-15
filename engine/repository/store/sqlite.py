@@ -13,6 +13,9 @@ from engine.repository.query.types import (
     Reference,
     Symbol,
     SymbolId,
+    SymbolKind,
+    SymbolVisibility,
+    ResourceId,
     EventId,
     EndpointId,
     EndpointMethod,
@@ -154,29 +157,50 @@ class SQLiteRepositoryStore(RepositoryStore):
                 (repository_id, version_id, file_id)
             )
 
-    def _get_active_file_version(self, file_id: int) -> str | None:
-        """Determines which version context (V, P, or None) should be used for a file."""
+    def _get_active_file_version(self, file_id: Any) -> tuple[str | None, int | None]:
+        """Determines which version context (V, P, or None) and int file_id should be used."""
         repo_id, version_id = self._get_context()
         cur = self.conn.cursor()
         
-        cur.execute(
-            "SELECT state FROM files WHERE repository_id = ? AND version_id = ? AND id = ?",
-            (repo_id, version_id, file_id)
-        )
-        row = cur.fetchone()
-        if row:
-            return version_id if row["state"] == "active" else None
-            
-        if self.parent_version_id:
+        try:
+            file_id_int = int(file_id)
             cur.execute(
                 "SELECT state FROM files WHERE repository_id = ? AND version_id = ? AND id = ?",
-                (repo_id, self.parent_version_id, file_id)
+                (repo_id, version_id, file_id_int)
             )
             row = cur.fetchone()
-            if row and row["state"] == "active":
-                return self.parent_version_id
+            if row:
+                return (version_id if row["state"] == "active" else None), file_id_int
                 
-        return None
+            if self.parent_version_id:
+                cur.execute(
+                    "SELECT state FROM files WHERE repository_id = ? AND version_id = ? AND id = ?",
+                    (repo_id, self.parent_version_id, file_id_int)
+                )
+                row = cur.fetchone()
+                if row and row["state"] == "active":
+                    return self.parent_version_id, file_id_int
+                    
+            return None, None
+        except ValueError:
+            cur.execute(
+                "SELECT id, state FROM files WHERE repository_id = ? AND version_id = ? AND path = ?",
+                (repo_id, version_id, str(file_id))
+            )
+            row = cur.fetchone()
+            if row:
+                return (version_id if row["state"] == "active" else None), row["id"]
+                
+            if self.parent_version_id:
+                cur.execute(
+                    "SELECT id, state FROM files WHERE repository_id = ? AND version_id = ? AND path = ?",
+                    (repo_id, self.parent_version_id, str(file_id))
+                )
+                row = cur.fetchone()
+                if row and row["state"] == "active":
+                    return self.parent_version_id, row["id"]
+                    
+            return None, None
 
     def _get_symbol_resolved_version(self, symbol_id: SymbolId) -> tuple[str | None, int | None]:
         """Looks up symbol_id in logical view. Returns (resolved_version_id, file_id)."""
@@ -249,13 +273,13 @@ class SQLiteRepositoryStore(RepositoryStore):
 
     def get_file(self, file_id: FileId) -> File | None:
         repo_id, _ = self._get_context()
-        resolved_version = self._get_active_file_version(int(file_id))
-        if not resolved_version:
+        resolved_version, file_id_int = self._get_active_file_version(file_id)
+        if not resolved_version or file_id_int is None:
             return None
         cur = self.conn.cursor()
         cur.execute(
             "SELECT id, path, language FROM files WHERE repository_id = ? AND version_id = ? AND id = ?",
-            (repo_id, resolved_version, int(file_id))
+            (repo_id, resolved_version, file_id_int)
         )
         row = cur.fetchone()
         if not row:
@@ -265,6 +289,8 @@ class SQLiteRepositoryStore(RepositoryStore):
             path=row["path"],
             language=row["language"]
         )
+
+
 
     def get_callers(self, symbol_id: SymbolId) -> tuple[Call, ...]:
         repo_id, version_id = self._get_context()
@@ -388,13 +414,13 @@ class SQLiteRepositoryStore(RepositoryStore):
 
     def get_imports(self, file_id: FileId) -> tuple[Import, ...]:
         repo_id, _ = self._get_context()
-        resolved_version = self._get_active_file_version(int(file_id))
-        if not resolved_version:
+        resolved_version, file_id_int = self._get_active_file_version(file_id)
+        if not resolved_version or file_id_int is None:
             return ()
         cur = self.conn.cursor()
         cur.execute(
             "SELECT source_file_id, target_file_id, module, imported_name, import_type FROM imports WHERE repository_id = ? AND version_id = ? AND source_file_id = ?",
-            (repo_id, resolved_version, int(file_id))
+            (repo_id, resolved_version, file_id_int)
         )
         return tuple(
             Import(
@@ -409,14 +435,23 @@ class SQLiteRepositoryStore(RepositoryStore):
 
     def get_importers(self, file_id: FileId) -> tuple[Import, ...]:
         repo_id, version_id = self._get_context()
+        try:
+            file_id_int = int(file_id)
+        except ValueError:
+            f = self.get_file(file_id)
+            if not f:
+                return ()
+            file_id_int = int(f.id)
+
         cur = self.conn.cursor()
         
         cur.execute(
             "SELECT source_file_id, target_file_id, module, imported_name, import_type FROM imports i "
             "JOIN files f ON i.repository_id = f.repository_id AND i.version_id = f.version_id AND i.source_file_id = f.id "
             "WHERE i.repository_id = ? AND i.version_id = ? AND i.target_file_id = ? AND f.state = 'active'",
-            (repo_id, version_id, int(file_id))
+            (repo_id, version_id, file_id_int)
         )
+
         v_imports = [
             Import(
                 source_file_id=FileId(row["source_file_id"]),
@@ -427,6 +462,7 @@ class SQLiteRepositoryStore(RepositoryStore):
             )
             for row in cur.fetchall()
         ]
+
         
         if self.parent_version_id:
             cur.execute(
@@ -690,5 +726,35 @@ class SQLiteRepositoryStore(RepositoryStore):
             
         return tuple(entry_points)
 
+    def get_symbols_in_file(self, file_id: FileId) -> tuple[Symbol, ...]:
+        repo_id, _ = self._get_context()
+        resolved_version, file_id_int = self._get_active_file_version(file_id)
+        if not resolved_version or file_id_int is None:
+            return ()
+            
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT id, name, file_id, kind, language, start_line, end_line, visibility, parent_symbol_id "
+            "FROM symbols WHERE repository_id = ? AND version_id = ? AND file_id = ?",
+            (repo_id, resolved_version, file_id_int)
+        )
+        symbols = [
+            Symbol(
+                id=SymbolId(row["id"]),
+                name=row["name"],
+                file_id=FileId(row["file_id"]),
+                kind=SymbolKind(row["kind"]),
+                language=row["language"],
+                start_line=row["start_line"],
+                end_line=row["end_line"],
+                visibility=SymbolVisibility(row["visibility"]),
+                parent_symbol_id=SymbolId(row["parent_symbol_id"]) if row["parent_symbol_id"] is not None else None,
+            )
+            for row in cur.fetchall()
+        ]
+        return tuple(symbols)
+
+
     def close(self) -> None:
         self.conn.close()
+

@@ -245,8 +245,9 @@ class DataCompilationPass(OperationalCompilerPass):
         # Build adjacency: caller -> list of callees
         from collections import deque
         adj: dict[str, list[str]] = defaultdict(list)
-        for edge in repo.call_graph.edges:
-            adj[edge.caller_id].append(edge.callee_id)
+        if hasattr(repo, "call_graph") and repo.call_graph is not None:
+            for edge in repo.call_graph.edges:
+                adj[edge.caller_id].append(edge.callee_id)
 
         reachable: set[str] = set()
         queue: deque[str] = deque(seed_ids)
@@ -256,9 +257,15 @@ class DataCompilationPass(OperationalCompilerPass):
             if current in reachable:
                 continue
             reachable.add(current)
-            for neighbor in adj.get(current, []):
-                if neighbor not in reachable:
-                    queue.append(neighbor)
+            if hasattr(repo, "get_callees") and not (hasattr(repo, "call_graph") and repo.call_graph is not None):
+                for call in repo.get_callees(current):
+                    if call.callee_id not in reachable:
+                        queue.append(call.callee_id)
+            else:
+                for neighbor in adj.get(current, []):
+                    if neighbor not in reachable:
+                        queue.append(neighbor)
+
 
         return reachable - seed_ids
 

@@ -135,9 +135,14 @@ class ValidationCompilationPass(OperationalCompilerPass):
         # Build index/lookup tables for references and call graph
         from collections import defaultdict
         ref_by_target: dict[str, set[str]] = defaultdict(set)
-        if repo.reference_graph and repo.reference_graph.edges:
+        if hasattr(repo, "reference_graph") and repo.reference_graph and repo.reference_graph.edges:
             for edge in repo.reference_graph.edges:
                 ref_by_target[edge.target_id].add(edge.source_id)
+        elif hasattr(repo, "get_references_to"):
+            for affected_id in affected_symbol_ids:
+                for ref in repo.get_references_to(affected_id):
+                    ref_by_target[ref.target_id].add(ref.source_id)
+
 
         callees_of = context.get_callees_of()
         callers_of = context.get_callers_of()
@@ -163,8 +168,9 @@ class ValidationCompilationPass(OperationalCompilerPass):
         production_replays: list[str] = []
         coverage_links: list[str] = []
 
-        # Perform a single pass over repo.symbols for tests, replays, and coverage
-        for sym in repo.symbols:
+        # Perform pass over symbols for tests, replays, and coverage
+        symbols_to_scan = repo.symbols if hasattr(repo, "symbols") else symbol_map.values()
+        for sym in symbols_to_scan:
             # 1. Test classification
             if sym.kind == SymbolKind.FUNCTION or sym.kind == SymbolKind.METHOD:
                 test_category = self._classify_test(sym)
@@ -173,6 +179,7 @@ class ValidationCompilationPass(OperationalCompilerPass):
                     if sym.id in references_affected_set:
                         if test_category == "unit":
                             unit_tests.append(sym)
+
                         elif test_category == "integration":
                             integration_tests.append(sym)
                         elif test_category == "e2e":

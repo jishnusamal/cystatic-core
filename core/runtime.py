@@ -6,11 +6,36 @@ Canonical location. Manages run IDs, log directories, and execution context.
 from __future__ import annotations
 
 import secrets
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 from core.logging import LogManager
+
+# ---------------------------------------------------------------------------
+# Architecture invariant guard
+# ---------------------------------------------------------------------------
+# When set to True in a context, any attempt to construct legacy objects
+# (RepositoryGraph, RepositoryModel, GraphPatcher) will raise a RuntimeError.
+# The production PR-analysis path sets this to True before running so that
+# accidental regressions fail loudly rather than silently recreating the
+# 3.4 GB memory problem.
+PREVENT_LEGACY_ARCHITECTURE: ContextVar[bool] = ContextVar(
+    "prevent_legacy_architecture", default=False
+)
+
+
+def assert_new_architecture(class_name: str) -> None:
+    """Raise RuntimeError if legacy architecture is forbidden in the current context."""
+    if PREVENT_LEGACY_ARCHITECTURE.get():
+        raise RuntimeError(
+            f"[Architecture Assertion] Attempt to construct '{class_name}' detected "
+            f"in a context that requires the new fact-based architecture. "
+            f"Legacy objects (RepositoryGraph, RepositoryModel, GraphPatcher) must "
+            f"not be created during PR analysis. "
+            f"See engine/pipeline/pipeline.py and PREVENT_LEGACY_ARCHITECTURE."
+        )
 
 
 def generate_run_id(started_at: datetime | None = None) -> str:
@@ -57,4 +82,10 @@ class RunContext:
         )
 
 
-__all__ = ["generate_run_id", "RunContext"]
+__all__ = [
+    "generate_run_id",
+    "RunContext",
+    "PREVENT_LEGACY_ARCHITECTURE",
+    "assert_new_architecture",
+]
+

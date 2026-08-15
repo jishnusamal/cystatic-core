@@ -136,8 +136,15 @@ class RepositoryFacts:
         return self._symbol_map.get(symbol_id)
 
     def get_file(self, file_id: FileId) -> File | None:
-        """Fetch a file by its ID."""
-        return self._file_map.get(file_id)
+        """Fetch a file by its ID or path."""
+        res = self._file_map.get(file_id)
+        if res is not None:
+            return res
+        for f in self.files:
+            if f.path == file_id:
+                return f
+        return None
+
 
     def calls_from(self, symbol_id: SymbolId) -> tuple[Call, ...]:
         """Fetch all calls initiated from the given symbol."""

@@ -12,9 +12,11 @@ import asyncio
 from typing import TYPE_CHECKING, Any
 
 from core.logging import timer
+from core.runtime import PREVENT_LEGACY_ARCHITECTURE
 from engine.change.compiler import ChangeCompiler
 from engine.change.model.repository_comparison import RepositoryComparison
 from engine.change.model.repository_delta import RepositoryDelta
+from engine.change.model.change_facts import ChangeFacts
 from engine.behavior.compiler import BehaviorCompiler
 from engine.operational.compiler import OperationalCompiler, EngineeringDiscoveryCompiler
 from engine.operational.discovery import DiscoveryCompiler
@@ -36,8 +38,13 @@ from models import AnalysisRequest, AnalysisTrigger
 from engine.pipeline.context import PipelineContext
 from integrations.github.renderers.github_renderer import GitHubRenderer
 from integrations.github.renderers.json_renderer import JSONRenderer
-from engine.repository.indexing import RepositoryStore
+from engine.repository.store import SQLiteRepositoryStore, RepositoryStore
+from engine.repository.query import RepositoryQuery, InMemoryRepository
+from engine.repository.facts import File, FileId, SymbolId
+from engine.repository.indexing import RepositoryIndexer, InMemoryFactSink
+from engine.repository.overlay import RepositoryOverlay, RepositoryView
 import tiktoken
+
 
 # Custom print wrapper to avoid polluting stdout
 def print(*args, **kwargs):
@@ -86,15 +93,16 @@ class Pipeline:
         Initialize the pipeline.
         
         Args:
-            repository_store: Storage backend for repository models
+            repository_store: Storage backend for repository facts
             language_factory: Factory for creating language adapters
             repository_provider: Provider for fetching repository data
             output_provider: Provider for publishing results
         """
-        self.repository_store = repository_store
+        self.repository_store = repository_store or SQLiteRepositoryStore("repository_store.db")
         self.language_factory = language_factory or get_language_factory()
         self.repository_provider = repository_provider
         self.output_provider = output_provider
+
         
         # Compilers (reused across executions)
         self._change_compiler = ChangeCompiler()
@@ -154,29 +162,42 @@ class Pipeline:
             f"{repo_name}\n\n"
             "PR:\n"
             f"{pr_num}\n\n"
+            "Architecture:\n"
+            "Persistent Facts + PR Overlay (No full repo materialization)\n\n"
             "Logs:\n\n"
             f"{run_context.log_dir}/\n\n"
             "===================================================="
         )
         pipeline_logger.log_pipeline(banner, to_terminal=True)
         
+        arch_info = (
+            "Repository architecture:\n"
+            f"  store: {type(self.repository_store).__name__ if self.repository_store else 'None'}\n"
+            "  view: RepositoryView\n"
+            "  legacy_graph: false\n"
+            "  repository_model: false\n"
+            "  full_repo_download: false"
+        )
+        pipeline_logger.log_pipeline(arch_info, to_terminal=True)
+        
+        legacy_guard_token = PREVENT_LEGACY_ARCHITECTURE.set(True)
+        
         try:
             context.mark_compilation_start()
             
             with timer.timed("Total Pipeline", metadata={"repository": request.repository.full_name}):
-                # Step 1: Compile both base and head repository models
-                print(f"[pipeline] Step 1: Repository model compilation for {request.repository.full_name}")
-                await self._compile_both_repository_models(context, request)
-                print(f"[pipeline] Step 1 done: language={context.language}, base_model={'set' if context.base_repository_model else 'None'}, head_model={'set' if context.head_repository_model else 'None'}")
+                # Step 1: Compile base facts & PR overlay
+                print(f"[pipeline] Step 1: Fact-based repository compilation for {request.repository.full_name}")
+                await self._compile_facts_and_view(context, request)
+                print(f"[pipeline] Step 1 done: language={context.language}, base_query={'set' if context.base_query else 'None'}, view={'set' if context.repository_view else 'None'}")
                 
                 from core.profile import get_current_profiler
                 profiler = get_current_profiler()
                 if profiler:
-                    profiler.log_memory("After graph construction")
+                    profiler.log_memory("After repository facts & overlay load")
             
             # Step 2: Fetch diff if not provided
             if context.diff_data is None and request.has_diff:
-                # request.diff is DiffSnapshot | None, but has_diff ensures it's not None
                 assert request.diff is not None
                 context.diff_data = self._diff_snapshot_to_dict(request.diff)
                 if context.diff_data is not None:
@@ -190,13 +211,14 @@ class Pipeline:
             # Step 3: Change Compilation
             change_start = time.perf_counter()
             with timer.timed("Change Compilation"):
-                print(f"[pipeline] Step 3: Change model compilation")
+                print(f"[pipeline] Step 3: Change facts compilation")
                 await self._compile_change(context)
                 print(f"[pipeline] Step 3 done")
                 timer.print_progress()
             change_time = time.perf_counter() - change_start
             if profiler:
                 profiler.log_memory("After Change Compiler")
+
             
             # Step 4: Behavior Compilation
             behavior_start = time.perf_counter()
@@ -349,6 +371,9 @@ class Pipeline:
 
                 # Close log manager
                 run_context.log_manager.close()
+                
+            PREVENT_LEGACY_ARCHITECTURE.reset(legacy_guard_token)
+
         
         return context
     
@@ -503,21 +528,14 @@ class Pipeline:
         
         return patched_graph, changed_fetch_time, clone_duration, changed_compile_time, patch_duration, metrics
 
-    async def _compile_both_repository_models(self, context: PipelineContext, request: AnalysisRequest) -> None:
+    async def _compile_facts_and_view(self, context: PipelineContext, request: AnalysisRequest) -> None:
         """
-        Compile both base and head repository models.
-        
-        Args:
-            context: Pipeline context
-            request: Analysis request
-            
-        Raises:
-            RepositoryNotInstalled: If repository provider is not configured
-            RepositoryCompilationFailed: If compilation fails
+        Compile base facts from persistent store and PR overlay from diff.
+        Does NOT construct RepositoryGraph or RepositoryModel.
         """
         if self.repository_provider is None:
             raise RepositoryNotInstalled(
-                "Repository model compilation requires a repository provider. "
+                "Repository fact compilation requires a repository provider. "
                 "No repository provider configured.",
                 details={"repository": request.repository.full_name},
             )
@@ -527,7 +545,6 @@ class Pipeline:
             base_sha = request.pull_request.base_sha
             head_sha = request.pull_request.head_sha
         else:
-            # For non-PR analysis, use default branch for both
             base_sha = request.repository.default_branch
             head_sha = request.repository.default_branch
         
@@ -535,108 +552,164 @@ class Pipeline:
         context.head_sha = head_sha
         
         from core.logging import pipeline_logger
-        from engine.repository.model import RepositoryGraph
-        import time
-        import asyncio
         
         with timer.timed("Repository Compilation", metadata={"base_sha": base_sha, "head_sha": head_sha}):
-            # --- Base Repository Graph Stage ---
-            print(f"[pipeline] Compiling base repository graph at {base_sha}")
-            base_fetch_start = time.perf_counter()
+            start_time = time.perf_counter()
+            full_name = request.repository.full_name
+            provider = getattr(request.repository, "provider", "github") or "github"
+            
+            # Try provider/owner/repo first, then owner/repo
+            possible_repo_ids = [
+                f"{provider}/{full_name}" if not full_name.startswith(f"{provider}/") else full_name,
+                full_name
+            ]
+            
+            # Ensure diff is available
+            if context.diff_data is None:
+                if request.has_diff:
+                    context.diff_data = self._diff_snapshot_to_dict(request.diff)
+                elif self.repository_provider:
+                    await self._fetch_diff(context, request)
+                    
+            # 1. Resolve Base Query Interface from Persistent Store
+            base_query: RepositoryQuery | None = None
             base_cached = False
-            base_graph = None
+            version_id = None
             
-            if self.repository_store is not None:
-                try:
-                    cached_obj = await self.repository_store.load(request.repository.full_name, base_sha)
-                    if isinstance(cached_obj, RepositoryGraph):
-                        base_graph = cached_obj
-                        base_cached = True
-                        print(f"[pipeline] Loaded base RepositoryGraph from cache")
-                        from core.profile import get_current_profiler
-                        profiler = get_current_profiler()
-                        if profiler:
-                            profiler.log_memory("After base graph load")
-                except Exception as exc:
-                    print(f"[pipeline] Failed to load base from cache: {exc}")
-            
-            if base_graph is None:
-                base_graph, base_fetch_time, base_compile_time, language = await self._compile_base_graph(
-                    request, base_sha, context
-                )
-                from core.profile import get_current_profiler
-                profiler = get_current_profiler()
-                if profiler:
-                    profiler.log_memory("After base graph compilation")
-                
-                # Save base graph to cache
-                if self.repository_store is not None:
+            if self.repository_store is not None and isinstance(self.repository_store, RepositoryStore):
+                for candidate_id in possible_repo_ids:
+                    candidate_version = f"{candidate_id}@{base_sha}"
                     try:
-                        await self.repository_store.save(request.repository.full_name, base_sha, base_graph)
+                        self.repository_store.set_version_context(candidate_id, candidate_version)
+                        base_query = self.repository_store
+                        base_cached = True
+                        version_id = candidate_version
+                        print(f"[pipeline] Loaded base facts for {candidate_version} from RepositoryStore")
+                        break
                     except Exception as exc:
-                        print(f"[pipeline] Failed to save base graph to cache: {exc}")
-            else:
-                base_fetch_time = time.perf_counter() - base_fetch_start
-                base_compile_time = 0.0
-                if context.language is None:
-                    language = base_graph.metadata.get("language", "python")
-                    context.language = language
-                    context.adapter = language
+                        pass
+
+            
+            # If not in persistent store, check if base snapshot was provided in test context
+            if base_query is None:
+                if context.base_repository_snapshot is not None:
+                    # Index the provided snapshot in-memory (useful in tests)
+                    snapshot = context.base_repository_snapshot
+                    if context.language is None:
+                        language = self.language_factory.detect_language(snapshot.files)
+                        context.language = language
+                        context.adapter = language
+                    else:
+                        language = context.language
+                    adapter = self.language_factory.create_adapter(language)
+                    
+                    base_sink = InMemoryFactSink()
+                    base_indexer = RepositoryIndexer(base_sink)
+                    base_indexer.index_repository({"files": snapshot.files, "language": language}, adapter)
+                    base_facts = base_sink.build_facts()
+                    base_query = InMemoryRepository(base_facts)
                 else:
-                    language = context.language
+                    # In production PR-analysis, we do NOT silently download the whole repo
+                    raise RepositoryCompilationFailed(
+                        f"Base repository facts for version {version_id} not found in persistent store. "
+                        f"Repository must be indexed prior to PR analysis.",
+                        details={"repository": repo_id, "sha": base_sha},
+                    )
             
-            # Export base RepositoryModel
-            base_export_start = time.perf_counter()
-            context.base_repository_model = base_graph.to_model()
-            base_export_duration = time.perf_counter() - base_export_start
-            from core.profile import get_current_profiler
-            profiler = get_current_profiler()
-            if profiler:
-                profiler.log_memory("After base RepositoryModel")
+            context.base_query = base_query
+            language = context.language or "python"
+            context.language = language
+            context.adapter = language
             
-            base_files_compiled = 0 if base_cached else len(base_graph.files)
-            timer.print_progress()
+            # 2. Fetch changed files from diff only
+            changed_files_dict = {}
+            if request.pull_request and context.diff_data and "files" in context.diff_data:
+                async def fetch_one(file_path: str):
+                    try:
+                        if self.repository_provider is None:
+                            return file_path, None
+                        content = await self.repository_provider.fetch_file(
+                            request.repository, file_path, head_sha
+                        )
+                        return file_path, content
+                    except Exception as exc:
+                        print(f"[pipeline] File {file_path} not found at head: {exc}")
+                        return file_path, None
+                
+                tasks = [fetch_one(file_info["file_path"]) for file_info in context.diff_data["files"]]
+                results = await asyncio.gather(*tasks)
+                changed_files_dict = dict(results)
+                
+            # 3. Index ONLY changed files
+            adapter = self.language_factory.create_adapter(language)
+            head_sink = InMemoryFactSink()
+            head_indexer = RepositoryIndexer(head_sink)
             
-            # --- Head Repository Incremental Stage ---
-            print(f"[pipeline] Compiling head repository incrementally at {head_sha}")
+            files_to_index = {f: c for f, c in changed_files_dict.items() if c is not None}
+            head_indexer.index_repository({"files": files_to_index, "language": language}, adapter)
+            head_facts = head_sink.build_facts()
             
-            patched_graph, changed_fetch_time, clone_duration, changed_compile_time, patch_duration, metrics = await self._compile_head_graph(
-                request, head_sha, base_graph, language, context
+            # 4. Construct RepositoryOverlay
+            added_files = {}
+            removed_files = set()
+            modified_files = set()
+            
+            if context.diff_data:
+                for file_info in context.diff_data.get("files", []):
+                    file_path = file_info["file_path"]
+                    change_type = file_info.get("change_type")
+                    
+                    base_file = base_query.get_file(file_path)
+                    
+                    if change_type == "added":
+                        file_id = head_indexer.get_or_create_file_id(file_path)
+                        added_files[file_id] = File(id=file_id, path=file_path, language=language)
+                    elif change_type == "deleted":
+                        if base_file is not None:
+                            removed_files.add(base_file.id)
+                    elif change_type == "modified":
+                        if base_file is not None:
+                            removed_files.add(base_file.id)
+                            modified_files.add(base_file.id)
+                            file_id = base_file.id
+                        else:
+                            file_id = head_indexer.get_or_create_file_id(file_path)
+                        added_files[file_id] = File(id=file_id, path=file_path, language=language)
+            
+            removed_symbols = set()
+            for rf_id in removed_files:
+                for s in base_query.get_symbols_in_file(rf_id):
+                    removed_symbols.add(s.id)
+                    
+            overlay = RepositoryOverlay(
+                added_files=added_files,
+                removed_files=removed_files,
+                modified_files=modified_files,
+                added_symbols={s.id: s for s in head_facts.symbols},
+                removed_symbols=removed_symbols,
+                added_calls=set(head_facts.calls),
+                added_references=set(head_facts.references),
+                added_imports=set(head_facts.imports),
+                added_type_relationships=set(head_facts.type_relationships),
+                added_endpoints=set(head_facts.endpoints),
+                added_database_relationships=set(head_facts.database_relationships),
+                added_event_publications=set(head_facts.event_publications),
+                added_event_subscriptions=set(head_facts.event_subscriptions),
+                added_test_relationships=set(head_facts.test_relationships),
             )
             
-            if profiler:
-                profiler.log_memory("After GraphPatcher")
-            
-            # Export head RepositoryModel
-            pipeline_logger.log_pipeline("[pipeline] Step 1.4: Exporting head RepositoryModel via patched_graph.to_model()...", to_terminal=True)
-            head_export_start = time.perf_counter()
-            with timer.timed("RepositoryGraph.to_model"):
-                context.head_repository_model = patched_graph.to_model()
-            head_export_duration = time.perf_counter() - head_export_start
-            if profiler:
-                profiler.log_memory("After head RepositoryModel")
-            pipeline_logger.log_pipeline(f"[pipeline] Step 1.4 done: Head RepositoryModel exported in {head_export_duration:.2f}s", to_terminal=True)
-            
-            # Compile overlay and view
-            print(f"[pipeline] Compiling repository overlay and view...")
-            view, overlay_duration = await self._compile_overlay_and_view(
-                request, base_sha, head_sha, language, context
-            )
-            context.repository_view = view
-            print(f"[pipeline] Repository overlay and view compiled in {overlay_duration:.2f}s")
-            
-            timer.print_progress()
+            context.repository_view = RepositoryView(base_query, overlay)
+            compile_duration = time.perf_counter() - start_time
             
         context.mark_repository_compiled()
-        
-        # Overview log output to terminal
-        pipeline_logger.log_pipeline("[Pipeline] Repository compilation", to_terminal=True)
-        
-        base_fetch_str = "cached" if base_cached else f"{base_fetch_time:.1f}s"
-        pipeline_logger.log_pipeline(f"  ✓ Fetch base repository ({base_fetch_str})", to_terminal=True)
-        
-        base_compile_str = "cached" if base_cached else f"{base_compile_time:.1f}s"
-        pipeline_logger.log_pipeline(f"  ✓ Compile base graph ({base_compile_str})", to_terminal=True)
+        pipeline_logger.log_pipeline(f"[Pipeline] Fact-based repository compilation complete in {compile_duration:.2f}s", to_terminal=True)
+        pipeline_logger.log_pipeline(f"  ✓ Persistent facts loaded ({'cached' if base_cached else 'indexed'})", to_terminal=True)
+        pipeline_logger.log_pipeline(f"  ✓ PR overlay constructed ({len(changed_files_dict)} changed files)", to_terminal=True)
+
+    async def _compile_both_repository_models(self, context: PipelineContext, request: AnalysisRequest) -> None:
+        """Deprecated alias that delegates to _compile_facts_and_view."""
+        await self._compile_facts_and_view(context, request)
+
         
         changed_fetch_str = f"{changed_fetch_time:.1f}s"
         pipeline_logger.log_pipeline(f"  ✓ Fetch changed files ({changed_fetch_str})", to_terminal=True)
@@ -738,26 +811,12 @@ class Pipeline:
     
     async def _compile_change(self, context: PipelineContext) -> None:
         """
-        Compile change model.
-        
-        Args:
-            context: Pipeline context
-            
-        Raises:
-            InvalidDiff: If diff data is invalid
-            PipelineExecutionError: If compilation fails
+        Compile change model using RepositoryQuery and RepositoryView.
         """
-        # Validate invariants before compilation
-        if context.base_repository_model is None:
+        if context.repository_view is None and context.base_repository_model is None:
             raise PipelineExecutionError(
-                "Base repository model not available",
-                details={"repository": context.repository, "base_sha": context.base_sha},
-            )
-        
-        if context.head_repository_model is None:
-            raise PipelineExecutionError(
-                "Head repository model not available",
-                details={"repository": context.repository, "head_sha": context.head_sha},
+                "Repository query interface not available for change compilation",
+                details={"repository": context.repository},
             )
         
         if context.diff_data is None:
@@ -766,39 +825,28 @@ class Pipeline:
                 details={"repository": context.repository},
             )
         
-        # Validate that base and head are different (unless same SHA)
-        if context.base_sha == context.head_sha:
-            print(f"[pipeline] Warning: Base and head SHAs are identical ({context.base_sha})")
-        
         try:
-            # Create RepositoryDelta - the canonical input for all downstream phases
-            context.repository_delta = RepositoryDelta(
-                base_model=context.base_repository_model,
-                head_model=context.head_repository_model,
-                diff=context.diff_data,
-                base_sha=context.base_sha or "",
-                head_sha=context.head_sha or "",
-            )
-            
-            # Create a RepositoryComparison - the dedicated input model for ChangeCompiler
-            comparison = RepositoryComparison(
-                base_model=context.base_repository_model,
-                head_model=context.head_repository_model,
-                diff=context.diff_data,
-                base_sha=context.base_sha or "",
-                head_sha=context.head_sha or "",
-            )
-            
-            # Compile with the dedicated input model
-            context.change_model = self._change_compiler.compile(
-                comparison=comparison
-            )
+            if context.repository_view is not None:
+                base_query = context.base_query or getattr(context.repository_view, "base", None)
+                head_query = context.repository_view
+                context.change_facts = self._change_compiler.compile(
+                    diff=context.diff_data,
+                    repository=base_query,
+                    head_repository=head_query,
+                )
+                context.change_model = context.change_facts
+            else:
+                comparison = RepositoryComparison(
+                    base_model=context.base_repository_model,
+                    head_model=context.head_repository_model,
+                    diff=context.diff_data,
+                    base_sha=context.base_sha or "",
+                    head_sha=context.head_sha or "",
+                )
+                context.change_model = self._change_compiler.compile(
+                    comparison=comparison
+                )
             context.mark_change_compiled()
-            
-            # Release base repository model from delta and context to optimize memory lifetime
-            if context.repository_delta is not None:
-                context.repository_delta.release_base_model()
-            context.base_repository_model = None
         except Exception as exc:
             raise PipelineExecutionError(
                 f"Change compilation failed: {exc}",
@@ -808,33 +856,21 @@ class Pipeline:
     async def _compile_behavior(self, context: PipelineContext) -> None:
         """
         Compile behavior model.
-        
-        Args:
-            context: Pipeline context
-            
-        Raises:
-            PipelineExecutionError: If compilation fails
         """
-        # Validate invariants before compilation
-        if context.repository_delta is None:
-            raise PipelineExecutionError(
-                "Repository delta not available",
-                details={"repository": context.repository},
-            )
-        
-        if context.change_model is None:
+        change_input = context.change_facts or context.change_model
+        if change_input is None:
             raise PipelineExecutionError(
                 "Change model not available",
                 details={"repository": context.repository},
             )
         
         try:
-            # BehaviorCompiler (now returns ImpactSurface)
+            query_input = context.repository_view or (context.repository_delta.head_model if context.repository_delta else None)
             context.impact_surface = self._behavior_compiler.compile(
-                change_model=context.change_model,
+                change_model=change_input,
+                repository_query=query_input,
                 repository_delta=context.repository_delta,
             )
-            # Legacy compatibility
             context.behavior_model = context.impact_surface
             context.mark_behavior_compiled()
         except Exception as exc:
@@ -846,21 +882,9 @@ class Pipeline:
     async def _compile_operational(self, context: PipelineContext) -> None:
         """
         Compile operational change model.
-        
-        Args:
-            context: Pipeline context
-            
-        Raises:
-            PipelineExecutionError: If compilation fails
         """
-        # Validate invariants before compilation
-        if context.repository_delta is None:
-            raise PipelineExecutionError(
-                "Repository delta not available",
-                details={"repository": context.repository},
-            )
-        
-        if context.change_model is None:
+        change_input = context.change_facts or context.change_model
+        if change_input is None:
             raise PipelineExecutionError(
                 "Change model not available",
                 details={"repository": context.repository},
@@ -873,11 +897,12 @@ class Pipeline:
             )
         
         try:
-            # OperationalCompiler receives repository_delta for cross-model validation
+            query_input = context.repository_view or (context.repository_delta.head_model if context.repository_delta else None)
             context.ocm = self._operational_compiler.compile(
                 repository_delta=context.repository_delta,
-                change_model=context.change_model,
+                change_model=change_input,
                 behavior_model=context.behavior_model,
+                repository_query=query_input,
             )
             context.mark_operational_compiled()
         except Exception as exc:
@@ -885,6 +910,7 @@ class Pipeline:
                 f"Operational compilation failed: {exc}",
                 details={"repository": context.repository},
             ) from exc
+
     
     async def _compile_discovery(self, context: PipelineContext) -> None:
         """

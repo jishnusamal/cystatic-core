@@ -29,6 +29,7 @@ from engine.repository.model import (
 from engine.repository.model.file_contribution import FileContribution
 from engine.repository.model.repository_graph import RepositoryGraph
 from engine.language.base.semantic_compiler import SemanticCompiler, _build_symbol_id
+from core.runtime import assert_new_architecture
 
 
 class GraphPatcher:
@@ -40,6 +41,7 @@ class GraphPatcher:
     """
 
     def __init__(self) -> None:
+        assert_new_architecture("GraphPatcher")
         self.compiler = SemanticCompiler()
         self._affected_files_abs: set[str] | None = None
         self.metrics: dict[str, Any] = {}

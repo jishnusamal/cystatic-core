@@ -262,17 +262,24 @@ class ReviewContextCompiler:
         # Collect changed symbol IDs for the 'changed' flag
         changed_symbol_ids: set[str] = set()
         if change_model is not None:
-            for sym in change_model.added_symbols:
-                changed_symbol_ids.add(sym.id)
-            for sym in change_model.removed_symbols:
-                changed_symbol_ids.add(sym.id)
-            for ms in change_model.modified_symbols:
-                changed_symbol_ids.add(ms.symbol.id)
+            if hasattr(change_model, "changed_symbols"):
+                for cs in change_model.changed_symbols:
+                    changed_symbol_ids.add(cs.symbol_id)
+            if hasattr(change_model, "added_symbols"):
+                for sym in change_model.added_symbols:
+                    changed_symbol_ids.add(getattr(sym, "id", getattr(sym, "symbol_id", str(sym))))
+            if hasattr(change_model, "removed_symbols"):
+                for sym in change_model.removed_symbols:
+                    changed_symbol_ids.add(getattr(sym, "id", getattr(sym, "symbol_id", str(sym))))
+            if hasattr(change_model, "modified_symbols"):
+                for ms in change_model.modified_symbols:
+                    sym = getattr(ms, "symbol", ms)
+                    changed_symbol_ids.add(getattr(sym, "id", getattr(sym, "symbol_id", str(sym))))
 
         # Collect shared symbol IDs for the 'shared' flag
         shared_symbol_ids: set[str] = set()
         if behavior_model is not None:
-            for se in behavior_model.shared_executions:
+            for se in getattr(behavior_model, "shared_executions", ()):
                 shared_symbol_ids.add(se.symbol_id)
 
         # Build a symbol lookup from the repository model (if available)
@@ -287,25 +294,25 @@ class ReviewContextCompiler:
         # Build a map of behavior_id -> behavior kind (for reaches.service)
         behavior_kind_map: dict[str, str] = {}
         if behavior_model is not None:
-            for b in behavior_model.behaviors:
+            for b in getattr(behavior_model, "behaviors", ()):
                 behavior_kind_map[b.id] = b.kind.value if hasattr(b.kind, 'value') else str(b.kind)
 
         # Build a map of behavior_id -> behavior name (for reaches.module)
         behavior_name_map: dict[str, str] = {}
         if behavior_model is not None:
-            for b in behavior_model.behaviors:
+            for b in getattr(behavior_model, "behaviors", ()):
                 behavior_name_map[b.id] = b.name
 
         # Build a map of behavior_id -> terminal point kind
         terminal_by_behavior: dict[str, str] = {}
         if behavior_model is not None:
-            for tp in behavior_model.terminal_points:
+            for tp in getattr(behavior_model, "terminal_points", ()):
                 terminal_by_behavior[tp.behavior_id] = tp.kind
 
         # Build a map of behavior_id -> execution chain units
         chain_units_by_behavior: dict[str, list[Any]] = {}
         if behavior_model is not None:
-            for chain in behavior_model.execution_chains:
+            for chain in getattr(behavior_model, "execution_chains", ()):
                 chain_units_by_behavior[chain.behavior_id] = list(chain.units)
 
         # Build entry point executions
@@ -316,7 +323,10 @@ class ReviewContextCompiler:
         # Collect all entry points from behavior_model
         all_entry_points: list[Any] = []
         if behavior_model is not None:
-            all_entry_points.extend(behavior_model.entry_points)
+            all_entry_points.extend(getattr(behavior_model, "entry_points", ()))
+            if hasattr(behavior_model, "affected_endpoints"):
+                all_entry_points.extend(behavior_model.affected_endpoints)
+
 
         for ep in all_entry_points:
             behavior_id = ep.behavior_id if hasattr(ep, 'behavior_id') else ""

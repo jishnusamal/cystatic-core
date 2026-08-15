@@ -156,11 +156,20 @@ class DependencyCompilationPass(OperationalCompilerPass):
 
         # Cross-service references: call edges crossing a service boundary
         cross_service: set[tuple[str, str, str]] = set()
-        for edge in repo.call_graph.edges:
-            caller_svc = _service_of(edge.caller_id)
-            callee_svc = _service_of(edge.callee_id)
-            if caller_svc != callee_svc:
-                cross_service.add((edge.caller_id, edge.callee_id, f"{caller_svc}->{callee_svc}"))
+        if hasattr(repo, "call_graph") and repo.call_graph is not None:
+            for edge in repo.call_graph.edges:
+                caller_svc = _service_of(edge.caller_id)
+                callee_svc = _service_of(edge.callee_id)
+                if caller_svc != callee_svc:
+                    cross_service.add((edge.caller_id, edge.callee_id, f"{caller_svc}->{callee_svc}"))
+        elif hasattr(repo, "get_callees"):
+            for sid in affected_symbol_ids:
+                for call in repo.get_callees(sid):
+                    caller_svc = _service_of(call.caller_id)
+                    callee_svc = _service_of(call.callee_id)
+                    if caller_svc != callee_svc:
+                        cross_service.add((call.caller_id, call.callee_id, f"{caller_svc}->{callee_svc}"))
+
 
         # Dependency depth: max BFS depth from affected symbols outward
         dependency_depth = self._compute_depth(callees_of, affected_symbol_ids)

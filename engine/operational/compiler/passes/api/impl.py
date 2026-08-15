@@ -130,7 +130,12 @@ class APICompilationPass(OperationalCompilerPass):
         cron_jobs: list[tuple[str, str, str]] = []
         worker_entries: list[tuple[str, str]] = []
 
-        for ep in repo.entry_points:
+        entry_points = getattr(repo, "entry_points", ())
+        if not entry_points and hasattr(repo, "get_entry_points"):
+            entry_points = repo.get_entry_points()
+
+        for ep in entry_points:
+
             # Check if this entry point's handler is affected or can reach an affected symbol
             handler_affected = ep.handler_id in affected_symbol_ids
             handler_reachable = ep.handler_id in can_reach_affected

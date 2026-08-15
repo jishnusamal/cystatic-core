@@ -1,5 +1,6 @@
 from collections import defaultdict
 from engine.repository.facts import RepositoryFacts
+from engine.repository.model.repository_model import EntryPoint, EntryPointKind
 from .repository import RepositoryQuery
 from .types import (
     Call,
@@ -83,3 +84,27 @@ class InMemoryRepository(RepositoryQuery):
 
     def get_tests(self, symbol_id: SymbolId) -> tuple[TestRelationship, ...]:
         return self._facts.tests_for(symbol_id)
+
+    def get_entry_points(self) -> tuple[EntryPoint, ...]:
+        entry_points = []
+        
+        for ep in self._facts.endpoints:
+            entry_points.append(EntryPoint(
+                kind=EntryPointKind.REST_ENDPOINT,
+                route=f"{ep.method} {ep.path}",
+                handler_id=ep.symbol_id,
+                metadata={"framework": ep.framework, "method": ep.method, "path": ep.path}
+            ))
+            
+        for sub in self._facts.event_subscriptions:
+            entry_points.append(EntryPoint(
+                kind=EntryPointKind.EVENT_CONSUMER,
+                route=f"event:{sub.event_id}",
+                handler_id=sub.symbol_id,
+                metadata={"subscription_type": sub.subscription_type, "event_id": sub.event_id}
+            ))
+            
+        return tuple(entry_points)
+
+    def get_symbols_in_file(self, file_id: FileId) -> tuple[Symbol, ...]:
+        return tuple(s for s in self._facts.symbols if s.file_id == file_id)

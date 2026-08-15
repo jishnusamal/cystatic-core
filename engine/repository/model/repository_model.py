@@ -11,6 +11,7 @@ from .persistence import PersistenceModel, RepositoryMethod
 from .events import EventConstruct
 from .tests import TestDefinition
 from .configuration import ConfigurationReference
+from core.runtime import assert_new_architecture
 
 
 class EntryPointKind(str, Enum):
@@ -169,6 +170,8 @@ class RepositoryModel:
 
     def __post_init__(self):
         """Validate repository model after initialization."""
+        # Guard: fail loudly if created in a new-architecture-only context.
+        assert_new_architecture("RepositoryModel")
         if not isinstance(self.symbols, frozenset):
             object.__setattr__(self, 'symbols', frozenset(self.symbols))
         if not isinstance(self.entry_points, tuple):

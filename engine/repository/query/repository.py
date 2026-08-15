@@ -102,3 +102,8 @@ class RepositoryQuery(ABC):
     def get_entry_points(self) -> tuple[EntryPoint, ...]:
         """Fetch all recognized entry points in the repository."""
         pass
+
+    @abstractmethod
+    def get_symbols_in_file(self, file_id: FileId) -> tuple[Symbol, ...]:
+        """Fetch all symbols contained in the given file."""
+        pass

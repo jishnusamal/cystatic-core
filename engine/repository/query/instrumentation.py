@@ -18,6 +18,8 @@ from .types import (
     TestRelationship,
     TypeRelationship,
 )
+from engine.repository.model.repository_model import EntryPoint
+
 
 @dataclass
 class QueryStats:
@@ -177,3 +179,16 @@ class InstrumentedRepository(RepositoryQuery):
             "get_tests",
             lambda: self._delegate.get_tests(symbol_id)
         )
+
+    def get_entry_points(self) -> tuple[EntryPoint, ...]:
+        return self._execute_instrumented(
+            "get_entry_points",
+            lambda: self._delegate.get_entry_points()
+        )
+
+    def get_symbols_in_file(self, file_id: FileId) -> tuple[Symbol, ...]:
+        return self._execute_instrumented(
+            "get_symbols_in_file",
+            lambda: self._delegate.get_symbols_in_file(file_id)
+        )
+

@@ -14,6 +14,7 @@ from .events import EventConstruct
 from .tests import TestDefinition
 from .configuration import ConfigurationReference
 from .file_contribution import FileContribution
+from core.runtime import assert_new_architecture
 
 
 @dataclass
@@ -96,6 +97,10 @@ class RepositoryGraph:
     # In-memory only cache and stats
     _indexes: DerivedIndexCache = field(default_factory=DerivedIndexCache, init=False, repr=False, compare=False)
     _index_stats: dict[str, IndexStats] = field(default_factory=dict, init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        """Guard: fail loudly if created in a new-architecture-only context."""
+        assert_new_architecture("RepositoryGraph")
 
     @contextlib.contextmanager
     def index_usage(self, index_name: str):

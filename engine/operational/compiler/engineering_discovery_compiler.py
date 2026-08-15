@@ -206,21 +206,31 @@ class EngineeringDiscoveryCompiler:
         Returns:
             EngineeringDiscoveryModel.
         """
+        behavior = operational_model.behavior
+        execution_chains = getattr(behavior, "execution_chains", ())
+        entry_points = getattr(behavior, "entry_points", ())
+        terminal_points = getattr(behavior, "terminal_points", ())
+        shared_executions = getattr(behavior, "shared_executions", ())
+        reachable_units = getattr(behavior, "reachable_units", frozenset())
+        execution_depth = getattr(behavior, "execution_depth", 0)
+
+        execution_units = tuple(
+            u for chain in execution_chains
+            for u in chain.units
+        ) if execution_chains else ()
+
         return EngineeringDiscoveryModel(
             repository=operational_model.repository,
             change=operational_model.change,
             behavior=operational_model.behavior,
             operational=operational_model,
-            execution_units=tuple(
-                u for chain in operational_model.behavior.execution_chains
-                for u in chain.units
-            ),
-            execution_chains=operational_model.behavior.execution_chains,
-            entry_points=operational_model.behavior.entry_points,
-            terminal_points=operational_model.behavior.terminal_points,
-            shared_executions=operational_model.behavior.shared_executions,
-            reachable_units=operational_model.behavior.reachable_units,
-            execution_depth=operational_model.behavior.execution_depth,
+            execution_units=execution_units,
+            execution_chains=execution_chains,
+            entry_points=entry_points,
+            terminal_points=terminal_points,
+            shared_executions=shared_executions,
+            reachable_units=reachable_units,
+            execution_depth=execution_depth,
             dependency=operational_model.dependency,
             data=operational_model.data,
             event=operational_model.event,
@@ -228,6 +238,7 @@ class EngineeringDiscoveryCompiler:
             validation=operational_model.validation,
             metrics=operational_model.metrics,
         )
+
 
     def get_pass_names(self) -> list[str]:
         """Get the names of all passes in execution order."""

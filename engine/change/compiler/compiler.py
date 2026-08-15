@@ -107,6 +107,14 @@ class RepositoryModelQuery(RepositoryQuery):
         return tuple(getattr(self.model, "entry_points", ()))
 
 
+    def get_symbols_in_file(self, file_id):
+        return tuple(
+            s for s in self.model.symbols
+            if s.file == file_id
+        )
+
+
+
 
 class ChangeCompiler:
     """
@@ -180,6 +188,12 @@ class ChangeCompiler:
                 file_fact = base_query.get_file(s.file_id)
                 if file_fact and file_fact.path in changed_files:
                     base_symbols_by_file.setdefault(file_fact.path, []).append(s)
+        else:
+            for file_path in changed_files:
+                file_fact = base_query.get_file(file_path)
+                if file_fact:
+                    syms = base_query.get_symbols_in_file(file_fact.id)
+                    base_symbols_by_file.setdefault(file_path, []).extend(syms)
 
         if hasattr(head_query, "model"):
             for s in head_query.model.symbols:
@@ -190,6 +204,13 @@ class ChangeCompiler:
                 file_fact = head_query.get_file(s.file_id)
                 if file_fact and file_fact.path in changed_files:
                     head_symbols_by_file.setdefault(file_fact.path, []).append(s)
+        else:
+            for file_path in changed_files:
+                file_fact = head_query.get_file(file_path)
+                if file_fact:
+                    syms = head_query.get_symbols_in_file(file_fact.id)
+                    head_symbols_by_file.setdefault(file_path, []).extend(syms)
+
 
         # 4. Compare symbols and facts file-by-file locally
         for file_path in changed_files:
@@ -265,37 +286,45 @@ class ChangeCompiler:
                     
                     # Detect structural symbol modifications
                     modified = False
-                    if b_sym.range != h_sym.range or b_sym.visibility != h_sym.visibility:
+                    b_range = getattr(b_sym, "range", (getattr(b_sym, "start_line", 0), getattr(b_sym, "end_line", 0)))
+                    h_range = getattr(h_sym, "range", (getattr(h_sym, "start_line", 0), getattr(h_sym, "end_line", 0)))
+                    b_vis = getattr(b_sym, "visibility", None)
+                    h_vis = getattr(h_sym, "visibility", None)
+                    b_props = getattr(b_sym, "properties", {})
+                    h_props = getattr(h_sym, "properties", {})
+                    
+                    if b_range != h_range or b_vis != h_vis:
                         modified = True
-                    elif b_sym.properties != h_sym.properties:
+                    elif b_props != h_props:
                         modified = True
                         
                     if modified:
                         changed_symbols.append(ChangedSymbol(symbol_id=sid, change_type="MODIFIED", file_id=file_path))
 
                         # Compare range (body)
-                        if b_sym.range != h_sym.range:
+                        if b_range != h_range:
                             contract_changes.append(ContractChange(
                                 symbol_id=sid,
                                 contract_type="body",
                                 change_kind="modified",
                                 details={
-                                    "old_body_hash": b_sym.properties.get("body_hash", ""),
-                                    "new_body_hash": h_sym.properties.get("body_hash", ""),
+                                    "old_body_hash": b_props.get("body_hash", "") if b_props else "",
+                                    "new_body_hash": h_props.get("body_hash", "") if h_props else "",
                                 }
                             ))
 
                         # Compare visibility
-                        if b_sym.visibility != h_sym.visibility:
+                        if b_vis != h_vis:
                             contract_changes.append(ContractChange(
                                 symbol_id=sid,
                                 contract_type="visibility",
                                 change_kind="modified",
                                 details={
-                                    "old_visibility": b_sym.visibility.value if hasattr(b_sym.visibility, "value") else str(b_sym.visibility),
-                                    "new_visibility": h_sym.visibility.value if hasattr(h_sym.visibility, "value") else str(h_sym.visibility),
+                                    "old_visibility": b_vis.value if hasattr(b_vis, "value") else str(b_vis),
+                                    "new_visibility": h_vis.value if hasattr(h_vis, "value") else str(h_vis),
                                 }
                             ))
+
 
                         # Compare decorators
                         b_decs = b_sym.properties.get("decorators", [])

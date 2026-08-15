@@ -110,15 +110,19 @@ class RepositoryView(RepositoryQuery):
     def get_file(self, file_id: FileId) -> File | None:
         if file_id in self.overlay.added_files:
             return self.overlay.added_files[file_id]
+        for f in self.overlay.added_files.values():
+            if f.path == file_id:
+                return f
         if file_id in self.overlay.removed_files:
             return None
         
         base_file = self.base.get_file(file_id)
         if base_file is not None:
-            if base_file.id in self.overlay.modified_files:
+            if base_file.id in self.overlay.modified_files or base_file.id in self.overlay.removed_files:
                 return None
             return base_file
         return None
+
 
     def get_callers(self, symbol_id: SymbolId) -> tuple[Call, ...]:
         base_callers = self.base.get_callers(symbol_id)
@@ -301,4 +305,15 @@ class RepositoryView(RepositoryQuery):
                 ))
                 
         return tuple(v_eps)
+
+    def get_symbols_in_file(self, file_id: FileId) -> tuple[Symbol, ...]:
+        if file_id in self.overlay.removed_files:
+            return ()
+            
+        if file_id in self.overlay.added_files or file_id in self.overlay.modified_files:
+            added_syms = [s for s in self.overlay.added_symbols.values() if s.file_id == file_id]
+            return tuple(added_syms)
+            
+        base_syms = self.base.get_symbols_in_file(file_id)
+        return tuple(s for s in base_syms if s.id not in self.overlay.removed_symbols)
 

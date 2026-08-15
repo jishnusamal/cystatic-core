@@ -62,25 +62,36 @@ class OperationalPassContext:
 
         affected: set[str] = set()
         
-        # Check behavior model
+        # Check behavior model / ImpactSurface
         behavior = self.behavior_model or (self.composed_model.behavior if self.composed_model else None)
         if behavior is not None:
-            for b in behavior.behaviors:
-                affected.add(b.root_symbol_id)
-                affected.update(b.changed_symbol_ids)
+            if hasattr(behavior, "behaviors"):
+                for b in behavior.behaviors:
+                    affected.add(b.root_symbol_id)
+                    affected.update(b.changed_symbol_ids)
+            elif hasattr(behavior, "affected_symbols"):
+                affected.update(behavior.affected_symbols)
         
-        # Check change model
+        # Check change model / ChangeFacts
         change = self.change_model or (self.composed_model.change if self.composed_model else None)
         if change is not None:
-            for s in change.added_symbols:
-                affected.add(s.id)
-            for s in change.removed_symbols:
-                affected.add(s.id)
-            for ms in change.modified_symbols:
-                affected.add(ms.symbol.id)
+            if hasattr(change, "changed_symbols"):
+                for cs in change.changed_symbols:
+                    affected.add(cs.symbol_id)
+            if hasattr(change, "added_symbols"):
+                for s in change.added_symbols:
+                    affected.add(getattr(s, "id", getattr(s, "symbol_id", str(s))))
+            if hasattr(change, "removed_symbols"):
+                for s in change.removed_symbols:
+                    affected.add(getattr(s, "id", getattr(s, "symbol_id", str(s))))
+            if hasattr(change, "modified_symbols"):
+                for ms in change.modified_symbols:
+                    sym = getattr(ms, "symbol", ms)
+                    affected.add(getattr(sym, "id", getattr(sym, "symbol_id", str(sym))))
                 
         self._affected_symbol_ids = affected
         return affected
+
 
     def get_symbol_map(self) -> dict[str, Symbol]:
         """Lazy-load and cache repository symbol map."""
@@ -91,7 +102,17 @@ class OperationalPassContext:
         if repo is None:
             return {}
             
-        symbol_map = {s.id: s for s in repo.symbols}
+        if hasattr(repo, "symbols"):
+            symbol_map = {s.id: s for s in repo.symbols}
+        elif hasattr(repo, "get_symbol"):
+            symbol_map = {}
+            for sym_id in self.get_affected_symbol_ids():
+                s = repo.get_symbol(sym_id)
+                if s is not None:
+                    symbol_map[sym_id] = s
+        else:
+            symbol_map = {}
+            
         self._symbol_map = symbol_map
         return symbol_map
 
@@ -104,12 +125,19 @@ class OperationalPassContext:
         from collections import defaultdict
         callees: dict[str, list[str]] = defaultdict(list)
         callers: dict[str, list[str]] = defaultdict(list)
-        if repo is not None and repo.call_graph is not None:
+        if repo is not None and hasattr(repo, "call_graph") and repo.call_graph is not None:
             for edge in repo.call_graph.edges:
                 callees[edge.caller_id].append(edge.callee_id)
                 callers[edge.callee_id].append(edge.caller_id)
+        elif repo is not None and hasattr(repo, "get_callees") and hasattr(repo, "get_callers"):
+            for sym_id in self.get_affected_symbol_ids():
+                for call in repo.get_callees(sym_id):
+                    callees[sym_id].append(call.callee_id)
+                for call in repo.get_callers(sym_id):
+                    callers[sym_id].append(call.caller_id)
         self._callees_of = dict(callees)
         self._callers_of = dict(callers)
+
 
     def get_callees_of(self) -> dict[str, list[str]]:
         """Lazy-load and cache callee adjacency map."""

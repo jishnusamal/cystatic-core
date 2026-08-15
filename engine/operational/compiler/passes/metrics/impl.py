@@ -105,7 +105,13 @@ class MetricsCompilationPass(OperationalCompilerPass):
             return context
 
         # 1. Behavior count
-        behaviors = len(model.behavior.behaviors)
+        if hasattr(model.behavior, "behaviors"):
+            behaviors = len(model.behavior.behaviors)
+        elif hasattr(model.behavior, "affected_symbols"):
+            behaviors = len(model.behavior.affected_symbols)
+        else:
+            behaviors = 0
+
 
         # 2. Service count (from dependency model)
         services = 0
@@ -176,7 +182,8 @@ class MetricsCompilationPass(OperationalCompilerPass):
                 len(dependency.callers)
                 + len(dependency.dependents)
             )
-        traversal_size += len(model.repository.symbols)
+        if hasattr(model.repository, "symbols"):
+            traversal_size += len(model.repository.symbols)
 
         metrics = DiscoveryMetrics(
             behaviors=behaviors,
