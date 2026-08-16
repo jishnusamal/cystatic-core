@@ -1,44 +1,50 @@
-# Factor Architecture
+# Factor System & Compiler Architecture
 
-## What Factor Does
-
-Factor is a **blast-radius and refactor-risk analysis engine** for code changes. Given a pull request (or a raw diff), it determines which downstream services, endpoints, databases, queues, and event subscription models are impacted, compiles behavioral and operational change indicators, and prepares a structured review context for an LLM expert reviewer to produce a confidence-weighted verdict.
+Factor is a high-performance **blast-radius and refactor-risk analysis engine** for code changes. Given a pull request (or a raw git diff), it evaluates downstream impacts on API endpoints, databases, message queues, and event subscriptions. It compiles behavioral and operational change indicators, then packages a token-efficient context for an LLM to produce a final, confidence-weighted review verdict.
 
 ---
 
-## System Architecture Diagram
+## 1. System Architecture
 
 ```mermaid
 flowchart TB
-    subgraph API[API Layer - FastAPI]
-        direction TB
-        A1[GET /health] --> A2[Health check]
-        A3[POST /github] --> A4[GitHub Webhook Router]
-        A5[POST /analysis] --> A6[Manual Analysis Router]
-    end
+    %% Styling Classes
+    classDef apiStyle fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
+    classDef integrationStyle fill:#efebe9,stroke:#5d4037,stroke-width:2px;
+    classDef engineStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef outputStyle fill:#fff3e0,stroke:#f57c00,stroke-width:2px;
 
-    subgraph Integration[Integration Layer]
+    subgraph API [API Layer - FastAPI]
         direction TB
-        IR[IntegrationRegistry] --> RP[RepositoryProvider]
-        IR --> EP[EventProvider]
-        IR --> IP[InstallationProvider]
-        IR --> OP[OutputProvider]
-        GI[GitHub Integration] --> GRP[GitHubRepositoryProvider]
-        GI --> GWP[GitHubWebhookProvider]
-        GI --> GCP[GitHubCommentProvider]
+        A1["GET /health"] --> A2["Health Check"]
+        A3["POST /github"] --> A4["GitHub Webhook Router"]
+        A5["POST /analysis"] --> A6["Manual Analysis Router"]
     end
+    class API,A1,A2,A3,A4,A5,A6 apiStyle;
 
-    subgraph Engine[Analysis & Compilation Engine]
+    subgraph Integration [Integration Layer]
         direction TB
-        PL[Pipeline Orchestrator]
-        LA[Language Detection & Adapters]
-        RC[Repository Compiler]
-        CC[Change Compiler]
-        BC[Behavior Compiler]
-        OC[Operational Compiler]
-        DC[Discovery Compiler]
-        RVC[ReviewContext Compiler]
-        LLMC[LLMContext Compiler]
+        IR["IntegrationRegistry"] --> RP["RepositoryProvider"]
+        IR --> EP["EventProvider"]
+        IR --> IP["InstallationProvider"]
+        IR --> OP["OutputProvider"]
+        GI["GitHub Integration"] --> GRP["GitHubRepositoryProvider"]
+        GI --> GWP["GitHubWebhookProvider"]
+        GI --> GCP["GitHubCommentProvider"]
+    end
+    class Integration,IR,RP,EP,IP,OP,GI,GRP,GWP,GCP integrationStyle;
+
+    subgraph Engine [Analysis & Compilation Engine]
+        direction TB
+        PL["Pipeline Orchestrator"]
+        LA["Language Detection & Adapters"]
+        RC["Repository Compiler"]
+        CC["Change Compiler"]
+        BC["Behavior Compiler"]
+        OC["Operational Compiler"]
+        DC["Discovery Compiler"]
+        RVC["ReviewContext Compiler"]
+        LLMC["LLMContext Compiler"]
         
         PL --> LA --> RC
         PL --> CC
@@ -48,13 +54,15 @@ flowchart TB
         PL --> RVC
         PL --> LLMC
     end
+    class Engine,PL,LA,RC,CC,BC,OC,DC,RVC,LLMC engineStyle;
 
-    subgraph Output[Rendering and Publishing]
+    subgraph Output [Rendering & Publishing]
         direction TB
-        JR[JSONRenderer]
-        GR[GitHubRenderer]
-        LR[LLMContextRenderer]
+        JR["JSONRenderer"]
+        GR["GitHubRenderer"]
+        LR["LLMContextRenderer"]
     end
+    class Output,JR,GR,LR outputStyle;
 
     API --> Integration
     Integration --> Engine
@@ -63,165 +71,117 @@ flowchart TB
 
 ---
 
-## The 9-Step Compilation Pipeline
+## 2. The 9-Step Compilation Pipeline
 
-The runtime pipeline is orchestrated by the `Pipeline` class located in [engine/pipeline/pipeline.py](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/pipeline/pipeline.py). It progresses through the following sequential stages:
+The runtime pipeline is orchestrated by the `Pipeline` class located in [`engine/pipeline/pipeline.py`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/pipeline/pipeline.py). It runs sequentially through the following compiler phases:
 
-```
-                   ┌──────────────────┐
-                   │  Git Repository  │
-                   └────────┬─────────┘
-                            │
-                  ┌─────────▼──────────┐
-                  │ Integration Layer  │
-                  │ (GitHubProvider)   │
-                  └─────────┬──────────┘
-                            │
-               ┌────────────▼─────────────┐
-               │     AnalysisRequest      │
-               └────────────┬──────────────┘
-                            │
-               ┌────────────▼──────────────┐
-               │    Pipeline Orchestrator  │
-               └────────────┬──────────────┘
-                            │
-      ┌─────────────────────┴─────────────────────┐
-      │  Step 1: Repository Model Compilation      │
-      │  - Compile base and head RepositoryModels │
-      │  - Employs cache via RepositoryStore      │
-      └─────────────────────┬─────────────────────┘
-                            │
-      ┌─────────────────────▼─────────────────────┐
-      │  Step 2: Fetch Diff Data                  │
-      │  - Parse file diffs and hunks             │
-      └─────────────────────┬─────────────────────┘
-                            │
-      ┌─────────────────────▼─────────────────────┐
-      │  Step 3: Change Compilation               │
-      │  - ChangedSymbolsPass + Classification    │
-      └─────────────────────┬─────────────────────┘
-                            │
-      ┌─────────────────────▼─────────────────────┐
-      │  Step 4: Behavior Compilation             │
-      │  - Trace call graphs, discover behaviors  │
-      └─────────────────────┬─────────────────────┘
-                            │
-      ┌─────────────────────▼─────────────────────┐
-      │  Step 5: Operational Compilation          │
-      │  - Compose models and cross-enrich        │
-      │  - DB schema, Event pub/sub, API checks   │
-      └─────────────────────┬─────────────────────┘
-                            │
-      ┌─────────────────────▼─────────────────────┐
-      │  Step 6: Engineering Discovery Model      │
-      │  - Project findings into canonical IR     │
-      └─────────────────────┬─────────────────────┘
-                            │
-      ┌─────────────────────▼─────────────────────┐
-      │  Step 7: Discovery IR Compilation         │
-      │  - Run deep rule-based analysis passes    │
-      └─────────────────────┬─────────────────────┘
-                            │
-      ┌─────────────────────▼─────────────────────┐
-      │  Step 8: ReviewContext Compilation        │
-      │  - Collect and format review data         │
-      └─────────────────────┬─────────────────────┘
-                            │
-      ┌─────────────────────▼─────────────────────┐
-      │  Step 9: LLMContext Compilation           │
-      │  - Build compressed LLM review packages   │
-      └───────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    %% Styling Classes
+    classDef stepStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:1px;
+    classDef ioStyle fill:#fff3e0,stroke:#f57c00,stroke-width:1px;
+
+    Start(["Git Repository / Diff Payload"]) --> Step1["Step 1: Repository Model Compilation<br/>(Cache via RepositoryStore)"]
+    Step1 --> Step2["Step 2: Fetch Diff Data<br/>(Parse hunks & changed files)"]
+    Step2 --> Step3["Step 3: Change Compilation<br/>(ChangedSymbolsPass + Classification)"]
+    Step3 --> Step4["Step 4: Behavior Compilation<br/>(Trace call graphs to entry points)"]
+    Step4 --> Step5["Step 5: Operational Compilation<br/>(DB schema, Event pub/sub, API contract checks)"]
+    Step5 --> Step6["Step 6: Engineering Discovery Model<br/>(Project findings to intermediate representation)"]
+    Step6 --> Step7["Step 7: Discovery IR Compilation<br/>(Deep rule-based analysis passes)"]
+    Step7 --> Step8["Step 8: ReviewContext Compilation<br/>(Assemble evidence & raw diffs)"]
+    Step8 --> Step9["Step 9: LLMContext Compilation<br/>(Compress tokens & dictionary-encode StringTable)"]
+    Step9 --> End(["LLM-Ready Context Package"])
+
+    class Start,End ioStyle;
+    class Step1,Step2,Step3,Step4,Step5,Step6,Step7,Step8,Step9 stepStyle;
 ```
 
-### Step 1: Repository Compilation
-Fetches code tree snapshots for both the **base** and **head** references and compiles them into a unified semantic graph representation (`RepositoryModel`). 
-- Uses automatic language detection (supporting **Python**, **Java**, and **TypeScript**).
-- Parses syntax trees (ASTs or Tree-sitter objects) to extract symbols, call graphs, imports, database persistence tables, entry points, tests, event constructs, and configuration parameters.
-- Uses `RepositoryStore` to cache compiled repository states and skip parsing unmodified code references.
+### Compiler Phase Details
 
-### Step 2: Fetch Diff Data
-Fetches the raw diff files and line hunks representing the changes introduced by the pull request.
-
-### Step 3: Change Compilation
-The `ChangeCompiler` compares the base and head models to compute the delta:
-- **ChangedSymbolsPass:** Evaluates modifications at the symbol level (added, modified, or removed classes, methods, and imports).
-- **ChangeClassificationPass:** Categorizes changes (e.g., changes to function body, method signatures, visibility modifiers, decorators, or REST endpoint annotations).
-
-### Step 4: Behavior Compilation
-The `BehaviorCompiler` traces downstream call relationships starting from the changed symbols to identify impacted code execution pathways:
-- Traces control and call flow graphs outward to entry points.
-- Determines the confidence and depth of impact.
-
-### Step 5: Operational Compilation
-The `OperationalCompiler` merges change delta and behavior insights, performing optional domain-specific enrichments:
-- **API Pass:** Detects additions or breakages in HTTP contracts.
-- **Data Pass:** Tracks changes to database schemas, models, or active query structures.
-- **Event Pass:** Traces publish/subscribe updates.
-- **Dependency & Metrics Pass:** Flags overall blast radius and confidence indicators.
-
-### Step 6 & 7: Engineering Discovery & Discovery IR Compilation
-Compiles the findings into a canonical intermediate representation (`EngineeringDiscoveryModel`) and runs dedicated rule-based detection passes:
-- Detects boundary-crossing control transfers, deep execution changes, hidden relationships, state mutations, shared dependencies, and validation gaps.
-
-### Step 8 & 9: ReviewContext & LLMContext Compilation
-Prepares and packages contextual review documents containing specific code symbols and formatted diffs for prompt injection. Uses token count estimators to structure compact context packages for the reviewing LLM.
+| Phase | Component | Key Operations & Outputs |
+| :--- | :--- | :--- |
+| **Step 1** | `RepositoryCompiler` | Fetches code tree snapshots for base and head references. Detects language adapter (**Python**, **Java**, or **TypeScript**) and parses syntax trees (ASTs/Tree-sitter) into a unified `RepositoryModel`. Caches compiled repositories in `RepositoryStore`. |
+| **Step 2** | `DiffFetcher` | Extracts diff hunks, matching line changes back to files and symbol scopes. |
+| **Step 3** | `ChangeCompiler` | Computes semantic deltas using `ChangedSymbolsPass` (detects added, modified, or removed symbols) and `ChangeClassificationPass` (categorizes mutations such as method signature, body, visibility, or decorators). |
+| **Step 4** | `BehaviorCompiler` | Traces downstream caller-callee execution chains starting from changed symbols to identify impacted paths and entry points. |
+| **Step 5** | `OperationalCompiler` | Enriches findings with domain-specific analysis passes:<br/>- **API Pass:** Detects alterations or breakages in HTTP contracts.<br/>- **Data Pass:** Tracks changes to database schemas, models, or active query structures.<br/>- **Event Pass:** Traces publish/subscribe updates. |
+| **Step 6 & 7** | `DiscoveryCompiler` | Normalizes findings into a canonical `EngineeringDiscoveryModel` and runs rule-based analysis passes to extract boundary-crossing transfers, state mutations, shared dependencies, and validation gaps. |
+| **Step 8 & 9** | `LLMContextCompiler` | Bundles findings into a compact `LLMContext` via discovery-centered build orders. Applies token compression, including enum ID encoding, location normalization, duplicate label elimination, and **dead-string elimination** (removing unreferenced string table entries). |
 
 ---
 
-## Key Directory Structure
+## 3. Directory Layout & Module Roles
 
 ```
 cystatic-core/
-├── api/                         # FastAPI application layer
-│   ├── routes/                  # Routers: /health, /github webhook, /analysis manual triggers
-│   ├── schemas/                 # Pydantic web verification & payload schemas
+├── api/                         # FastAPI Application Layer
+│   ├── routes/                  # Routers (/health, /github webhook, manual /analysis)
+│   ├── schemas/                 # Pydantic verification and validation schemas
 │   ├── deps.py                  # Dependency injection utilities
-│   └── main.py                  # Application initialization
+│   └── main.py                  # API application initialization
 │
-├── core/                        # Core system utilities
+├── core/                        # Core System & Runtime Utilities
 │   ├── config.py                # Environment configurations (pydantic-settings)
 │   ├── db.py                    # Database connection pool setup
 │   ├── errors.py                # System-wide custom exception definitions
-│   ├── logging.py               # Time logging & runtime execution tracing utilities
-│   ├── profile.py               # Memory & CPU tracing hooks (psutil, tracemalloc)
+│   ├── logging.py               # Time logging & execution tracing
+│   ├── profile.py               # MemoryProfiler (RSS & tracemalloc)
 │   └── runtime.py               # Runtime context manager
 │
-├── engine/                      # Core analysis & compilation logic
+├── engine/                      # Core Analysis & Compilation Engine
 │   ├── pipeline/                # Runtime pipeline orchestrator and context
-│   │   ├── pipeline.py          # Executes and times the 9 compiler phases
-│   │   └── context.py           # Tracks pipeline state, timing data, and caught exceptions
+│   │   ├── pipeline.py          # Pipeline manager (executes the 9 compiler phases)
+│   │   └── context.py           # Tracks pipeline state, timing, and errors
 │   ├── language/                # Source code parsing & Language adapters
 │   │   ├── base/                # Abstract compiler framework, normalization, and visitors
 │   │   ├── python/              # Python adapter parsing (standard AST extractors)
 │   │   ├── java/                # Java adapter parsing (Tree-sitter parser)
 │   │   ├── typescript/          # TypeScript adapter parsing
-│   │   └── detection.py         # LanguageAdapterFactory for automatic language detection
+│   │   └── detection.py         # Automatic language detection factory
 │   ├── repository/              # Repository model declarations and caching
 │   │   ├── model/               # Dataclass entities (symbols, graphs, persistence, events)
-│   │   └── indexing/            # Caching layer (RepositoryStore)
+│   │   └── indexing/            # Caching and indexing layer (RepositoryStore)
 │   ├── change/                  # ChangeCompiler (changed symbols & classification passes)
-│   ├── behavior/                # BehaviorCompiler (affected control flow pathways & endpoints)
-│   ├── operational/             # OperationalCompiler (API/DB/Event/validation passes)
-│   ├── discovery/               # DiscoveryCompiler (projects findings to Discovery IR model)
-│   ├── review_context/          # Compiles target review details
-│   └── llm_context/             # Packages and optimizes the context for the LLM
+│   ├── behavior/                # BehaviorCompiler (impacted control flows & call graphs)
+│   ├── operational/             # OperationalCompiler (API/DB/Event passes)
+│   ├── discovery/               # DiscoveryCompiler (projects to Discovery IR model)
+│   ├── review_context/          # ReviewContextCompiler (compiles target review details)
+│   └── llm_context/             # LLMContextCompiler (compresses context for the LLM)
 │
-├── integrations/                # Pluggable platforms integrations (VCS, hosting, comments)
-│   ├── base/                    # Provider interfaces: Repository, Event, Installation, Output
-│   └── github/                  # GitHub specific implementations & Comment/JSON renderers
+├── integrations/                # Pluggable Platform Integrations
+│   ├── base/                    # Platform-agnostic interfaces (Repository, Event, Output)
+│   └── github/                  # GitHub VCS implementations & comment/JSON renderers
 │
-├── models/                      # SQLAlchemy & Core system Pydantic data models
+├── models/                      # SQLAlchemy & system-wide Pydantic data models
 ├── repositories/                # Database service layer for indexed documents
 ├── workers/                     # Background workers for processing queued analyses
-├── tests/                       # Test suite
-└── docs/                        # Project documentation (e.g. memory profiling)
+└── tests/                       # Complete pytest suite
 ```
 
 ---
 
-## Architectural Patterns
+## 4. Key Architectural Patterns
 
-1. **Pluggable Provider Pattern (`integrations/base/`):** External services are abstracted behind platform-agnostic base interfaces. The pipeline does not depend directly on GitHub APIs, permitting future integration with platforms like GitLab or Bitbucket.
-2. **Deterministic & Immutable Models:** Data constructs compiled throughout the pipeline are defined as immutable/frozen dataclasses. This prevents side effects across different compiler passes.
-3. **Graceful Degradation:** Enrichment passes (e.g., event checking, validation checking) operate independently and fail gracefully, allowing basic symbol/behavior extraction to proceed even in complex codebases.
-4. **Isolated Language Parsers:** Language adapters normalize language-specific features into a language-agnostic representation. Upstream analysis engines (Change, Behavior, Operational) operate entirely on this abstract syntax map, decoupled from language-specific syntax.
+### Pluggable Provider Pattern
+External platforms are abstracted behind interfaces defined in [`integrations/base/`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/integrations/base/). The compiler engine operates entirely on these interfaces (e.g. `RepositoryProvider`), meaning integration with new platforms (like GitLab, Bitbucket, or self-hosted VCS) requires no modifications to the core analysis engine.
+
+### Deterministic & Immutable Models
+To prevent side effects across compiler passes, all data structures produced throughout the compilation pipeline are designed as frozen, immutable dataclasses. The pipeline guarantees that given the same input `ReviewContext`, the output `LLMContext` is 100% deterministic and reproducible.
+
+### Isolated Language Parsers
+Language-specific features are normalized by language adapters in [`engine/language/`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/) into a language-agnostic representation. Downstream compilers (Change, Behavior, Operational) consume this normalized abstract syntax map, isolating them from syntactic quirks of individual programming languages.
+
+### Graceful Degradation
+Analysis and operational passes run independently. If a highly complex database parse or event subscription extraction fails, the pipeline isolates the error and degrades gracefully, allowing standard symbol change and control flow tracing to proceed uninterrupted.
+
+---
+
+## 5. Performance and Resource Monitoring
+
+Factor runs a built-in diagnostics system for tracking system footprint, defined in [`core/profile.py`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/core/profile.py):
+
+> [!NOTE]
+> **MemoryProfiler** (`core/profile.py`)
+> - Tracks real-time Process RSS usage (using `psutil`) sampled on a background thread every 5ms.
+> - Tracks precise heap allocation diagnostics via Python's `tracemalloc` to trace memory usage back to specific files and line numbers.
+> - Dumps structured diagnostics (`memory_checkpoints.json`) into the log directory for profiling execution runs and identifying memory growth patterns.
