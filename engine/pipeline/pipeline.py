@@ -25,7 +25,8 @@ from core.runtime import PREVENT_LEGACY_ARCHITECTURE
 from engine.behavior.compiler import BehaviorCompiler
 from engine.change.compiler import ChangeCompiler
 from engine.change.model.repository_comparison import RepositoryComparison
-from engine.language.detection import LanguageAdapterFactory, get_language_factory
+from engine.language.detection import LanguageDetector
+from engine.language.base import FileContext
 from engine.language.registry import LanguageRegistry
 from engine.llm_context.compiler import LLMContextCompiler
 from engine.operational.compiler import (
@@ -105,7 +106,6 @@ class Pipeline:
         )
         from engine.language.builtins import create_default_language_registry
         self.language_registry = language_registry or create_default_language_registry()
-        self.language_factory = LanguageAdapterFactory(self.language_registry)
         self.repository_provider = repository_provider
         self.output_provider = output_provider
 
@@ -427,14 +427,21 @@ class Pipeline:
         # Detect language
         if context.language is None:
             print(f"[pipeline] Detecting language from {len(snapshot.files)} files...")
-            language = self.language_factory.detect_language(snapshot.files)
+            detector = LanguageDetector(self.language_registry)
+            file_contexts = [
+                FileContext(path=path, source=content, ast=None, language="")
+                for path, content in snapshot.files.items()
+            ]
+            spec = detector.detect(file_contexts)
+            language = spec.id
             context.language = language
             context.adapter = language
             print(f"[pipeline] Detected language: {language}")
         else:
             language = context.language
 
-        adapter = self.language_factory.create_adapter(language)
+        plugin = self.language_registry.get(language)
+        adapter = plugin.create_adapter()
 
         base_compile_start = time.perf_counter()
         repository_input = {
@@ -552,7 +559,8 @@ class Pipeline:
         metrics: dict[str, Any] = {}
         incremental_start = time.perf_counter()
 
-        adapter = self.language_factory.create_adapter(language)
+        plugin = self.language_registry.get(language)
+        adapter = plugin.create_adapter()
         repository_input = {
             "files": changed_files_dict,
             "changed_only": True,
@@ -692,12 +700,19 @@ class Pipeline:
 
                 if snapshot is not None:
                     if context.language is None:
-                        language = self.language_factory.detect_language(snapshot.files)
+                        detector = LanguageDetector(self.language_registry)
+                        file_contexts = [
+                            FileContext(path=path, source=content, ast=None, language="")
+                            for path, content in snapshot.files.items()
+                        ]
+                        spec = detector.detect(file_contexts)
+                        language = spec.id
                         context.language = language
                         context.adapter = language
                     else:
                         language = context.language
-                    adapter = self.language_factory.create_adapter(language)
+                    plugin = self.language_registry.get(language)
+                    adapter = plugin.create_adapter()
 
                     if self.repository_store is not None and isinstance(
                         self.repository_store, SQLiteRepositoryStore
@@ -798,7 +813,8 @@ class Pipeline:
                 changed_files_dict = dict(results)
 
             # 3. Index ONLY changed files
-            adapter = self.language_factory.create_adapter(language)
+            plugin = self.language_registry.get(language)
+            adapter = plugin.create_adapter()
             head_sink = InMemoryFactSink()
             head_indexer = RepositoryIndexer(head_sink)
 
@@ -1984,7 +2000,8 @@ class Pipeline:
             )
             context.base_repository_snapshot = snapshot
 
-        adapter = self.language_factory.create_adapter(language)
+        plugin = self.language_registry.get(language)
+        adapter = plugin.create_adapter()
 
         # Build base facts
         from engine.repository.indexing import InMemoryFactSink, RepositoryIndexer

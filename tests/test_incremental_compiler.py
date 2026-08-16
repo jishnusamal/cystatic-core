@@ -556,3 +556,67 @@ def caller_func():
             )
         except ValueError as e:
             pytest.fail(f"Incremental compilation failed with dangling edges: {e}")
+
+    def test_incremental_compilation_uses_plugin_adapter(self):
+        """Verify that incremental compilation using plugin-created adapter patches graph correctly."""
+        from engine.language.builtins import create_default_language_registry
+
+        # 1. Obtain adapter from registry/plugin
+        registry = create_default_language_registry()
+        plugin = registry.get("python")
+        adapter = plugin.create_adapter()
+
+        # 2. Setup base repository
+        base_files = {
+            "foo.py": (
+                "from other import bar\n"
+                "def foo():\n"
+                "    bar()\n"
+            ),
+            "other.py": (
+                "def bar():\n"
+                "    pass\n"
+                "def baz():\n"
+                "    pass\n"
+            )
+        }
+        base_graph = adapter.compile_graph({"files": base_files})
+
+        # Assert base graph has the edge foo -> bar
+        base_model = base_graph.to_model()
+        calls = base_model.get_calls_for("python://foo.py::foo")
+        callees = {c.callee_id for c in calls}
+        assert "python://other.py::bar" in callees
+        assert "python://other.py::baz" not in callees
+
+        # 3. Modify foo.py to call baz instead of bar
+        head_files = {
+            "foo.py": (
+                "from other import baz\n"
+                "def foo():\n"
+                "    baz()\n"
+            ),
+            "other.py": (
+                "def bar():\n"
+                "    pass\n"
+                "def baz():\n"
+                "    pass\n"
+            )
+        }
+
+        # Verify that both compilation paths work on the plugin-created adapter
+        # Path 1: Full compilation path
+        full_model = adapter.compile({"files": head_files})
+        assert full_model is not None
+
+        # Path 2: Incremental compilation path
+        patched_graph = adapter.compile_incremental(base_graph, {"files": head_files})
+        assert patched_graph is not None
+
+        # 5. Verify graph patching behavior
+        patched_model = patched_graph.to_model()
+        patched_calls = patched_model.get_calls_for("python://foo.py::foo")
+        patched_callees = {c.callee_id for c in patched_calls}
+        assert "python://other.py::bar" not in patched_callees  # removed
+        assert "python://other.py::baz" in patched_callees      # added
+
