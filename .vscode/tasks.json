@@ -41,6 +41,25 @@
       "label": "Run Benchmarks",
       "type": "shell",
       "command": "PYTHONPATH=. infisical run -- uv run python benchmark/run_benchmarks.py"
+    },
+    {
+      "label": "Docker Run (API with Infisical)",
+      "type": "shell",
+      "command": "docker build -t factor-api . && export INFISICAL_TOKEN=$(infisical login --method=universal-auth --client-id=${input:infisicalClientId} --client-secret=${input:infisicalClientSecret} --plain --silent) && docker run --rm -p 8000:8000 --env INFISICAL_TOKEN factor-api",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "infisicalClientId",
+      "type": "promptString",
+      "description": "Enter Infisical Client ID"
+    },
+    {
+      "id": "infisicalClientSecret",
+      "type": "promptString",
+      "description": "Enter Infisical Client Secret",
+      "password": true
     }
   ]
 }

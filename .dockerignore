@@ -1,0 +1,47 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Git & configuration
+.git/
+.gitignore
+.github/
+.vscode/
+
+# Build and cache artifacts
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.conductor/
+build/
+dist/
+*.egg-info/
+
+# Databases & local state
+*.db
+*.db-shm
+*.db-wal
+debug_store.db*
+repository_store.db*
+
+# Logs and profiling
+logs/
+profiling/
+benchmark/
+.pytest_cache/
+
+# Documentation and meta
+README.md
+architecture.md
+docs/
+
+# Docker build configs themselves (optional but recommended)
+Dockerfile
+.dockerignore
