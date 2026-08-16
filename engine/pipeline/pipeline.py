@@ -26,6 +26,7 @@ from engine.behavior.compiler import BehaviorCompiler
 from engine.change.compiler import ChangeCompiler
 from engine.change.model.repository_comparison import RepositoryComparison
 from engine.language.detection import LanguageAdapterFactory, get_language_factory
+from engine.language.registry import LanguageRegistry
 from engine.llm_context.compiler import LLMContextCompiler
 from engine.operational.compiler import (
     EngineeringDiscoveryCompiler,
@@ -86,7 +87,7 @@ class Pipeline:
     def __init__(
         self,
         repository_store: RepositoryStore | None = None,
-        language_factory: LanguageAdapterFactory | None = None,
+        language_registry: LanguageRegistry | None = None,
         repository_provider: RepositoryProvider | None = None,
         output_provider: OutputProvider | None = None,
     ) -> None:
@@ -95,14 +96,16 @@ class Pipeline:
 
         Args:
             repository_store: Storage backend for repository facts
-            language_factory: Factory for creating language adapters
+            language_registry: Language registry instance
             repository_provider: Provider for fetching repository data
             output_provider: Provider for publishing results
         """
         self.repository_store = repository_store or SQLiteRepositoryStore(
             "repository_store.db"
         )
-        self.language_factory = language_factory or get_language_factory()
+        from engine.language.builtins import create_default_language_registry
+        self.language_registry = language_registry or create_default_language_registry()
+        self.language_factory = LanguageAdapterFactory(self.language_registry)
         self.repository_provider = repository_provider
         self.output_provider = output_provider
 

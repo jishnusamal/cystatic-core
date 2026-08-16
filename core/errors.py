@@ -131,6 +131,12 @@ class LanguageDetectionFailed(PipelineError):
 
 
 
+class LanguageRegistrationError(FactorError):
+    """Raised when registering a language plugin fails due to conflicts."""
+
+
+
+
 class RendererFailed(PipelineError):
     """Raised when rendering fails."""
 
@@ -187,6 +193,7 @@ __all__ = [
     # Language
     "LanguageNotSupported",
     "LanguageDetectionFailed",
+    "LanguageRegistrationError",
     # Cache
     "CacheReadFailed",
     "CacheWriteFailed",

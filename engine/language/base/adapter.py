@@ -14,11 +14,17 @@ from engine.repository.model import (
 
 
 class BaseLanguageAdapter(ABC):
-    """
-    Abstract base class for language adapters.
+    """Language-specific frontend for repository compilation.
 
-    All language adapters must implement this interface to ensure
-    they produce a deterministic RepositoryModel.
+    Adapters translate language-specific source syntax into the
+    language-agnostic repository indexing and graph representations
+    consumed by downstream compilation phases.
+
+    Implementations are responsible for parsing, structural extraction,
+    normalization, full compilation, and incremental compilation.
+
+    Downstream compilers must not depend on language-specific ASTs or
+    parser implementations.
     """
 
     @abstractmethod
