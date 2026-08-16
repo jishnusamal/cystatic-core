@@ -234,8 +234,8 @@ class Pipeline:
             change_start = time.perf_counter()
             with timer.timed("Change Compilation"):
                 print("[pipeline] Step 3: Change facts compilation")
-                spec = self.language_registry.get(context.language).spec
-                if spec.capabilities.symbols:
+                capabilities = self._get_repository_capabilities(context)
+                if capabilities.symbols:
                     await self._compile_change(context)
                 else:
                     print("[pipeline] Step 3: symbols capability is False, skipping change compilation.")
@@ -249,8 +249,8 @@ class Pipeline:
             behavior_start = time.perf_counter()
             with timer.timed("Behavior Compilation"):
                 print("[pipeline] Step 4: Behavior model compilation")
-                spec = self.language_registry.get(context.language).spec
-                if spec.capabilities.calls and context.change_model is not None:
+                capabilities = self._get_repository_capabilities(context)
+                if capabilities.calls and context.change_model is not None:
                     await self._compile_behavior(context)
                 else:
                     print("[pipeline] Step 4: calls capability is False or change_model is None, skipping behavior compilation.")
@@ -1182,6 +1182,78 @@ class Pipeline:
                 details={"repository": context.repository},
             ) from exc
 
+    def _get_repository_capabilities(self, context: PipelineContext) -> Any:
+        """
+        Compute the union of capabilities for all languages present in this repository version.
+        """
+        detected_languages = set()
+
+        # 1. Check if we have snapshot files (on-demand indexing)
+        snapshot = context.base_repository_snapshot
+        if snapshot and snapshot.files:
+            for file_path in snapshot.files:
+                import os
+                filename = os.path.basename(file_path)
+                plugin = self.language_registry.find_by_filename(filename)
+                if not plugin:
+                    _, ext = os.path.splitext(file_path)
+                    plugin = self.language_registry.find_by_extension(ext)
+                if plugin:
+                    detected_languages.add(plugin.spec.id)
+
+        # 2. Check if we have a base query (SQLite/InMemory) with files
+        base_query = context.base_query
+        if base_query is not None:
+            if hasattr(base_query, "conn"):
+                try:
+                    cur = base_query.conn.cursor()
+                    repo_id, version_id = base_query._get_context()
+                    cur.execute(
+                        "SELECT DISTINCT language FROM files WHERE repository_id = ? AND version_id = ?",
+                        (repo_id, version_id),
+                    )
+                    for row in cur.fetchall():
+                        detected_languages.add(row["language"])
+                except Exception:
+                    pass
+            elif hasattr(base_query, "_facts"):
+                try:
+                    for f in base_query._facts.files:
+                        detected_languages.add(f.language)
+                except Exception:
+                    pass
+
+        # 3. Fallback to context.language if nothing detected yet
+        if not detected_languages and context.language:
+            detected_languages.add(context.language)
+
+        # 4. If still empty, default to python
+        if not detected_languages:
+            detected_languages.add("python")
+
+        # 5. Merge capabilities
+        merged = {
+            "symbols": False,
+            "imports": False,
+            "calls": False,
+            "types": False,
+            "entrypoints": False,
+            "events": False,
+            "persistence": False,
+            "tests": False,
+        }
+        for lang in detected_languages:
+            try:
+                spec = self.language_registry.get(lang).spec
+                for key in merged:
+                    if getattr(spec.capabilities, key, False):
+                        merged[key] = True
+            except Exception:
+                pass
+
+        from engine.language.base.capabilities import LanguageCapabilities
+        return LanguageCapabilities(**merged)
+
     async def _compile_behavior(self, context: PipelineContext) -> None:
         """
         Compile behavior model.
@@ -1199,12 +1271,12 @@ class Pipeline:
                 if context.repository_delta
                 else None
             )
-            spec = self.language_registry.get(context.language).spec
+            capabilities = self._get_repository_capabilities(context)
             context.impact_surface = self._behavior_compiler.compile(
                 change_model=change_input,
                 repository_query=query_input,
                 repository_delta=context.repository_delta,
-                capabilities=spec.capabilities,
+                capabilities=capabilities,
             )
             context.behavior_model = context.impact_surface
             context.mark_behavior_compiled()
@@ -1247,13 +1319,13 @@ class Pipeline:
                 if context.repository_delta
                 else None
             )
-            spec = self.language_registry.get(context.language).spec
+            capabilities = self._get_repository_capabilities(context)
             context.ocm = self._operational_compiler.compile(
                 repository_delta=context.repository_delta,
                 change_model=change_input,
                 behavior_model=context.behavior_model,
                 repository_query=query_input,
-                capabilities=spec.capabilities,
+                capabilities=capabilities,
             )
             context.mark_operational_compiled()
             # Diagnostics

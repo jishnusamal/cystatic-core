@@ -76,14 +76,18 @@ class RepositoryIndexer:
 
     def index_repository(self, repository_input: dict[str, Any], adapter: Any) -> None:
         """
-        Streamingly index a repository snapshot using the provided adapter.
+        Streamingly index a repository snapshot using the dynamically detected adapter per file.
 
         Args:
             repository_input: Snapshots dictionary with 'files' mapping path to content.
-            adapter: Language adapter (e.g. PythonLanguageAdapter, JavaLanguageAdapter).
+            adapter: Fallback language adapter (e.g. PythonLanguageAdapter, JavaLanguageAdapter).
         """
+        import os
+        from engine.language.builtins import create_default_language_registry
+
         files = repository_input.get("files", {})
         language = repository_input.get("language", adapter.get_language())
+        registry = create_default_language_registry()
 
         # Invariant check: ensure file-scoped extraction and release of AST
         for file_path, content in files.items():
@@ -94,15 +98,35 @@ class RepositoryIndexer:
             try:
                 file_id = self.get_or_create_file_id(file_path)
 
+                # Determine the language and adapter for this file dynamically
+                file_lang = None
+                file_adapter = None
+
+                filename = os.path.basename(file_path)
+                plugin = registry.find_by_filename(filename)
+                if not plugin:
+                    _, ext = os.path.splitext(file_path)
+                    plugin = registry.find_by_extension(ext)
+
+                if plugin:
+                    file_lang = plugin.spec.id
+                    file_adapter = plugin.create_adapter()
+                elif adapter:
+                    file_lang = language
+                    file_adapter = adapter
+                else:
+                    file_lang = "unknown"
+                    file_adapter = None
+
                 # Step 1: Write File Fact
-                file_fact = File(id=file_id, path=file_path, language=language)
+                file_fact = File(id=file_id, path=file_path, language=file_lang)
                 self.sink.add_file(file_fact)
 
                 # Step 2: Parse and Index single file scoped to local scope
-                file_index = adapter._index_single_file(file_path, content, language)
-
-                # Step 3: Extract and emit facts to the sink
-                self._extract_file_facts(file_index, file_id, language)
+                if file_adapter:
+                    file_index = file_adapter._index_single_file(file_path, content, file_lang)
+                    # Step 3: Extract and emit facts to the sink
+                    self._extract_file_facts(file_index, file_id, file_lang)
 
                 # Step 4: Flush / commit the facts for this file
                 self.sink.flush()
@@ -115,6 +139,7 @@ class RepositoryIndexer:
                 if "file_index" in locals():
                     del file_index
                 gc.collect()
+
 
     def _extract_file_facts(
         self, file_index: Any, file_id: FileId, language: str
