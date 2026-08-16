@@ -503,105 +503,143 @@ async def _process_pr_analysis(
         - Analysis results include change summary, behavior summary, and operational summary
         - LLM comment is generated from ReviewContext when available
     """
+    import os
+    import time
+    import uuid
+    import psutil
+    from core.config import get_settings
+    from core.profile import MemoryProfiler
+    from core.logging import pipeline_logger
+
     pipeline = get_pipeline_instance()
     registry = get_registry_instance()
 
+    task_id = delivery_id or str(uuid.uuid4())[:8]
+    process = psutil.Process(os.getpid())
+    start_rss = process.memory_info().rss / (1024 * 1024)
+    start_time = time.perf_counter()
+
+    pipeline_logger.log_pipeline(
+        f"[MEMORY][task={task_id}] Background analysis started for {request.repository.full_name} | RSS={start_rss:.1f} MB",
+        to_terminal=True,
+    )
+
+    profiler = None
+    if get_settings().MEMORY_PROFILING:
+        profiler = MemoryProfiler(analysis_id=task_id)
+
     try:
-        # Run pipeline
-        context = await pipeline.run(request)
+        try:
+            # Run pipeline
+            context = await pipeline.run(request)
 
-        if context.error:
-            print(
-                f"Pipeline failed for {request.repository.full_name}: {context.error}"
-            )
-            return
-
-        # Get authentication token if needed
-        destination = {
-            "repo": request.repository.full_name,
-            "pr_number": str(request.pull_request.number)
-            if request.pull_request
-            else None,
-            "base_sha": request.pull_request.base_sha if request.pull_request else "",
-            "head_sha": request.pull_request.head_sha if request.pull_request else "",
-            "language": context.language or "unknown",
-            "total_time": f"{context.total_time:.2f}" if context.total_time else "N/A",
-        }
-
-        if installation_id:
-            installation_provider = registry.get_installation_provider("github")
-            token = await installation_provider.authenticate(str(installation_id))
-            destination["token"] = token
-
-        # Try to generate LLM comment from ReviewContext
-        llm_comment = None
-        if context.review_context is not None:
-            try:
+            if context.error:
                 print(
-                    f"[_process_pr_analysis] Generating LLM comment for {request.repository.full_name}"
+                    f"Pipeline failed for {request.repository.full_name}: {context.error}"
                 )
-                llm_result = pipeline.generate_llm_comment(
-                    context,
-                    repository=request.repository.full_name,
-                    pr_number=str(request.pull_request.number)
-                    if request.pull_request
-                    else "",
-                    language=context.language or "unknown",
-                )
-                llm_comment = llm_result.get("comment")
-                if llm_comment:
+                return
+
+            # Get authentication token if needed
+            destination = {
+                "repo": request.repository.full_name,
+                "pr_number": str(request.pull_request.number)
+                if request.pull_request
+                else None,
+                "base_sha": request.pull_request.base_sha if request.pull_request else "",
+                "head_sha": request.pull_request.head_sha if request.pull_request else "",
+                "language": context.language or "unknown",
+                "total_time": f"{context.total_time:.2f}" if context.total_time else "N/A",
+            }
+
+            if installation_id:
+                installation_provider = registry.get_installation_provider("github")
+                token = await installation_provider.authenticate(str(installation_id))
+                destination["token"] = token
+
+            # Try to generate LLM comment from ReviewContext
+            llm_comment = None
+            if context.review_context is not None:
+                try:
                     print(
-                        f"[_process_pr_analysis] LLM comment generated: model={llm_result.get('model')}, valid={llm_result.get('is_valid')}"
+                        f"[_process_pr_analysis] Generating LLM comment for {request.repository.full_name}"
                     )
-            except Exception as exc:
-                print(f"[_process_pr_analysis] LLM comment generation failed: {exc}")
-                # Continue with fallback
+                    llm_result = pipeline.generate_llm_comment(
+                        context,
+                        repository=request.repository.full_name,
+                        pr_number=str(request.pull_request.number)
+                        if request.pull_request
+                        else "",
+                        language=context.language or "unknown",
+                    )
+                    llm_comment = llm_result.get("comment")
+                    if llm_comment:
+                        print(
+                            f"[_process_pr_analysis] LLM comment generated: model={llm_result.get('model')}, valid={llm_result.get('is_valid')}"
+                        )
+                except Exception as exc:
+                    print(f"[_process_pr_analysis] LLM comment generation failed: {exc}")
+                    # Continue with fallback
 
-        # Render and print deterministic repository artifacts
-        if context.ocm is not None:
-            try:
-                from integrations.github.renderers.github_renderer import GitHubRenderer
+            # Render and print deterministic repository artifacts
+            if context.ocm is not None:
+                try:
+                    from integrations.github.renderers.github_renderer import GitHubRenderer
 
-                renderer = GitHubRenderer()
-                render_context = {
-                    "repository": request.repository.full_name,
-                    "pr_number": str(request.pull_request.number)
-                    if request.pull_request
-                    else "",
-                    "base_sha": request.pull_request.base_sha
-                    if request.pull_request
-                    else "",
-                    "head_sha": request.pull_request.head_sha
-                    if request.pull_request
-                    else "",
-                    "language": context.language or "unknown",
-                    "total_time": f"{context.total_time:.2f}"
-                    if context.total_time
-                    else "N/A",
-                }
-                report = renderer.render(context.ocm, render_context)
-                print("\n--- REPOSITORY ANALYSIS ARTIFACTS ---")
-                print(report)
-                print("-------------------------------------\n")
-            except Exception as exc:
-                print(
-                    f"[_process_pr_analysis] Failed to render repository artifacts: {exc}"
-                )
+                    renderer = GitHubRenderer()
+                    render_context = {
+                        "repository": request.repository.full_name,
+                        "pr_number": str(request.pull_request.number)
+                        if request.pull_request
+                        else "",
+                        "base_sha": request.pull_request.base_sha
+                        if request.pull_request
+                        else "",
+                        "head_sha": request.pull_request.head_sha
+                        if request.pull_request
+                        else "",
+                        "language": context.language or "unknown",
+                        "total_time": f"{context.total_time:.2f}"
+                        if context.total_time
+                        else "N/A",
+                    }
+                    report = renderer.render(context.ocm, render_context)
+                    print("\n--- REPOSITORY ANALYSIS ARTIFACTS ---")
+                    print(report)
+                    print("-------------------------------------\n")
+                except Exception as exc:
+                    print(
+                        f"[_process_pr_analysis] Failed to render repository artifacts: {exc}"
+                    )
 
-        # Publish output using output provider
-        output_provider = registry.get_output_provider("github")
+            # Publish output using output provider
+            output_provider = registry.get_output_provider("github")
 
-        # Pass LLM comment in destination if available
-        if llm_comment:
-            destination["llm_comment"] = llm_comment
+            # Pass LLM comment in destination if available
+            if llm_comment:
+                destination["llm_comment"] = llm_comment
 
-        await output_provider.publish(context.ocm, destination)
+            await output_provider.publish(context.ocm, destination)
 
-        print(f"Successfully analyzed {request.repository.full_name}")
+            print(f"Successfully analyzed {request.repository.full_name}")
 
-    except Exception as exc:
-        # Log error but don't fail the webhook
-        print(f"Error processing PR analysis for {request.repository.full_name}: {exc}")
-        import traceback
+        except Exception as exc:
+            # Log error but don't fail the webhook
+            print(f"Error processing PR analysis for {request.repository.full_name}: {exc}")
+            import traceback
 
-        traceback.print_exc()
+            traceback.print_exc()
+    finally:
+        if profiler:
+            profiler.stop()
+
+        end_rss = process.memory_info().rss / (1024 * 1024)
+        duration = time.perf_counter() - start_time
+        delta_rss = end_rss - start_rss
+
+        pipeline_logger.log_pipeline(
+            f"[MEMORY][task={task_id}] Background analysis finished for {request.repository.full_name} | "
+            f"Start RSS={start_rss:.1f} MB | End RSS={end_rss:.1f} MB | "
+            f"Δ={'+' if delta_rss >= 0 else ''}{delta_rss:.1f} MB | "
+            f"Duration={duration:.2f}s",
+            to_terminal=True,
+        )
