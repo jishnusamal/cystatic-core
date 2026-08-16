@@ -11,23 +11,23 @@ http:
       value: application/json
   body:
     type: json
-    data: |
-      {
-          "pr_url": "https://github.com/PostHog/posthog/pull/72474"
-      }
-
+    data: |-
+      // {
+      //     "pr_url": "https://github.com/PostHog/posthog/pull/72474"
+      // }
       // {
       //    "pr_url": "https://github.com/PostHog/posthog/pull/72893"
       // }
-
       // {
-      //     "pr_url": "https://github.com/polarsource/polar/pull/9204"
+      //   "pr_url": "https://github.com/polarsource/polar/pull/9204"
       // }
-
       // {
       //     "repo": "usefactorapp/cystatic-demo-python-app",
       //     "pr_number": 3
       // }
+      {
+          "pr_url": "https://github.com/PostHog/posthog/pull/83510"
+      }
 
 settings:
   encodeUrl: true

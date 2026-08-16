@@ -13,6 +13,7 @@ from .index_compiler import IndexCompiler
 from .parser import BaseParser
 from .passes import BaseIndexPass
 from .semantic_compiler import SemanticCompiler
+from .spec import LanguageSpec
 
 __all__ = [
     "BaseIndexPass",
@@ -20,5 +21,6 @@ __all__ = [
     "BaseParser",
     "FileContext",
     "IndexCompiler",
+    "LanguageSpec",
     "SemanticCompiler",
 ]
