@@ -981,7 +981,7 @@ class TestHighDensityFiltering:
             execution=TestHelper.create_execution_context(entry_points=(ep,))
         )
 
-        from engine.llm_context.compiler import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
 
         pruned = prune_review_context(rc)
         chain = pruned.execution.entry_points[0].execution_chain
@@ -1101,7 +1101,7 @@ class TestHighDensityFiltering:
             execution=TestHelper.create_execution_context(entry_points=(ep,))
         )
 
-        from engine.llm_context.compiler import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
 
         pruned = prune_review_context(rc)
         chain = pruned.execution.entry_points[0].execution_chain

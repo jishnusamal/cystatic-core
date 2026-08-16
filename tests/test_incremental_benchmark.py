@@ -212,6 +212,11 @@ class TestIncrementalBenchmark:
         # Index added & modified files in overlay
         head_sink = InMemoryFactSink()
         head_indexer = RepositoryIndexer(head_sink)
+        # Copy base symbol maps to head indexer to ensure alignment and avoid collisions
+        for fqn, sym_id in base_indexer._symbol_id_map.items():
+            head_indexer._symbol_id_map[fqn] = sym_id
+            head_indexer._symbol_fqn_map[sym_id] = fqn
+        head_indexer._next_symbol_id = base_indexer._next_symbol_id
         
         # Copy base file IDs to head indexer to ensure alignment
         for path in (added_paths | modified_paths):
@@ -298,6 +303,11 @@ def new_feature_handler():
         # Incremental compilation
         head_sink = InMemoryFactSink()
         head_indexer = RepositoryIndexer(head_sink)
+        # Copy base symbol maps to head indexer to ensure alignment and avoid collisions
+        for fqn, sym_id in base_indexer._symbol_id_map.items():
+            head_indexer._symbol_id_map[fqn] = sym_id
+            head_indexer._symbol_fqn_map[sym_id] = fqn
+        head_indexer._next_symbol_id = base_indexer._next_symbol_id
         
         added_files = {}
         file_id = head_indexer.get_or_create_file_id("new_feature.py")
@@ -365,6 +375,11 @@ def new_feature_handler():
 
         inc_view = RepositoryView(base_query, overlay)
         head_indexer = RepositoryIndexer(InMemoryFactSink())
+        # Copy base symbol maps to head indexer to ensure alignment and avoid collisions
+        for fqn, sym_id in base_indexer._symbol_id_map.items():
+            head_indexer._symbol_id_map[fqn] = sym_id
+            head_indexer._symbol_fqn_map[sym_id] = fqn
+        head_indexer._next_symbol_id = base_indexer._next_symbol_id
 
         # Verify
         inc_syms, inc_calls, inc_refs = extract_view_fqns(inc_view, base_indexer, head_indexer)
@@ -403,6 +418,11 @@ def new_feature_handler():
         # Incremental compilation
         head_sink = InMemoryFactSink()
         head_indexer = RepositoryIndexer(head_sink)
+        # Copy base symbol maps to head indexer to ensure alignment and avoid collisions
+        for fqn, sym_id in base_indexer._symbol_id_map.items():
+            head_indexer._symbol_id_map[fqn] = sym_id
+            head_indexer._symbol_fqn_map[sym_id] = fqn
+        head_indexer._next_symbol_id = base_indexer._next_symbol_id
         
         modified_files = set()
         added_files = {}

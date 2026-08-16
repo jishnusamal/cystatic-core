@@ -12,17 +12,17 @@ http:
   body:
     type: json
     data: |
-      {
-          "pr_url": "https://github.com/PostHog/posthog/pull/72474"
-      }
+      // {
+      //     "pr_url": "https://github.com/PostHog/posthog/pull/72474"
+      // }
 
       // {
       //    "pr_url": "https://github.com/PostHog/posthog/pull/72893"
       // }
 
-      // {
-      //     "pr_url": "https://github.com/polarsource/polar/pull/9204"
-      // }
+      {
+          "pr_url": "https://github.com/polarsource/polar/pull/9204"
+      }
 
       // {
       //     "repo": "usefactorapp/cystatic-demo-python-app",

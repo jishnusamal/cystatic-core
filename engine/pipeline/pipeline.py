@@ -1919,6 +1919,7 @@ class Pipeline:
             client = OpenAI(
                 api_key=settings.AI_API_KEY,
                 base_url=settings.AI_API_BASE_URL,
+                timeout=30.0,
             )
 
             response = client.chat.completions.create(
