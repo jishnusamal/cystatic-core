@@ -8,6 +8,7 @@ Architecture:
 """
 
 from .adapter import BaseLanguageAdapter
+from .capabilities import LanguageCapabilities
 from .file_context import FileContext
 from .index_compiler import IndexCompiler
 from .parser import BaseParser
@@ -25,4 +26,5 @@ __all__ = [
     "LanguagePlugin",
     "LanguageSpec",
     "SemanticCompiler",
+    "LanguageCapabilities",
 ]

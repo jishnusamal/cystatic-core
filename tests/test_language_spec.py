@@ -1,7 +1,7 @@
 import dataclasses
 import pytest
 
-from engine.language.base import LanguageSpec
+from engine.language.base import LanguageSpec, LanguageCapabilities
 
 
 def test_language_spec_basic_construction():
@@ -13,6 +13,7 @@ def test_language_spec_basic_construction():
     assert spec.id == "typescript"
     assert spec.extensions == frozenset({".ts", ".tsx"})
     assert spec.filenames == frozenset()
+    assert isinstance(spec.capabilities, LanguageCapabilities)
 
 
 def test_language_spec_immutability():
@@ -88,3 +89,36 @@ def test_language_spec_type_validation():
             filenames={"Dockerfile"},  # type: ignore
         )
     assert "filenames must be a frozenset" in str(exc_info.value)
+
+
+def test_language_capabilities_are_immutable():
+    """Verify that LanguageCapabilities is immutable."""
+    capabilities = LanguageCapabilities()
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        capabilities.calls = False  # type: ignore
+
+
+def test_language_capabilities_defaults():
+    """Verify default values for LanguageCapabilities."""
+    capabilities = LanguageCapabilities()
+
+    assert capabilities.symbols is True
+    assert capabilities.imports is True
+    assert capabilities.calls is True
+    assert capabilities.types is False
+    assert capabilities.entrypoints is False
+    assert capabilities.events is False
+    assert capabilities.persistence is False
+    assert capabilities.tests is False
+
+
+def test_language_spec_capabilities_validation():
+    """Verify type validation for capabilities field in LanguageSpec."""
+    with pytest.raises(TypeError) as exc_info:
+        LanguageSpec(
+            id="python",
+            extensions=frozenset({".py"}),
+            capabilities="invalid_type",  # type: ignore
+        )
+    assert "capabilities must be a LanguageCapabilities" in str(exc_info.value)

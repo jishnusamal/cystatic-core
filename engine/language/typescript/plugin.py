@@ -2,6 +2,7 @@
 
 from engine.language.base.adapter import BaseLanguageAdapter
 from engine.language.base.spec import LanguageSpec
+from engine.language.base.capabilities import LanguageCapabilities
 from core.errors import LanguageNotSupported
 
 
@@ -11,6 +12,16 @@ class TypeScriptPlugin:
     spec = LanguageSpec(
         id="typescript",
         extensions=frozenset({".ts", ".tsx"}),
+        capabilities=LanguageCapabilities(
+            symbols=False,
+            imports=False,
+            calls=False,
+            types=False,
+            entrypoints=False,
+            events=False,
+            persistence=False,
+            tests=False,
+        ),
     )
 
     def create_adapter(self) -> BaseLanguageAdapter:

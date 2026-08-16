@@ -97,3 +97,62 @@ def test_java_adapter_contract():
     assert hasattr(adapter, "get_compiler_passes")
     assert adapter.get_language() == "java"
 
+
+def test_python_plugin_capabilities():
+    """Verify PythonPlugin advertises supported capabilities."""
+    plugin = PythonPlugin()
+    assert plugin.spec.capabilities.symbols is True
+    assert plugin.spec.capabilities.imports is True
+    assert plugin.spec.capabilities.calls is True
+    assert plugin.spec.capabilities.types is True
+    assert plugin.spec.capabilities.entrypoints is True
+    assert plugin.spec.capabilities.events is True
+    assert plugin.spec.capabilities.persistence is True
+    assert plugin.spec.capabilities.tests is True
+
+
+def test_java_plugin_capabilities():
+    """Verify JavaPlugin advertises supported capabilities."""
+    plugin = JavaPlugin()
+    assert plugin.spec.capabilities.symbols is True
+    assert plugin.spec.capabilities.imports is True
+    assert plugin.spec.capabilities.calls is True
+    assert plugin.spec.capabilities.types is True
+    assert plugin.spec.capabilities.entrypoints is True
+    assert plugin.spec.capabilities.events is True
+    assert plugin.spec.capabilities.persistence is True
+    assert plugin.spec.capabilities.tests is True
+
+
+def test_typescript_plugin_capabilities():
+    """Verify TypeScriptPlugin advertises unsupported/empty capabilities."""
+    plugin = TypeScriptPlugin()
+    assert plugin.spec.capabilities.symbols is False
+    assert plugin.spec.capabilities.imports is False
+    assert plugin.spec.capabilities.calls is False
+    assert plugin.spec.capabilities.types is False
+    assert plugin.spec.capabilities.entrypoints is False
+    assert plugin.spec.capabilities.events is False
+    assert plugin.spec.capabilities.persistence is False
+    assert plugin.spec.capabilities.tests is False
+
+
+def test_builtin_language_capabilities():
+    """Verify default language capability matrix from default registry."""
+    from engine.language.builtins import create_default_language_registry
+
+    registry = create_default_language_registry()
+
+    python = registry.get("python").spec
+    java = registry.get("java").spec
+    typescript = registry.get("typescript").spec
+
+    assert python.capabilities.symbols is True
+    assert python.capabilities.calls is True
+
+    assert java.capabilities.symbols is True
+    assert java.capabilities.calls is True
+
+    assert typescript.capabilities.symbols is False
+    assert typescript.capabilities.calls is False
+

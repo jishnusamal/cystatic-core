@@ -1,6 +1,7 @@
 """Language specification metadata."""
 
 from dataclasses import dataclass, field
+from .capabilities import LanguageCapabilities
 
 
 @dataclass(frozen=True, slots=True)
@@ -10,6 +11,7 @@ class LanguageSpec:
     id: str
     extensions: frozenset[str]
     filenames: frozenset[str] = field(default_factory=frozenset)
+    capabilities: LanguageCapabilities = field(default_factory=LanguageCapabilities)
 
     def __post_init__(self) -> None:
         """Validate invariants for LanguageSpec."""
@@ -19,3 +21,5 @@ class LanguageSpec:
             raise TypeError("LanguageSpec.extensions must be a frozenset")
         if not isinstance(self.filenames, frozenset):
             raise TypeError("LanguageSpec.filenames must be a frozenset")
+        if not isinstance(self.capabilities, LanguageCapabilities):
+            raise TypeError("LanguageSpec.capabilities must be a LanguageCapabilities")

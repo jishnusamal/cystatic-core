@@ -234,7 +234,11 @@ class Pipeline:
             change_start = time.perf_counter()
             with timer.timed("Change Compilation"):
                 print("[pipeline] Step 3: Change facts compilation")
-                await self._compile_change(context)
+                spec = self.language_registry.get(context.language).spec
+                if spec.capabilities.symbols:
+                    await self._compile_change(context)
+                else:
+                    print("[pipeline] Step 3: symbols capability is False, skipping change compilation.")
                 print("[pipeline] Step 3 done")
                 timer.print_progress()
             change_time = time.perf_counter() - change_start
@@ -245,7 +249,11 @@ class Pipeline:
             behavior_start = time.perf_counter()
             with timer.timed("Behavior Compilation"):
                 print("[pipeline] Step 4: Behavior model compilation")
-                await self._compile_behavior(context)
+                spec = self.language_registry.get(context.language).spec
+                if spec.capabilities.calls and context.change_model is not None:
+                    await self._compile_behavior(context)
+                else:
+                    print("[pipeline] Step 4: calls capability is False or change_model is None, skipping behavior compilation.")
                 print("[pipeline] Step 4 done")
                 timer.print_progress()
             behavior_time = time.perf_counter() - behavior_start
@@ -256,7 +264,10 @@ class Pipeline:
             operational_start = time.perf_counter()
             with timer.timed("Operational Compilation"):
                 print("[pipeline] Step 5: Operational model compilation")
-                await self._compile_operational(context)
+                if context.change_model is not None and context.behavior_model is not None:
+                    await self._compile_operational(context)
+                else:
+                    print("[pipeline] Step 5: missing change_model or behavior_model, skipping operational compilation.")
                 print("[pipeline] Step 5 done")
                 timer.print_progress()
             operational_time = time.perf_counter() - operational_start
@@ -267,7 +278,10 @@ class Pipeline:
             discovery_start = time.perf_counter()
             with timer.timed("Engineering Discovery Compilation"):
                 print("[pipeline] Step 6: Engineering discovery model compilation")
-                await self._compile_discovery(context)
+                if context.ocm is not None:
+                    await self._compile_discovery(context)
+                else:
+                    print("[pipeline] Step 6: ocm is None, skipping engineering discovery compilation.")
                 print("[pipeline] Step 6 done")
                 timer.print_progress()
             discovery_time = time.perf_counter() - discovery_start
@@ -278,7 +292,10 @@ class Pipeline:
             discovery_ir_start = time.perf_counter()
             with timer.timed("Discovery IR Compilation"):
                 print("[pipeline] Step 7: Discovery IR compilation")
-                await self._compile_discovery_ir(context)
+                if context.edm is not None:
+                    await self._compile_discovery_ir(context)
+                else:
+                    print("[pipeline] Step 7: edm is None, skipping discovery IR compilation.")
                 print("[pipeline] Step 7 done")
                 timer.print_progress()
             discovery_ir_time = time.perf_counter() - discovery_ir_start
@@ -1159,10 +1176,12 @@ class Pipeline:
                 if context.repository_delta
                 else None
             )
+            spec = self.language_registry.get(context.language).spec
             context.impact_surface = self._behavior_compiler.compile(
                 change_model=change_input,
                 repository_query=query_input,
                 repository_delta=context.repository_delta,
+                capabilities=spec.capabilities,
             )
             context.behavior_model = context.impact_surface
             context.mark_behavior_compiled()
@@ -1205,11 +1224,13 @@ class Pipeline:
                 if context.repository_delta
                 else None
             )
+            spec = self.language_registry.get(context.language).spec
             context.ocm = self._operational_compiler.compile(
                 repository_delta=context.repository_delta,
                 change_model=change_input,
                 behavior_model=context.behavior_model,
                 repository_query=query_input,
+                capabilities=spec.capabilities,
             )
             context.mark_operational_compiled()
             # Diagnostics

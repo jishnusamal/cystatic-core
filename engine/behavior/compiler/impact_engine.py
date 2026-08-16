@@ -2,6 +2,7 @@
 
 from collections import deque
 from dataclasses import dataclass
+from typing import Any
 
 from engine.behavior.model.impact_surface import ImpactSurface
 from engine.repository.query.repository import RepositoryQuery
@@ -30,6 +31,7 @@ class ImpactEngine:
         self,
         changed_symbol_ids: set[str],
         repository_query: RepositoryQuery,
+        capabilities: Any = None,
     ) -> ImpactSurface:
         """
         Calculate the impact surface originating from changed symbols.
@@ -51,7 +53,7 @@ class ImpactEngine:
 
         # We need to map symbol_id -> EntryPoint (if they are an entry point)
         # However, RepositoryQuery.get_entry_points() gives us all of them.
-        all_entry_points = repository_query.get_entry_points()
+        all_entry_points = repository_query.get_entry_points() if (capabilities is None or getattr(capabilities, "entrypoints", True)) else ()
         entry_point_map = {str(ep.handler_id): ep for ep in all_entry_points}
 
         affected_endpoints = set()
@@ -92,13 +94,15 @@ class ImpactEngine:
             affected_symbols.add(current_id)
 
             # Check database dependencies and events
-            dbs = repository_query.get_database_relationships(current_id)
-            for db in dbs:
-                affected_databases.add(db)
+            if capabilities is None or getattr(capabilities, "persistence", True):
+                dbs = repository_query.get_database_relationships(current_id)
+                for db in dbs:
+                    affected_databases.add(db)
 
-            events = repository_query.get_published_events(current_id)
-            for ev in events:
-                affected_events.add(ev)
+            if capabilities is None or getattr(capabilities, "events", True):
+                events = repository_query.get_published_events(current_id)
+                for ev in events:
+                    affected_events.add(ev)
 
             if depth >= self.config.max_depth:
                 continue

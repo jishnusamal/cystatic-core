@@ -62,6 +62,7 @@ class OperationalCompiler:
         behavior_model: Any = None,
         repository_delta: Any = None,
         repository_query: Any = None,
+        capabilities: Any = None,
     ) -> OperationalChangeModel:
         """
         Compile deterministic models into an enriched OperationalChangeModel.
@@ -100,6 +101,23 @@ class OperationalCompiler:
 
         # Execute each pass in sequence
         for compiler_pass in self.passes:
+            if capabilities is not None:
+                if compiler_pass.name == "event_compilation" and not getattr(capabilities, "events", True):
+                    print(f"[timer] SKIP {compiler_pass.name} due to missing events capability")
+                    continue
+                if compiler_pass.name == "data_compilation" and not getattr(capabilities, "persistence", True):
+                    print(f"[timer] SKIP {compiler_pass.name} due to missing persistence capability")
+                    continue
+                if compiler_pass.name == "api_compilation" and not getattr(capabilities, "entrypoints", True):
+                    print(f"[timer] SKIP {compiler_pass.name} due to missing entrypoints capability")
+                    continue
+                if compiler_pass.name == "validation_compilation" and not getattr(capabilities, "tests", True):
+                    print(f"[timer] SKIP {compiler_pass.name} due to missing tests capability")
+                    continue
+                if compiler_pass.name == "dependency_compilation" and not getattr(capabilities, "calls", True):
+                    print(f"[timer] SKIP {compiler_pass.name} due to missing calls capability")
+                    continue
+
             import time
 
             start_time = time.perf_counter()
@@ -126,6 +144,7 @@ class OperationalCompiler:
         behavior_model: Any = None,
         repository_delta: Any = None,
         repository_query: Any = None,
+        capabilities: Any = None,
     ) -> tuple[OperationalChangeModel | None, list[str]]:
         # Support both old and new interface for backward compatibility
         head_model: Any = None
@@ -152,6 +171,23 @@ class OperationalCompiler:
         )
 
         for compiler_pass in self.passes:
+            if capabilities is not None:
+                if compiler_pass.name == "event_compilation" and not getattr(capabilities, "events", True):
+                    print(f"[timer] SKIP {compiler_pass.name} due to missing events capability")
+                    continue
+                if compiler_pass.name == "data_compilation" and not getattr(capabilities, "persistence", True):
+                    print(f"[timer] SKIP {compiler_pass.name} due to missing persistence capability")
+                    continue
+                if compiler_pass.name == "api_compilation" and not getattr(capabilities, "entrypoints", True):
+                    print(f"[timer] SKIP {compiler_pass.name} due to missing entrypoints capability")
+                    continue
+                if compiler_pass.name == "validation_compilation" and not getattr(capabilities, "tests", True):
+                    print(f"[timer] SKIP {compiler_pass.name} due to missing tests capability")
+                    continue
+                if compiler_pass.name == "dependency_compilation" and not getattr(capabilities, "calls", True):
+                    print(f"[timer] SKIP {compiler_pass.name} due to missing calls capability")
+                    continue
+
             import time
 
             start_time = time.perf_counter()
