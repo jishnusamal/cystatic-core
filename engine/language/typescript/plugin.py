@@ -26,8 +26,5 @@ class TypeScriptPlugin:
 
     def create_adapter(self) -> BaseLanguageAdapter:
         """Create a TypeScriptLanguageAdapter instance."""
-        # Since TypeScript adapter is not implemented, raise LanguageNotSupported
-        raise LanguageNotSupported(
-            "TypeScript language adapter is not supported.",
-            details={"language": "typescript"},
-        )
+        from .adapter import TypeScriptLanguageAdapter
+        return TypeScriptLanguageAdapter()

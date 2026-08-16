@@ -65,15 +65,16 @@ def test_typescript_plugin_spec():
     assert isinstance(plugin.spec, LanguageSpec)
 
 
+from engine.language.typescript.adapter import TypeScriptLanguageAdapter
+
+
 def test_typescript_plugin_creates_adapter():
-    """Verify TypeScriptPlugin adapter construction raises LanguageNotSupported."""
-    import pytest
-    from core.errors import LanguageNotSupported
-
+    """Verify TypeScriptPlugin adapter construction."""
     plugin = TypeScriptPlugin()
+    adapter = plugin.create_adapter()
 
-    with pytest.raises(LanguageNotSupported):
-        plugin.create_adapter()
+    assert isinstance(adapter, TypeScriptLanguageAdapter)
+    assert isinstance(adapter, BaseLanguageAdapter)
 
 
 def test_python_adapter_contract():
