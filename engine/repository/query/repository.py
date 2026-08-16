@@ -29,6 +29,15 @@ class RepositoryQuery(ABC):
     def get_symbol(self, symbol_id: SymbolId) -> Symbol | None:
         """Fetch a symbol by its ID."""
 
+    def get_symbols(self, symbol_ids: list[SymbolId]) -> tuple[Symbol, ...]:
+        """Fetch multiple symbols by their IDs."""
+        results = []
+        for sid in symbol_ids:
+            sym = self.get_symbol(sid)
+            if sym is not None:
+                results.append(sym)
+        return tuple(results)
+
     @abstractmethod
     def get_file(self, file_id: FileId) -> File | None:
         """Fetch a file by its ID."""

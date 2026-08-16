@@ -101,6 +101,11 @@ class InstrumentedRepository(RepositoryQuery):
             "get_symbol", lambda: self._delegate.get_symbol(symbol_id)
         )
 
+    def get_symbols(self, symbol_ids: list[SymbolId]) -> tuple[Symbol, ...]:
+        return self._execute_instrumented(
+            "get_symbols", lambda: self._delegate.get_symbols(symbol_ids)
+        )
+
     def get_file(self, file_id: FileId) -> File | None:
         return self._execute_instrumented(
             "get_file", lambda: self._delegate.get_file(file_id)

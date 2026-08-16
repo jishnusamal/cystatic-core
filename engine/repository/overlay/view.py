@@ -117,6 +117,29 @@ class RepositoryView(RepositoryQuery):
             return base_symbol
         return None
 
+    def get_symbols(self, symbol_ids: list[SymbolId]) -> tuple[Symbol, ...]:
+        added_syms = []
+        base_sym_ids = []
+        for sid in symbol_ids:
+            if sid in self.overlay.added_symbols:
+                added_syms.append(self.overlay.added_symbols[sid])
+            elif sid in self.overlay.removed_symbols:
+                pass
+            else:
+                base_sym_ids.append(sid)
+
+        base_syms = self.base.get_symbols(base_sym_ids)
+        filtered_base_syms = []
+        for sym in base_syms:
+            if (
+                sym.file_id in self.overlay.removed_files
+                or sym.file_id in self.overlay.modified_files
+            ):
+                continue
+            filtered_base_syms.append(sym)
+
+        return tuple(added_syms) + tuple(filtered_base_syms)
+
     def get_file(self, file_id: FileId) -> File | None:
         if file_id in self.overlay.added_files:
             return self.overlay.added_files[file_id]

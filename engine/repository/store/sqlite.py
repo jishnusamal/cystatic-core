@@ -292,6 +292,112 @@ class SQLiteRepositoryStore(RepositoryStore):
             else None,
         )
 
+    def get_symbols(self, symbol_ids: list[SymbolId]) -> tuple[Symbol, ...]:
+        if not symbol_ids:
+            return ()
+        repo_id, version_id = self._get_context()
+        cur = self.conn.cursor()
+
+        # Determine logical version for each symbol ID
+        placeholders = ",".join("?" for _ in symbol_ids)
+        cur.execute(
+            f"SELECT id, file_id FROM symbols WHERE repository_id = ? AND version_id = ? AND id IN ({placeholders})",
+            (repo_id, version_id) + tuple(int(sid) for sid in symbol_ids),
+        )
+        current_rows = cur.fetchall()
+        resolved_map = {}
+        file_ids_to_check = set()
+        symbol_files = {}
+
+        for row in current_rows:
+            sid = SymbolId(row["id"])
+            fid = row["file_id"]
+            symbol_files[sid] = fid
+            file_ids_to_check.add(fid)
+            resolved_map[sid] = version_id
+
+        remaining_ids = [sid for sid in symbol_ids if sid not in resolved_map]
+        if remaining_ids and self.parent_version_id:
+            placeholders_rem = ",".join("?" for _ in remaining_ids)
+            cur.execute(
+                f"SELECT id, file_id FROM symbols WHERE repository_id = ? AND version_id = ? AND id IN ({placeholders_rem})",
+                (repo_id, self.parent_version_id) + tuple(int(sid) for sid in remaining_ids),
+            )
+            parent_rows = cur.fetchall()
+            for row in parent_rows:
+                sid = SymbolId(row["id"])
+                fid = row["file_id"]
+                symbol_files[sid] = fid
+                file_ids_to_check.add(fid)
+                resolved_map[sid] = self.parent_version_id
+
+        # Validate active file states
+        active_files = set()
+        if file_ids_to_check:
+            placeholders_files = ",".join("?" for _ in file_ids_to_check)
+            cur.execute(
+                f"SELECT id, state FROM files WHERE repository_id = ? AND version_id = ? AND id IN ({placeholders_files})",
+                (repo_id, version_id) + tuple(file_ids_to_check),
+            )
+            files_in_current = {row["id"]: row["state"] for row in cur.fetchall()}
+
+            files_not_in_current = file_ids_to_check - set(files_in_current.keys())
+            files_in_parent = {}
+            if files_not_in_current and self.parent_version_id:
+                placeholders_parent_files = ",".join("?" for _ in files_not_in_current)
+                cur.execute(
+                    f"SELECT id, state FROM files WHERE repository_id = ? AND version_id = ? AND id IN ({placeholders_parent_files})",
+                    (repo_id, self.parent_version_id) + tuple(files_not_in_current),
+                )
+                files_in_parent = {row["id"]: row["state"] for row in cur.fetchall()}
+
+            for fid in file_ids_to_check:
+                if fid in files_in_current:
+                    if files_in_current[fid] == "active":
+                        active_files.add(fid)
+                elif fid in files_in_parent:
+                    if files_in_parent[fid] == "active":
+                        active_files.add(fid)
+
+        final_resolved = {
+            sid: vid
+            for sid, vid in resolved_map.items()
+            if symbol_files.get(sid) in active_files
+        }
+
+        if not final_resolved:
+            return ()
+
+        results = []
+        from collections import defaultdict
+        by_version = defaultdict(list)
+        for sid, vid in final_resolved.items():
+            by_version[vid].append(sid)
+
+        for vid, sids in by_version.items():
+            placeholders_sids = ",".join("?" for _ in sids)
+            cur.execute(
+                f"SELECT id, name, file_id, kind, language, start_line, end_line, visibility, parent_symbol_id FROM symbols WHERE repository_id = ? AND version_id = ? AND id IN ({placeholders_sids})",
+                (repo_id, vid) + tuple(int(sid) for sid in sids),
+            )
+            for row in cur.fetchall():
+                results.append(
+                    Symbol(
+                        id=SymbolId(row["id"]),
+                        name=row["name"],
+                        file_id=FileId(row["file_id"]),
+                        kind=SymbolKind(row["kind"]),
+                        language=row["language"],
+                        start_line=row["start_line"],
+                        end_line=row["end_line"],
+                        visibility=SymbolVisibility(row["visibility"]),
+                        parent_symbol_id=SymbolId(row["parent_symbol_id"])
+                        if row["parent_symbol_id"] is not None
+                        else None,
+                    )
+                )
+        return tuple(results)
+
     def get_file(self, file_id: FileId) -> File | None:
         repo_id, _ = self._get_context()
         resolved_version, file_id_int = self._get_active_file_version(file_id)
