@@ -61,4 +61,4 @@ LABEL org.opencontainers.image.source="https://github.com/usefactorapp/cystatic-
 EXPOSE 8000
 
 # Run the FastAPI server using Infisical to inject secrets at startup
-CMD ["infisical", "run", "--projectId=575f4f6e-86c7-43c0-8324-af00e2aa91a0", "--env=prod", "--", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["infisical", "run", "--projectId=575f4f6e-86c7-43c0-8324-af00e2aa91a0", "--env=prod", "--", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "80"]
