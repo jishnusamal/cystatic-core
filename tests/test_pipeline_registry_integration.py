@@ -102,7 +102,40 @@ async def test_typescript_pipeline_integration():
 
     class MockSnapshot:
         files = {
-            "app.ts": "const x: number = 42;",
+            "app.ts": """
+import { chargeCard } from "./payment";
+import * as fs from "fs";
+
+export interface User {
+    id: string;
+}
+
+export type UserId = string;
+
+export enum Status {
+    Active,
+    Inactive
+}
+
+export const LIMIT = 100;
+
+export function confirmCheckout() {
+    validateCoupon();
+}
+
+function validateCoupon() {
+}
+
+export class CheckoutService {
+    processPayment() {
+        confirmCheckout();
+    }
+}
+""",
+            "payment.ts": """
+export function chargeCard() {
+}
+"""
         }
 
     class MockProvider:
@@ -110,6 +143,40 @@ async def test_typescript_pipeline_integration():
             return MockSnapshot()
 
         async def fetch_file(self, repository, file_path, sha):
+            if file_path == "app.ts":
+                return """
+import { chargeCard } from "./payment";
+import * as fs from "fs";
+
+export interface User {
+    id: string;
+}
+
+export type UserId = string;
+
+export enum Status {
+    Active,
+    Inactive
+}
+
+export const LIMIT = 100;
+
+export function confirmCheckout() {
+    validateCoupon();
+    chargeCard();
+}
+
+function validateCoupon() {
+}
+
+export class CheckoutService {
+    processPayment() {
+        confirmCheckout();
+    }
+}
+"""
+            if file_path == "payment.ts":
+                return MockSnapshot.files["payment.ts"]
             return None
 
     pipeline = Pipeline(
@@ -133,18 +200,18 @@ async def test_typescript_pipeline_integration():
     )
     hunk = DiffHunk(
         file_path="app.ts",
-        source_start=1,
-        source_length=1,
-        target_start=1,
-        target_length=1,
-        added_lines=("+const y = 43;",),
-        removed_lines=("-const x: number = 42;",),
-        lines=("+const y = 43;",),
+        source_start=18,
+        source_length=3,
+        target_start=18,
+        target_length=4,
+        added_lines=("+export function confirmCheckout() {", "+    validateCoupon();", "+    chargeCard();", "+}"),
+        removed_lines=("-export function confirmCheckout() {", "-    validateCoupon();", "-}"),
+        lines=("+export function confirmCheckout() {", "+    validateCoupon();", "+    chargeCard();", "+}"),
     )
     diff_file = DiffFile(
         file_path="app.ts",
-        added_lines=("+const y = 43;",),
-        removed_lines=("-const x: number = 42;",),
+        added_lines=("+export function confirmCheckout() {", "+    validateCoupon();", "+    chargeCard();", "+}"),
+        removed_lines=("-export function confirmCheckout() {", "-    validateCoupon();", "-}"),
         hunks=(hunk,),
     )
     diff_snapshot = DiffSnapshot(files=(diff_file,))
@@ -167,6 +234,15 @@ async def test_typescript_pipeline_integration():
     assert context.change_facts is not None
     assert context.impact_surface is not None
     assert context.ocm is not None
+
+    # Verify LLMContext is fully populated for TypeScript
+    assert context.llm_context is not None
+    # String table should contain symbols and files
+    assert len(context.llm_context.st.entries) > 0
+    # Symbols table must not be empty
+    assert len(context.llm_context.sym) > 0
+    # Files table must not be empty
+    assert len(context.llm_context.f) > 0
 
 
 @pytest.mark.asyncio

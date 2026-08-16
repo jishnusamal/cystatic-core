@@ -26,7 +26,8 @@ http:
       //     "pr_number": 3
       // }
       {
-          "pr_url": "https://github.com/PostHog/posthog/pull/83510"
+          "pr_url": "https://github.com/Infisical/infisical/pull/7670"
+      //   "https://github.com/calcom/cal.diy/pull/29966"
       }
 
 settings:

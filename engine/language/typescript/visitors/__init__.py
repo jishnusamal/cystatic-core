@@ -68,6 +68,18 @@ class TypeScriptVisitor(BaseVisitor[Tree]):
         elif node_type == "call_expression":
             inst.increment_counter("Visitor", "calls_visited")
             self._visit_Call(node, context, builder)
+        elif node_type == "interface_declaration":
+            inst.increment_counter("Visitor", "interfaces_visited")
+            self._visit_InterfaceDef(node, context, builder)
+        elif node_type == "type_alias_declaration":
+            inst.increment_counter("Visitor", "type_aliases_visited")
+            self._visit_TypeAliasDef(node, context, builder)
+        elif node_type == "enum_declaration":
+            inst.increment_counter("Visitor", "enums_visited")
+            self._visit_EnumDef(node, context, builder)
+        elif node_type == "lexical_declaration":
+            inst.increment_counter("Visitor", "variables_visited")
+            self._visit_VariableDef(node, context, builder)
 
         # Recursively walk child nodes for nested structures
         for child in node.children:
@@ -152,6 +164,82 @@ class TypeScriptVisitor(BaseVisitor[Tree]):
                 finally:
                     elapsed = time.perf_counter() - start
                     inst.record_method_time(pass_name, "visit_Call", elapsed)
+
+    def _visit_InterfaceDef(
+        self, node: Node, context: FileContext[Tree], builder: dict[str, Any]
+    ) -> None:
+        """Dispatch interface definition to all collectors."""
+        inst = get_instrumentation()
+
+        for collector in self._collectors:
+            if hasattr(collector, "visit_InterfaceDef"):
+                pass_name = type(collector).__name__
+
+                start = time.perf_counter()
+                try:
+                    collector.visit_InterfaceDef(node, context, builder)
+                except Exception:
+                    pass
+                finally:
+                    elapsed = time.perf_counter() - start
+                    inst.record_method_time(pass_name, "visit_InterfaceDef", elapsed)
+
+    def _visit_TypeAliasDef(
+        self, node: Node, context: FileContext[Tree], builder: dict[str, Any]
+    ) -> None:
+        """Dispatch type alias definition to all collectors."""
+        inst = get_instrumentation()
+
+        for collector in self._collectors:
+            if hasattr(collector, "visit_TypeAliasDef"):
+                pass_name = type(collector).__name__
+
+                start = time.perf_counter()
+                try:
+                    collector.visit_TypeAliasDef(node, context, builder)
+                except Exception:
+                    pass
+                finally:
+                    elapsed = time.perf_counter() - start
+                    inst.record_method_time(pass_name, "visit_TypeAliasDef", elapsed)
+
+    def _visit_EnumDef(
+        self, node: Node, context: FileContext[Tree], builder: dict[str, Any]
+    ) -> None:
+        """Dispatch enum definition to all collectors."""
+        inst = get_instrumentation()
+
+        for collector in self._collectors:
+            if hasattr(collector, "visit_EnumDef"):
+                pass_name = type(collector).__name__
+
+                start = time.perf_counter()
+                try:
+                    collector.visit_EnumDef(node, context, builder)
+                except Exception:
+                    pass
+                finally:
+                    elapsed = time.perf_counter() - start
+                    inst.record_method_time(pass_name, "visit_EnumDef", elapsed)
+
+    def _visit_VariableDef(
+        self, node: Node, context: FileContext[Tree], builder: dict[str, Any]
+    ) -> None:
+        """Dispatch variable definition to all collectors."""
+        inst = get_instrumentation()
+
+        for collector in self._collectors:
+            if hasattr(collector, "visit_VariableDef"):
+                pass_name = type(collector).__name__
+
+                start = time.perf_counter()
+                try:
+                    collector.visit_VariableDef(node, context, builder)
+                except Exception:
+                    pass
+                finally:
+                    elapsed = time.perf_counter() - start
+                    inst.record_method_time(pass_name, "visit_VariableDef", elapsed)
 
 
 __all__ = ["TypeScriptVisitor"]

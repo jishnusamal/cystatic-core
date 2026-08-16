@@ -798,7 +798,30 @@ class Pipeline:
                     )
 
             context.base_query = base_query
-            language = context.language or "python"
+            language = context.language
+            if language is None and base_query is not None:
+                if hasattr(base_query, "conn"):
+                    try:
+                        cur = base_query.conn.cursor()
+                        repo_id, version_id = base_query._get_context()
+                        cur.execute(
+                            "SELECT language FROM files WHERE repository_id = ? AND version_id = ? LIMIT 1",
+                            (repo_id, version_id),
+                        )
+                        row = cur.fetchone()
+                        if row:
+                            language = row["language"]
+                    except Exception:
+                        pass
+                elif hasattr(base_query, "_facts"):
+                    try:
+                        files = base_query._facts.files
+                        if files:
+                            language = files[0].language
+                    except Exception:
+                        pass
+
+            language = language or "python"
             context.language = language
             context.adapter = language
 

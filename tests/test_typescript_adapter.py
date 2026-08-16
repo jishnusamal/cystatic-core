@@ -13,6 +13,9 @@ def sample_ts_files():
 import { chargeCard } from "./payment";
 import * as fs from "fs";
 
+app.get("/users", confirmCheckout);
+router.post("/checkout-post", confirmCheckout);
+
 export function confirmCheckout() {
     validateCoupon();
     chargeCard();
@@ -23,6 +26,7 @@ function validateCoupon() {
 }
 
 class CheckoutService extends BaseService {
+    @Get("/checkout-get")
     processPayment() {
         this.confirmCheckout();
     }
@@ -56,6 +60,7 @@ class TestTypeScriptLanguageAdapter:
         assert plugin.spec.capabilities.imports is True
         assert plugin.spec.capabilities.calls is True
         assert plugin.spec.capabilities.types is True
+        assert plugin.spec.capabilities.entrypoints is True
 
     def test_full_compilation(self, sample_ts_files):
         """Test compiling TS repository snapshots."""
@@ -127,3 +132,26 @@ class TestTypeScriptLanguageAdapter:
         assert relations[0].source == "CheckoutService"
         assert relations[0].target == "BaseService"
         assert relations[0].relation_type == "extends"
+
+    def test_entrypoint_collection(self, sample_ts_files):
+        """Test that entrypoints are extracted correctly."""
+        adapter = TypeScriptLanguageAdapter()
+        index = adapter.build_index({"files": sample_ts_files})
+
+        service_file_index = next(f for f in index.files if f.path == "checkout/service.ts")
+        entrypoints = service_file_index.entrypoints
+
+        routes = [ep.route for ep in entrypoints]
+        assert "GET /users" in routes
+        assert "POST /checkout-post" in routes
+        assert "GET /checkout-get" in routes
+
+        # Check handler names mapping
+        user_ep = next(ep for ep in entrypoints if ep.route == "GET /users")
+        assert user_ep.handler == "confirmCheckout"
+
+        post_ep = next(ep for ep in entrypoints if ep.route == "POST /checkout-post")
+        assert post_ep.handler == "confirmCheckout"
+
+        get_ep = next(ep for ep in entrypoints if ep.route == "GET /checkout-get")
+        assert get_ep.handler == "processPayment"

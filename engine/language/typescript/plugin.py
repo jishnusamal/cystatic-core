@@ -17,7 +17,7 @@ class TypeScriptPlugin:
             imports=True,
             calls=True,
             types=True,
-            entrypoints=False,
+            entrypoints=True,
             events=False,
             persistence=False,
             tests=False,

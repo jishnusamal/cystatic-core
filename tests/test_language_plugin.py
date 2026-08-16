@@ -132,7 +132,7 @@ def test_typescript_plugin_capabilities():
     assert plugin.spec.capabilities.imports is True
     assert plugin.spec.capabilities.calls is True
     assert plugin.spec.capabilities.types is True
-    assert plugin.spec.capabilities.entrypoints is False
+    assert plugin.spec.capabilities.entrypoints is True
     assert plugin.spec.capabilities.events is False
     assert plugin.spec.capabilities.persistence is False
     assert plugin.spec.capabilities.tests is False

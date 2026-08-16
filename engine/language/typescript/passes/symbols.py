@@ -62,6 +62,14 @@ class TypeScriptSymbolIndexPass(BaseIndexPass):
                 class_sym, method_syms = self._extract_class(node, context.path, source_bytes)
                 builder["symbols"].append(class_sym)
                 builder["symbols"].extend(method_syms)
+            elif node.type == "interface_declaration":
+                builder["symbols"].append(self._extract_interface(node, context.path, source_bytes))
+            elif node.type == "type_alias_declaration":
+                builder["symbols"].append(self._extract_type_alias(node, context.path, source_bytes))
+            elif node.type == "enum_declaration":
+                builder["symbols"].append(self._extract_enum(node, context.path, source_bytes))
+            elif node.type == "lexical_declaration":
+                builder["symbols"].extend(self._extract_variables(node, context.path, source_bytes))
 
             # Recurse children in reverse to preserve order
             for child in reversed(node.children):
@@ -82,6 +90,34 @@ class TypeScriptSymbolIndexPass(BaseIndexPass):
         """Handle function definition node from visitor."""
         source_bytes = context.source.encode("utf-8")
         builder["symbols"].append(self._extract_function(node, context.path, source_bytes))
+
+    def visit_InterfaceDef(
+        self, node: Node, context: FileContext[Tree], builder: dict[str, Any]
+    ) -> None:
+        """Handle interface definition node from visitor."""
+        source_bytes = context.source.encode("utf-8")
+        builder["symbols"].append(self._extract_interface(node, context.path, source_bytes))
+
+    def visit_TypeAliasDef(
+        self, node: Node, context: FileContext[Tree], builder: dict[str, Any]
+    ) -> None:
+        """Handle type alias definition node from visitor."""
+        source_bytes = context.source.encode("utf-8")
+        builder["symbols"].append(self._extract_type_alias(node, context.path, source_bytes))
+
+    def visit_EnumDef(
+        self, node: Node, context: FileContext[Tree], builder: dict[str, Any]
+    ) -> None:
+        """Handle enum definition node from visitor."""
+        source_bytes = context.source.encode("utf-8")
+        builder["symbols"].append(self._extract_enum(node, context.path, source_bytes))
+
+    def visit_VariableDef(
+        self, node: Node, context: FileContext[Tree], builder: dict[str, Any]
+    ) -> None:
+        """Handle variable definition node from visitor."""
+        source_bytes = context.source.encode("utf-8")
+        builder["symbols"].extend(self._extract_variables(node, context.path, source_bytes))
 
     def _extract_function(
         self, node: Node, file_path: str, source_bytes: bytes
@@ -147,3 +183,97 @@ class TypeScriptSymbolIndexPass(BaseIndexPass):
             properties=properties,
         )
         return class_sym, method_symbols
+
+    def _extract_interface(
+        self, node: Node, file_path: str, source_bytes: bytes
+    ) -> SymbolEntry:
+        """Extract an interface definition symbol."""
+        name_node = node.child_by_field_name("name")
+        if not name_node:
+            for child in node.children:
+                if child.type == "type_identifier":
+                    name_node = child
+                    break
+        name = get_node_text(name_node, source_bytes) if name_node else "AnonymousInterface"
+
+        return SymbolEntry(
+            name=name,
+            kind="interface",
+            file=file_path,
+            start_line=node.start_point[0] + 1,
+            end_line=node.end_point[0] + 1,
+            visibility="public",
+            properties={},
+        )
+
+    def _extract_type_alias(
+        self, node: Node, file_path: str, source_bytes: bytes
+    ) -> SymbolEntry:
+        """Extract a type alias definition symbol."""
+        name_node = node.child_by_field_name("name")
+        if not name_node:
+            for child in node.children:
+                if child.type == "type_identifier":
+                    name_node = child
+                    break
+        name = get_node_text(name_node, source_bytes) if name_node else "AnonymousType"
+
+        return SymbolEntry(
+            name=name,
+            kind="interface",
+            file=file_path,
+            start_line=node.start_point[0] + 1,
+            end_line=node.end_point[0] + 1,
+            visibility="public",
+            properties={},
+        )
+
+    def _extract_enum(
+        self, node: Node, file_path: str, source_bytes: bytes
+    ) -> SymbolEntry:
+        """Extract an enum definition symbol."""
+        name_node = node.child_by_field_name("name")
+        if not name_node:
+            for child in node.children:
+                if child.type == "identifier":
+                    name_node = child
+                    break
+        name = get_node_text(name_node, source_bytes) if name_node else "AnonymousEnum"
+
+        return SymbolEntry(
+            name=name,
+            kind="enum",
+            file=file_path,
+            start_line=node.start_point[0] + 1,
+            end_line=node.end_point[0] + 1,
+            visibility="public",
+            properties={},
+        )
+
+    def _extract_variables(
+        self, node: Node, file_path: str, source_bytes: bytes
+    ) -> list[SymbolEntry]:
+        """Extract variable declarations from a lexical declaration."""
+        symbols = []
+        for child in node.children:
+            if child.type == "variable_declarator":
+                name_node = child.child_by_field_name("name")
+                if not name_node:
+                    for sub_child in child.children:
+                        if sub_child.type == "identifier":
+                            name_node = sub_child
+                            break
+                if name_node:
+                    name = get_node_text(name_node, source_bytes)
+                    symbols.append(
+                        SymbolEntry(
+                            name=name,
+                            kind="variable",
+                            file=file_path,
+                            start_line=child.start_point[0] + 1,
+                            end_line=child.end_point[0] + 1,
+                            visibility="public",
+                            properties={},
+                        )
+                    )
+        return symbols

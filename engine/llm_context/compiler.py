@@ -90,13 +90,21 @@ def _parse_location(location: str) -> tuple[str, int, int]:
 
 
 def _resolve_symbol_name_from_uri(uri: str) -> str:
-    """Extract symbol name from a URI like 'sym://path#SymbolName'.
+    """Extract symbol name from a URI like 'sym://path#SymbolName' or 'sym://path::func'.
 
     Returns the symbol name or empty string.
     """
+    if not uri:
+        return ""
     hash_match = re.search(r"#(.+)$", uri)
     if hash_match:
-        return hash_match.group(1)
+        val = hash_match.group(1)
+        if "." in val:
+            return val.split(".")[-1]
+        return val
+    colons_match = re.search(r"::(.+)$", uri)
+    if colons_match:
+        return colons_match.group(1)
     return ""
 
 
@@ -123,7 +131,7 @@ def _collect_discovery_references(
     for d in discoveries:
         for ref in d.references:
             # Collect symbol references
-            if ref.id and ref.id.startswith("sym://"):
+            if ref.id and (ref.id.startswith("sym://") or ("://" in ref.id and not ref.id.startswith("behavior://"))):
                 symbol_ids.add(ref.id)
             # Collect behavior/execution references
             if ref.location:
