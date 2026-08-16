@@ -1,5 +1,4 @@
 name: PROD
 variables:
   - name: API_URL
-    value: https://api.usefactor.app
-    description: ""
+    value: https://cystatic-core.onrender.com

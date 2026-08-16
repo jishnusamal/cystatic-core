@@ -6,19 +6,23 @@ No compiler logic - pure orchestration state.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from core.runtime import RunContext
 
 if TYPE_CHECKING:
-    from engine.repository.model import RepositoryModel
-    from engine.change.model import ChangeModel, RepositoryDelta
-    from engine.behavior.model import BehaviorModel
-    from engine.operational.model import OperationalChangeModel, EngineeringDiscoveryModel
-    from engine.operational.discovery.model import DiscoveryIR
-    from engine.review_context.model import ReviewContext
+    from engine.behavior.model.impact_surface import ImpactSurface
+    from engine.change.model import ChangeFacts, ChangeModel, RepositoryDelta
     from engine.llm_context.model import LLMContext
+    from engine.operational.discovery.model import DiscoveryIR
+    from engine.operational.model import (
+        EngineeringDiscoveryModel,
+        OperationalChangeModel,
+    )
+    from engine.repository.model import RepositoryModel
+    from engine.repository.query import RepositoryQuery
+    from engine.review_context.model import ReviewContext
 
 
 @dataclass
@@ -44,13 +48,17 @@ class PipelineContext:
     # Compiled repository models (immutable once set)
     base_repository_model: RepositoryModel | None = None
     head_repository_model: RepositoryModel | None = None
+    base_query: RepositoryQuery | None = None
+    repository_view: Any | None = None
 
     # Repository delta (canonical input for downstream phases)
     repository_delta: RepositoryDelta | None = None
 
     # Intermediate artifacts
+    change_facts: ChangeFacts | None = None
     change_model: ChangeModel | None = None
-    behavior_model: BehaviorModel | None = None
+    impact_surface: ImpactSurface | None = None
+    behavior_model: Any | None = None  # legacy
     ocm: OperationalChangeModel | None = None
     edm: EngineeringDiscoveryModel | None = None
 
@@ -87,53 +95,62 @@ class PipelineContext:
     def mark_compilation_start(self) -> None:
         """Record the start time of compilation."""
         import time
+
         self.compile_started_at = time.time()
 
     def mark_repository_compiled(self) -> None:
         """Record repository compilation completion."""
         import time
+
         if self.compile_started_at:
             self.repository_compile_time = time.time() - self.compile_started_at
 
     def mark_change_compiled(self) -> None:
         """Record change compilation completion."""
         import time
+
         if self.compile_started_at:
             self.change_compile_time = time.time() - self.compile_started_at
 
     def mark_behavior_compiled(self) -> None:
         """Record behavior compilation completion."""
         import time
+
         if self.compile_started_at:
             self.behavior_compile_time = time.time() - self.compile_started_at
 
     def mark_operational_compiled(self) -> None:
         """Record operational compilation completion."""
         import time
+
         if self.compile_started_at:
             self.operational_compile_time = time.time() - self.compile_started_at
 
     def mark_discovery_compiled(self) -> None:
         """Record discovery compilation completion."""
         import time
+
         if self.compile_started_at:
             self.discovery_compile_time = time.time() - self.compile_started_at
 
     def mark_presentation_compiled(self) -> None:
         """Record presentation compilation completion."""
         import time
+
         if self.compile_started_at:
             self.presentation_compile_time = time.time() - self.compile_started_at
 
     def mark_render_complete(self) -> None:
         """Record rendering completion."""
         import time
+
         if self.compile_started_at:
             self.render_time = time.time() - self.compile_started_at
 
     def mark_complete(self) -> None:
         """Record total execution time."""
         import time
+
         if self.compile_started_at:
             self.total_time = time.time() - self.compile_started_at
 
@@ -151,6 +168,10 @@ class PipelineContext:
             "installation_id": self.installation_id,
             "has_base_model": self.base_repository_model is not None,
             "has_head_model": self.head_repository_model is not None,
+            "has_base_query": self.base_query is not None,
+            "has_repository_view": self.repository_view is not None,
+            "has_change_facts": self.change_facts is not None,
+            "architecture": "facts" if self.repository_view is not None else "legacy",
             "repository_compile_time": self.repository_compile_time,
             "change_compile_time": self.change_compile_time,
             "behavior_compile_time": self.behavior_compile_time,

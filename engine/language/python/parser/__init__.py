@@ -40,4 +40,4 @@ class PythonParser(BaseParser):
         Returns:
             True if the file ends with .py
         """
-        return file_path.endswith('.py')
+        return file_path.endswith(".py")

@@ -31,17 +31,21 @@ Invariants:
     - No information is discarded — children are preserved in metadata.
     - Never compress across kinds.
 """
+
 from __future__ import annotations
 
 from collections import defaultdict
 
 from engine.operational.discovery.model import (
     Discovery,
+    DiscoveryEvidence,
     DiscoveryKind,
     DiscoverySupport,
-    DiscoveryEvidence,
 )
-from engine.operational.discovery.passes.base import DiscoveryPassContext, DiscoveryCompilerPass
+from engine.operational.discovery.passes.base import (
+    DiscoveryCompilerPass,
+    DiscoveryPassContext,
+)
 
 
 class CompressionPass(DiscoveryCompilerPass):
@@ -89,9 +93,7 @@ class CompressionPass(DiscoveryCompilerPass):
             return context
 
         # Replace compressed discoveries, preserve order
-        final: list[Discovery] = [
-            d for d in discoveries if d.id not in compressed_ids
-        ]
+        final: list[Discovery] = [d for d in discoveries if d.id not in compressed_ids]
         final.extend(compressed_replacements)
 
         context.discoveries = final
@@ -124,8 +126,7 @@ class CompressionPass(DiscoveryCompilerPass):
         avg_importance = round(total_importance / total, 2)
 
         statement = (
-            f"{total} {kind_label.lower()} "
-            f"{'were' if total != 1 else 'was'} detected."
+            f"{total} {kind_label.lower()} {'were' if total != 1 else 'was'} detected."
         )
 
         return Discovery(

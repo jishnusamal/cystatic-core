@@ -8,9 +8,9 @@ import ast
 import time
 from typing import Any
 
-from engine.language.base.visitors import BaseVisitor
 from engine.language.base.file_context import FileContext
 from engine.language.base.instrumentation import get_instrumentation
+from engine.language.base.visitors import BaseVisitor
 
 
 class PythonVisitor(BaseVisitor[ast.AST]):
@@ -47,7 +47,9 @@ class PythonVisitor(BaseVisitor[ast.AST]):
         for node in ast.iter_child_nodes(tree):
             self._dispatch(node, context, builder)
 
-    def _dispatch(self, node: ast.AST, context: FileContext[ast.AST], builder: dict[str, Any]) -> None:
+    def _dispatch(
+        self, node: ast.AST, context: FileContext[ast.AST], builder: dict[str, Any]
+    ) -> None:
         """Dispatch a node to all registered collectors.
 
         Args:
@@ -56,7 +58,7 @@ class PythonVisitor(BaseVisitor[ast.AST]):
             builder: Mutable builder dict for collected facts
         """
         inst = get_instrumentation()
-        
+
         # Dispatch based on node type
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             inst.increment_counter("Visitor", "functions_visited")
@@ -82,15 +84,18 @@ class PythonVisitor(BaseVisitor[ast.AST]):
             self._dispatch(child, context, builder)
 
     def _visit_FunctionDef(
-        self, node: ast.FunctionDef | ast.AsyncFunctionDef, context: FileContext[ast.AST], builder: dict[str, Any]
+        self,
+        node: ast.FunctionDef | ast.AsyncFunctionDef,
+        context: FileContext[ast.AST],
+        builder: dict[str, Any],
     ) -> None:
         """Dispatch function definition to all collectors."""
         inst = get_instrumentation()
-        
+
         for collector in self._collectors:
-            if hasattr(collector, 'visit_FunctionDef'):
+            if hasattr(collector, "visit_FunctionDef"):
                 pass_name = type(collector).__name__
-                
+
                 start = time.perf_counter()
                 try:
                     collector.visit_FunctionDef(node, context, builder)
@@ -98,14 +103,16 @@ class PythonVisitor(BaseVisitor[ast.AST]):
                     elapsed = time.perf_counter() - start
                     inst.record_method_time(pass_name, "visit_FunctionDef", elapsed)
 
-    def _visit_ClassDef(self, node: ast.ClassDef, context: FileContext[ast.AST], builder: dict[str, Any]) -> None:
+    def _visit_ClassDef(
+        self, node: ast.ClassDef, context: FileContext[ast.AST], builder: dict[str, Any]
+    ) -> None:
         """Dispatch class definition to all collectors."""
         inst = get_instrumentation()
-        
+
         for collector in self._collectors:
-            if hasattr(collector, 'visit_ClassDef'):
+            if hasattr(collector, "visit_ClassDef"):
                 pass_name = type(collector).__name__
-                
+
                 start = time.perf_counter()
                 try:
                     collector.visit_ClassDef(node, context, builder)
@@ -113,14 +120,16 @@ class PythonVisitor(BaseVisitor[ast.AST]):
                     elapsed = time.perf_counter() - start
                     inst.record_method_time(pass_name, "visit_ClassDef", elapsed)
 
-    def _visit_Import(self, node: ast.Import, context: FileContext[ast.AST], builder: dict[str, Any]) -> None:
+    def _visit_Import(
+        self, node: ast.Import, context: FileContext[ast.AST], builder: dict[str, Any]
+    ) -> None:
         """Dispatch import statement to all collectors."""
         inst = get_instrumentation()
-        
+
         for collector in self._collectors:
-            if hasattr(collector, 'visit_Import'):
+            if hasattr(collector, "visit_Import"):
                 pass_name = type(collector).__name__
-                
+
                 start = time.perf_counter()
                 try:
                     collector.visit_Import(node, context, builder)
@@ -128,14 +137,19 @@ class PythonVisitor(BaseVisitor[ast.AST]):
                     elapsed = time.perf_counter() - start
                     inst.record_method_time(pass_name, "visit_Import", elapsed)
 
-    def _visit_ImportFrom(self, node: ast.ImportFrom, context: FileContext[ast.AST], builder: dict[str, Any]) -> None:
+    def _visit_ImportFrom(
+        self,
+        node: ast.ImportFrom,
+        context: FileContext[ast.AST],
+        builder: dict[str, Any],
+    ) -> None:
         """Dispatch from-import statement to all collectors."""
         inst = get_instrumentation()
-        
+
         for collector in self._collectors:
-            if hasattr(collector, 'visit_ImportFrom'):
+            if hasattr(collector, "visit_ImportFrom"):
                 pass_name = type(collector).__name__
-                
+
                 start = time.perf_counter()
                 try:
                     collector.visit_ImportFrom(node, context, builder)
@@ -143,14 +157,16 @@ class PythonVisitor(BaseVisitor[ast.AST]):
                     elapsed = time.perf_counter() - start
                     inst.record_method_time(pass_name, "visit_ImportFrom", elapsed)
 
-    def _visit_Call(self, node: ast.Call, context: FileContext[ast.AST], builder: dict[str, Any]) -> None:
+    def _visit_Call(
+        self, node: ast.Call, context: FileContext[ast.AST], builder: dict[str, Any]
+    ) -> None:
         """Dispatch function call to all collectors."""
         inst = get_instrumentation()
-        
+
         for collector in self._collectors:
-            if hasattr(collector, 'visit_Call'):
+            if hasattr(collector, "visit_Call"):
                 pass_name = type(collector).__name__
-                
+
                 start = time.perf_counter()
                 try:
                     collector.visit_Call(node, context, builder)

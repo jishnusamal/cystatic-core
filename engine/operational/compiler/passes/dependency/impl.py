@@ -15,16 +15,13 @@ Everything is directly traceable to repository evidence. No inference.
 
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, cast
 
 from engine.operational.compiler.passes.base import (
     OperationalCompilerPass,
     OperationalPassContext,
 )
-from engine.repository.model import Symbol, Evidence, FileLocation
-from engine.operational.model import OperationalChangeModel
+from engine.repository.model import Symbol
 
 
 @dataclass(frozen=True)
@@ -46,7 +43,9 @@ class DependencyModel:
     shared_modules: tuple[str, ...] = field(default_factory=tuple)
 
     # Cross-service call edges: (caller_symbol_id, callee_symbol_id, service_boundary)
-    cross_service_references: tuple[tuple[str, str, str], ...] = field(default_factory=tuple)
+    cross_service_references: tuple[tuple[str, str, str], ...] = field(
+        default_factory=tuple
+    )
 
     # Per-symbol fan-in: symbol_id -> number of distinct callers
     fan_in: dict[str, int] = field(default_factory=dict)
@@ -122,7 +121,7 @@ class DependencyCompilationPass(OperationalCompilerPass):
         model = context.composed_model
         if model is None:
             return context
-        
+
         repo = model.repository
 
         # Collect all affected symbol IDs and maps using cached context methods
@@ -149,31 +148,67 @@ class DependencyCompilationPass(OperationalCompilerPass):
             sid: len(set(callees_of.get(sid, []))) for sid in affected_symbol_ids
         }
 
+        # Helper to safely get file path from Symbol fact or legacy Symbol model
+        repo = model.repository
+        def get_symbol_file_path(s: Symbol) -> str:
+            if hasattr(s, "file") and s.file:
+                return s.file
+            if hasattr(s, "file_id") and s.file_id is not None:
+                if hasattr(repo, "get_file"):
+                    f = repo.get_file(s.file_id)
+                    if f is not None:
+                        return f.path
+                if isinstance(s.file_id, str):
+                    return s.file_id
+            return ""
+
         # Shared modules: modules referenced by both callers and dependents
-        caller_modules = {symbol_map[c].file for c in caller_ids if c in symbol_map}
-        dependent_modules = {symbol_map[d].file for d in dependent_ids if d in symbol_map}
+        caller_modules = {get_symbol_file_path(symbol_map[c]) for c in caller_ids if c in symbol_map}
+        dependent_modules = {
+            get_symbol_file_path(symbol_map[d]) for d in dependent_ids if d in symbol_map
+        }
         shared_modules = tuple(sorted(caller_modules & dependent_modules))
 
         # Cross-service references: call edges crossing a service boundary
         cross_service: set[tuple[str, str, str]] = set()
-        for edge in repo.call_graph.edges:
-            caller_svc = _service_of(edge.caller_id)
-            callee_svc = _service_of(edge.callee_id)
-            if caller_svc != callee_svc:
-                cross_service.add((edge.caller_id, edge.callee_id, f"{caller_svc}->{callee_svc}"))
+        if hasattr(repo, "call_graph") and repo.call_graph is not None:
+            for edge in repo.call_graph.edges:
+                caller_svc = _service_of(edge.caller_id)
+                callee_svc = _service_of(edge.callee_id)
+                if caller_svc != callee_svc:
+                    cross_service.add(
+                        (edge.caller_id, edge.callee_id, f"{caller_svc}->{callee_svc}")
+                    )
+        elif hasattr(repo, "get_callees"):
+            for sid in affected_symbol_ids:
+                for call in repo.get_callees(sid):
+                    caller_svc = _service_of(call.caller_id)
+                    callee_svc = _service_of(call.callee_id)
+                    if caller_svc != callee_svc:
+                        cross_service.add(
+                            (
+                                call.caller_id,
+                                call.callee_id,
+                                f"{caller_svc}->{callee_svc}",
+                            )
+                        )
 
         # Dependency depth: max BFS depth from affected symbols outward
         dependency_depth = self._compute_depth(callees_of, affected_symbol_ids)
 
         dependency_model = DependencyModel(
-            callers=tuple(sorted(
-                (symbol_map[c] for c in caller_ids if c in symbol_map),
-                key=lambda s: s.id,
-            )),
-            dependents=tuple(sorted(
-                (symbol_map[d] for d in dependent_ids if d in symbol_map),
-                key=lambda s: s.id,
-            )),
+            callers=tuple(
+                sorted(
+                    (symbol_map[c] for c in caller_ids if c in symbol_map),
+                    key=lambda s: s.id,
+                )
+            ),
+            dependents=tuple(
+                sorted(
+                    (symbol_map[d] for d in dependent_ids if d in symbol_map),
+                    key=lambda s: s.id,
+                )
+            ),
             shared_modules=shared_modules,
             cross_service_references=tuple(sorted(cross_service)),
             fan_in=fan_in,
@@ -206,6 +241,7 @@ class DependencyCompilationPass(OperationalCompilerPass):
             return 0
 
         from collections import deque
+
         visited: set[str] = set()
         queue: deque[tuple[str, int]] = deque((sid, 0) for sid in seed_ids)
         max_depth = 0

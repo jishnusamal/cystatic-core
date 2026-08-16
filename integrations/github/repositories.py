@@ -4,18 +4,23 @@ from __future__ import annotations
 
 from typing import Any
 
-from github import Auth, Github, GithubException
-
+from core.errors import RepositoryAccessDenied, RepositoryNotFound
+from github import GithubException
 from integrations.base import RepositoryProvider
 from integrations.github.auth import GitHubAppAuth
 from integrations.github.client import GitHubClient
-from models.core import RepositoryReference, RepositorySnapshot, DiffSnapshot, DiffFile, DiffHunk
-from core.errors import RepositoryNotFound, RepositoryAccessDenied
+from models.core import (
+    DiffFile,
+    DiffHunk,
+    DiffSnapshot,
+    RepositoryReference,
+    RepositorySnapshot,
+)
 
 
 class GitHubRepositoryProvider(RepositoryProvider):
     """Implements RepositoryProvider for GitHub.
-    
+
     Responsibilities:
     - fetch_repository()
     - fetch_tree()
@@ -23,64 +28,69 @@ class GitHubRepositoryProvider(RepositoryProvider):
     - fetch_file()
     - fetch_commit()
     """
-    
+
     def __init__(self, auth: GitHubAppAuth | None = None) -> None:
         self.auth = auth
-    
+
     def _get_client(self) -> GitHubClient:
         """Create an authenticated GitHub client.
-        
+
         Uses a PAT from settings first (preferred for repository content API calls),
         falls back to app JWT if no PAT is configured, then unauthenticated as last resort.
-        
+
         Returns:
             GitHubClient instance (authenticated if credentials are available)
         """
         # Prefer PAT from settings (works for repository content endpoints)
         from core.config import get_settings
+
         settings = get_settings()
         pat = settings.GITHUB_ACCESS_TOKEN
         if pat:
             return GitHubClient(token=pat)
-        
+
         # Fall back to app JWT (only works for app-level endpoints)
         if self.auth:
             jwt_token = self.auth.generate_jwt()
             return GitHubClient(token=jwt_token)
         return GitHubClient()
-    
-    async def fetch_repository(self, repo_ref: RepositoryReference) -> RepositorySnapshot:
+
+    async def fetch_repository(
+        self, repo_ref: RepositoryReference
+    ) -> RepositorySnapshot:
         """Fetch the complete repository state.
-        
+
         Downloads the repository as a zipball archive and extracts text files.
-        
+
         Args:
             repo_ref: Repository reference
-            
+
         Returns:
             Repository snapshot with tree, files, and commit info
         """
         return await self.fetch_repository_at_sha(repo_ref, repo_ref.default_branch)
-    
+
     async def fetch_repository_at_sha(
         self, repo_ref: RepositoryReference, sha: str
     ) -> RepositorySnapshot:
         """Fetch the repository state at a specific commit.
-        
+
         Downloads the repository as a zipball archive at the specified commit
         and extracts text files.
-        
+
         Args:
             repo_ref: Repository reference
             sha: Commit SHA to fetch
-            
+
         Returns:
             Repository snapshot at the specified commit
         """
-        import zipfile
         import io
+        import zipfile
 
-        print(f"[repositories] fetch_repository_at_sha: {repo_ref.full_name}, sha={sha}")
+        print(
+            f"[repositories] fetch_repository_at_sha: {repo_ref.full_name}, sha={sha}"
+        )
 
         # Fetch commit info
         commit = await self.fetch_commit(repo_ref, sha)
@@ -91,8 +101,10 @@ class GitHubRepositoryProvider(RepositoryProvider):
         client = self._get_client()
         try:
             url = f"/repos/{repo_ref.full_name}/zipball/{sha}"
-            print(f"[repositories] Downloading zipball for {repo_ref.full_name} at {sha} (URL: {url})...")
-            
+            print(
+                f"[repositories] Downloading zipball for {repo_ref.full_name} at {sha} (URL: {url})..."
+            )
+
             print(f"[repositories] Sending GET request via client.get to {url}...")
             response = client.get(
                 url,
@@ -110,11 +122,15 @@ class GitHubRepositoryProvider(RepositoryProvider):
                 if chunk:
                     content_bytes.extend(chunk)
                     chunk_count += 1
-                    
+
             zip_content = bytes(content_bytes)
-            print(f"[repositories] Zipball download complete: {len(zip_content)} bytes ({len(zip_content) / (1024 * 1024):.2f} MB)")
+            print(
+                f"[repositories] Zipball download complete: {len(zip_content)} bytes ({len(zip_content) / (1024 * 1024):.2f} MB)"
+            )
         except Exception as e:
-            print(f"[repositories] ERROR during zipball download for {repo_ref.full_name} at {sha}: {e}")
+            print(
+                f"[repositories] ERROR during zipball download for {repo_ref.full_name} at {sha}: {e}"
+            )
             raise
         finally:
             client.close()
@@ -122,36 +138,42 @@ class GitHubRepositoryProvider(RepositoryProvider):
         # Extract files from the zip archive
         files: dict[str, str] = {}
         tree_entries: list[dict[str, Any]] = []
-        
+
         with zipfile.ZipFile(io.BytesIO(zip_content)) as zf:
             all_names = zf.namelist()
             print(f"[repositories] Zipball entries: {len(all_names)}")
             if not all_names:
                 return RepositorySnapshot(tree={}, files={}, commit=commit_sha)
-            
+
             root_prefix = all_names[0]
             text_count = 0
             binary_count = 0
             for name in all_names:
-                relative_name = name[len(root_prefix):] if name.startswith(root_prefix) else name
-                
+                relative_name = (
+                    name.removeprefix(root_prefix)
+                )
+
                 if not relative_name:
                     continue
-                
+
                 if zf.getinfo(name).is_dir():
-                    tree_entries.append({
-                        "path": relative_name.rstrip("/"),
-                        "type": "tree",
-                        "mode": "040000",
-                    })
+                    tree_entries.append(
+                        {
+                            "path": relative_name.rstrip("/"),
+                            "type": "tree",
+                            "mode": "040000",
+                        }
+                    )
                 else:
-                    tree_entries.append({
-                        "path": relative_name,
-                        "type": "blob",
-                        "mode": "100644",
-                        "sha": "",
-                    })
-                    
+                    tree_entries.append(
+                        {
+                            "path": relative_name,
+                            "type": "blob",
+                            "mode": "100644",
+                            "sha": "",
+                        }
+                    )
+
                     try:
                         raw = zf.read(name)
                         content = raw.decode("utf-8")
@@ -161,7 +183,9 @@ class GitHubRepositoryProvider(RepositoryProvider):
                         binary_count += 1
                         continue
 
-        print(f"[repositories] Extracted: {text_count} text files, {binary_count} binary files skipped")
+        print(
+            f"[repositories] Extracted: {text_count} text files, {binary_count} binary files skipped"
+        )
 
         tree = {
             "sha": "",
@@ -174,7 +198,7 @@ class GitHubRepositoryProvider(RepositoryProvider):
             files=files,
             commit=commit_sha,
         )
-    
+
     async def fetch_diff(
         self,
         repo_ref: RepositoryReference,
@@ -182,12 +206,12 @@ class GitHubRepositoryProvider(RepositoryProvider):
         head_sha: str,
     ) -> DiffSnapshot:
         """Fetch the diff between two commits.
-        
+
         Args:
             repo_ref: Repository reference
             base_sha: Base commit SHA
             head_sha: Head commit SHA
-            
+
         Returns:
             Diff snapshot with changed files and hunks
         """
@@ -199,10 +223,10 @@ class GitHubRepositoryProvider(RepositoryProvider):
                 timeout=30,
             )
             response.raise_for_status()
-            
+
             diff_text = response.text
             patches = tuple(line for line in diff_text.splitlines() if line)
-            
+
             # Parse the unified diff into DiffFile/DiffHunk structures
             files: list[DiffFile] = []
             current_file: dict[str, Any] = {}
@@ -211,30 +235,34 @@ class GitHubRepositoryProvider(RepositoryProvider):
             removed_lines: list[int] = []
             hunk_lines: list[dict[str, Any]] = []
             hunks: list[DiffHunk] = []
-            
+
             for line in diff_text.splitlines():
                 # Detect file headers: "diff --git a/path b/path"
                 if line.startswith("diff --git "):
                     # Save previous file if exists
                     if current_file.get("file_path"):
                         if current_hunk:
-                            hunks.append(DiffHunk(
-                                file_path=current_hunk.get("file_path", ""),
-                                source_start=current_hunk.get("source_start", 0),
-                                source_length=current_hunk.get("source_length", 0),
-                                target_start=current_hunk.get("target_start", 0),
-                                target_length=current_hunk.get("target_length", 0),
+                            hunks.append(
+                                DiffHunk(
+                                    file_path=current_hunk.get("file_path", ""),
+                                    source_start=current_hunk.get("source_start", 0),
+                                    source_length=current_hunk.get("source_length", 0),
+                                    target_start=current_hunk.get("target_start", 0),
+                                    target_length=current_hunk.get("target_length", 0),
+                                    added_lines=tuple(added_lines),
+                                    removed_lines=tuple(removed_lines),
+                                    lines=tuple(hunk_lines),
+                                )
+                            )
+                        files.append(
+                            DiffFile(
+                                file_path=current_file["file_path"],
                                 added_lines=tuple(added_lines),
                                 removed_lines=tuple(removed_lines),
-                                lines=tuple(hunk_lines),
-                            ))
-                        files.append(DiffFile(
-                            file_path=current_file["file_path"],
-                            added_lines=tuple(added_lines),
-                            removed_lines=tuple(removed_lines),
-                            hunks=tuple(hunks),
-                        ))
-                    
+                                hunks=tuple(hunks),
+                            )
+                        )
+
                     # Parse new file path
                     parts = line.split()
                     file_path = parts[3][2:] if len(parts) > 3 else ""  # "b/path"
@@ -244,29 +272,32 @@ class GitHubRepositoryProvider(RepositoryProvider):
                     removed_lines = []
                     hunk_lines = []
                     hunks = []
-                
+
                 # Detect hunk headers: "@@ -start,length +start,length @@ ..."
                 elif line.startswith("@@"):
                     if current_hunk:
-                        hunks.append(DiffHunk(
-                            file_path=current_hunk.get("file_path", ""),
-                            source_start=current_hunk.get("source_start", 0),
-                            source_length=current_hunk.get("source_length", 0),
-                            target_start=current_hunk.get("target_start", 0),
-                            target_length=current_hunk.get("target_length", 0),
-                            added_lines=tuple(added_lines),
-                            removed_lines=tuple(removed_lines),
-                            lines=tuple(hunk_lines),
-                        ))
-                    
+                        hunks.append(
+                            DiffHunk(
+                                file_path=current_hunk.get("file_path", ""),
+                                source_start=current_hunk.get("source_start", 0),
+                                source_length=current_hunk.get("source_length", 0),
+                                target_start=current_hunk.get("target_start", 0),
+                                target_length=current_hunk.get("target_length", 0),
+                                added_lines=tuple(added_lines),
+                                removed_lines=tuple(removed_lines),
+                                lines=tuple(hunk_lines),
+                            )
+                        )
+
                     import re
+
                     match = re.match(r"@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@", line)
                     if match:
                         source_start = int(match.group(1))
                         source_len = int(match.group(2)) if match.group(2) else 1
                         target_start = int(match.group(3))
                         target_len = int(match.group(4)) if match.group(4) else 1
-                        
+
                         current_hunk = {
                             "file_path": current_file.get("file_path", ""),
                             "source_start": source_start,
@@ -277,34 +308,46 @@ class GitHubRepositoryProvider(RepositoryProvider):
                         added_lines = []
                         removed_lines = []
                         hunk_lines = []
-                
-                elif not line.startswith("diff --git") and not line.startswith("---") and not line.startswith("+++"):
+
+                elif (
+                    not line.startswith("diff --git")
+                    and not line.startswith("---")
+                    and not line.startswith("+++")
+                ):
                     hunk_lines.append({"type": "context", "content": line})
                     if line.startswith("+"):
-                        added_lines.append(current_hunk.get("target_start", 0) + len(added_lines))
+                        added_lines.append(
+                            current_hunk.get("target_start", 0) + len(added_lines)
+                        )
                     elif line.startswith("-"):
-                        removed_lines.append(current_hunk.get("source_start", 0) + len(removed_lines))
-            
+                        removed_lines.append(
+                            current_hunk.get("source_start", 0) + len(removed_lines)
+                        )
+
             # Save last file
             if current_file.get("file_path"):
                 if current_hunk:
-                    hunks.append(DiffHunk(
-                        file_path=current_hunk.get("file_path", ""),
-                        source_start=current_hunk.get("source_start", 0),
-                        source_length=current_hunk.get("source_length", 0),
-                        target_start=current_hunk.get("target_start", 0),
-                        target_length=current_hunk.get("target_length", 0),
+                    hunks.append(
+                        DiffHunk(
+                            file_path=current_hunk.get("file_path", ""),
+                            source_start=current_hunk.get("source_start", 0),
+                            source_length=current_hunk.get("source_length", 0),
+                            target_start=current_hunk.get("target_start", 0),
+                            target_length=current_hunk.get("target_length", 0),
+                            added_lines=tuple(added_lines),
+                            removed_lines=tuple(removed_lines),
+                            lines=tuple(hunk_lines),
+                        )
+                    )
+                files.append(
+                    DiffFile(
+                        file_path=current_file["file_path"],
                         added_lines=tuple(added_lines),
                         removed_lines=tuple(removed_lines),
-                        lines=tuple(hunk_lines),
-                    ))
-                files.append(DiffFile(
-                    file_path=current_file["file_path"],
-                    added_lines=tuple(added_lines),
-                    removed_lines=tuple(removed_lines),
-                    hunks=tuple(hunks),
-                ))
-            
+                        hunks=tuple(hunks),
+                    )
+                )
+
             return DiffSnapshot(
                 files=tuple(files),
                 patches=patches,
@@ -315,7 +358,7 @@ class GitHubRepositoryProvider(RepositoryProvider):
             raise RuntimeError(f"Failed to fetch diff: {exc}") from exc
         finally:
             client.close()
-    
+
     async def fetch_file(
         self,
         repo_ref: RepositoryReference,
@@ -323,18 +366,18 @@ class GitHubRepositoryProvider(RepositoryProvider):
         sha: str,
     ) -> str:
         """Fetch a single file at a specific commit.
-        
+
         Args:
             repo_ref: Repository reference
             file_path: Path to the file
             sha: Commit SHA
-            
+
         Returns:
             File content as string
         """
-        from urllib.parse import quote
         import base64
-        
+        from urllib.parse import quote
+
         client = self._get_client()
         try:
             encoded_path = quote(file_path, safe="/")
@@ -346,7 +389,7 @@ class GitHubRepositoryProvider(RepositoryProvider):
                 timeout=30,
             )
             response.raise_for_status()
-            
+
             data = response.json()
             raw = base64.b64decode(data["content"])
             content = raw.decode("utf-8")
@@ -358,24 +401,29 @@ class GitHubRepositoryProvider(RepositoryProvider):
             )
         except GithubException as exc:
             if exc.status == 404:
-                raise RepositoryNotFound(f"File not found: {file_path}", details={"file": file_path, "sha": sha})
+                raise RepositoryNotFound(
+                    f"File not found: {file_path}",
+                    details={"file": file_path, "sha": sha},
+                )
             elif exc.status == 403:
-                raise RepositoryAccessDenied(f"Access denied to file: {file_path}", details={"file": file_path})
+                raise RepositoryAccessDenied(
+                    f"Access denied to file: {file_path}", details={"file": file_path}
+                )
             raise
         finally:
             client.close()
-    
+
     async def fetch_tree(
         self,
         repo_ref: RepositoryReference,
         sha: str,
     ) -> dict[str, Any]:
         """Fetch the file tree at a specific commit.
-        
+
         Args:
             repo_ref: Repository reference
             sha: Commit SHA
-            
+
         Returns:
             Tree structure
         """
@@ -384,10 +432,10 @@ class GitHubRepositoryProvider(RepositoryProvider):
             # First get the commit to get the tree SHA
             commit = await self.fetch_commit(repo_ref, sha)
             tree_sha = commit.get("tree", {}).get("sha")
-            
+
             if not tree_sha:
                 raise ValueError(f"No tree found for commit {sha}")
-            
+
             # Fetch the tree
             response = client.get(
                 f"/repos/{repo_ref.full_name}/git/trees/{tree_sha}",
@@ -396,7 +444,7 @@ class GitHubRepositoryProvider(RepositoryProvider):
                 timeout=30,
             )
             response.raise_for_status()
-            
+
             tree_data = response.json()
             return {
                 "sha": tree_data.get("sha"),
@@ -405,18 +453,18 @@ class GitHubRepositoryProvider(RepositoryProvider):
             }
         finally:
             client.close()
-    
+
     async def fetch_commit(
         self,
         repo_ref: RepositoryReference,
         sha: str,
     ) -> dict[str, Any]:
         """Fetch commit information.
-        
+
         Args:
             repo_ref: Repository reference
             sha: Commit SHA
-            
+
         Returns:
             Commit information
         """
@@ -428,7 +476,7 @@ class GitHubRepositoryProvider(RepositoryProvider):
                 timeout=30,
             )
             response.raise_for_status()
-            
+
             commit_data = response.json()
             return {
                 "sha": commit_data.get("sha"),

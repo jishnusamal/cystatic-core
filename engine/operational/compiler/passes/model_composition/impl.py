@@ -14,9 +14,6 @@ from engine.operational.compiler.passes.base import (
     OperationalPassContext,
 )
 from engine.operational.model import OperationalChangeModel
-from engine.repository.model import RepositoryModel
-from engine.change.model import ChangeModel
-from engine.behavior.model import BehaviorModel
 
 
 class ModelCompositionPass(OperationalCompilerPass):
@@ -63,9 +60,7 @@ class ModelCompositionPass(OperationalCompilerPass):
                 missing.append("change_model")
             if context.behavior_model is None:
                 missing.append("behavior_model")
-            raise ValueError(
-                f"Cannot compose models: missing {', '.join(missing)}"
-            )
+            raise ValueError(f"Cannot compose models: missing {', '.join(missing)}")
 
         context.composed_model = OperationalChangeModel(
             repository=context.repository_model,  # type: ignore[arg-type]

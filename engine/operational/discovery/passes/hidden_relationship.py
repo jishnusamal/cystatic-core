@@ -10,15 +10,19 @@ Reuses existing compiler outputs:
 
 No duplicate graph traversal — all data is read from pre-computed models.
 """
+
 from __future__ import annotations
 
 from engine.operational.discovery.model import (
     Discovery,
+    DiscoveryEvidence,
     DiscoveryKind,
     DiscoverySupport,
-    DiscoveryEvidence,
 )
-from engine.operational.discovery.passes.base import DiscoveryPassContext, DiscoveryCompilerPass
+from engine.operational.discovery.passes.base import (
+    DiscoveryCompilerPass,
+    DiscoveryPassContext,
+)
 
 
 class HiddenRelationshipPass(DiscoveryCompilerPass):
@@ -45,16 +49,16 @@ class HiddenRelationshipPass(DiscoveryCompilerPass):
 
         # --- Discovery 1: Entry point reachability ---
         # For each behavior, show how many entry points reach it
-        entry_points = getattr(behavior, 'entry_points', ())
-        behaviors = getattr(behavior, 'behaviors', ())
-        reachable_units = getattr(behavior, 'reachable_units', ())
-        execution_chains = getattr(behavior, 'execution_chains', ())
+        entry_points = getattr(behavior, "entry_points", ())
+        behaviors = getattr(behavior, "behaviors", ())
+        reachable_units = getattr(behavior, "reachable_units", ())
+        execution_chains = getattr(behavior, "execution_chains", ())
 
         # Build a map: behavior_id -> list of entry point routes
         behavior_to_entry_points: dict[str, list[str]] = {}
         for ep in entry_points:
-            bid = getattr(ep, 'behavior_id', None)
-            route = getattr(ep, 'route', '')
+            bid = getattr(ep, "behavior_id", None)
+            route = getattr(ep, "route", "")
             if bid and route:
                 if bid not in behavior_to_entry_points:
                     behavior_to_entry_points[bid] = []
@@ -90,25 +94,31 @@ class HiddenRelationshipPass(DiscoveryCompilerPass):
                             evidence_ref=f"behavior://entry/{bid}",
                         )
                     )
-                context.discoveries.append(Discovery(
-                    id=f"hidden-relationship://reachable/{bid}",
-                    kind=DiscoveryKind.HIDDEN_RELATIONSHIP,
-                    statement=statement,
-                    importance=min(0.5 + 0.1 * len(routes), 0.95),
-                    support=DiscoverySupport(
-                        execution_reach=len(routes),
-                    ),
-                    evidence=tuple(evidence_list),
-                    metadata={"behavior_id": bid, "name": name, "entry_point_count": len(routes)},
-                ))
+                context.discoveries.append(
+                    Discovery(
+                        id=f"hidden-relationship://reachable/{bid}",
+                        kind=DiscoveryKind.HIDDEN_RELATIONSHIP,
+                        statement=statement,
+                        importance=min(0.5 + 0.1 * len(routes), 0.95),
+                        support=DiscoverySupport(
+                            execution_reach=len(routes),
+                        ),
+                        evidence=tuple(evidence_list),
+                        metadata={
+                            "behavior_id": bid,
+                            "name": name,
+                            "entry_point_count": len(routes),
+                        },
+                    )
+                )
 
         # --- Discovery 2: Indirect reachability ---
         # For each execution chain, show the path from entry to changed symbols
         for chain in execution_chains:
-            units = getattr(chain, 'units', ())
+            units = getattr(chain, "units", ())
             if len(units) < 2:
                 continue
-            bid = getattr(chain, 'behavior_id', '')
+            bid = getattr(chain, "behavior_id", "")
             if not bid:
                 continue
 
@@ -122,11 +132,13 @@ class HiddenRelationshipPass(DiscoveryCompilerPass):
                 continue
 
             # Get the entry point route
-            entry_route = getattr(behavior_obj, 'entry_point', '')
-            entry_name = entry_route.split('/')[-1] if '/' in entry_route else entry_route
+            entry_route = getattr(behavior_obj, "entry_point", "")
+            entry_name = (
+                entry_route.split("/")[-1] if "/" in entry_route else entry_route
+            )
 
             # Find the deepest changed symbol in the chain
-            changed_ids = set(getattr(behavior_obj, 'changed_symbol_ids', ()))
+            changed_ids = set(getattr(behavior_obj, "changed_symbol_ids", ()))
             deepest_changed = None
             deepest_order = -1
             for unit in units:
@@ -143,7 +155,7 @@ class HiddenRelationshipPass(DiscoveryCompilerPass):
                 continue
 
             # Only emit if the changed symbol is not the entry point itself
-            root_id = getattr(behavior_obj, 'root_symbol_id', '')
+            root_id = getattr(behavior_obj, "root_symbol_id", "")
             if deepest_changed.symbol_id == root_id:
                 continue
 
@@ -157,49 +169,51 @@ class HiddenRelationshipPass(DiscoveryCompilerPass):
                 f"from entry to terminal at {terminal_name})."
             )
 
-            context.discoveries.append(Discovery(
-                id=f"hidden-relationship://indirect/{bid}",
-                kind=DiscoveryKind.HIDDEN_RELATIONSHIP,
-                statement=statement,
-                importance=0.7,
-                support=DiscoverySupport(
-                    execution_reach=path_length,
-                    propagation_depth=path_length,
-                ),
-                evidence=(
-                    DiscoveryEvidence(
-                        source="behavior",
-                        source_id=bid,
-                        description=f"Execution chain for '{entry_name}' has {path_length} units",
-                        evidence_ref=f"behavior://chain/{bid}",
+            context.discoveries.append(
+                Discovery(
+                    id=f"hidden-relationship://indirect/{bid}",
+                    kind=DiscoveryKind.HIDDEN_RELATIONSHIP,
+                    statement=statement,
+                    importance=0.7,
+                    support=DiscoverySupport(
+                        execution_reach=path_length,
+                        propagation_depth=path_length,
                     ),
-                    DiscoveryEvidence(
-                        source="behavior",
-                        source_id=deepest_changed.symbol_id,
-                        description=f"Changed symbol '{changed_name}' at depth {deepest_order}",
-                        evidence_ref=f"behavior://reachable/{bid}#{deepest_changed.symbol_id}",
+                    evidence=(
+                        DiscoveryEvidence(
+                            source="behavior",
+                            source_id=bid,
+                            description=f"Execution chain for '{entry_name}' has {path_length} units",
+                            evidence_ref=f"behavior://chain/{bid}",
+                        ),
+                        DiscoveryEvidence(
+                            source="behavior",
+                            source_id=deepest_changed.symbol_id,
+                            description=f"Changed symbol '{changed_name}' at depth {deepest_order}",
+                            evidence_ref=f"behavior://reachable/{bid}#{deepest_changed.symbol_id}",
+                        ),
                     ),
-                ),
-                metadata={
-                    "behavior_id": bid,
-                    "entry_point": entry_route,
-                    "changed_symbol": deepest_changed.symbol_id,
-                    "path_length": path_length,
-                },
-            ))
+                    metadata={
+                        "behavior_id": bid,
+                        "entry_point": entry_route,
+                        "changed_symbol": deepest_changed.symbol_id,
+                        "path_length": path_length,
+                    },
+                )
+            )
 
         return context
 
     @staticmethod
     def _derive_name(behavior) -> str:
         """Derive a human-readable name from a behavior."""
-        name = getattr(behavior, 'name', '')
+        name = getattr(behavior, "name", "")
         if name:
             return name
-        entry = getattr(behavior, 'entry_point', '')
+        entry = getattr(behavior, "entry_point", "")
         if entry:
-            return entry.split('/')[-1] if '/' in entry else entry
-        return getattr(behavior, 'id', 'unknown')
+            return entry.split("/")[-1] if "/" in entry else entry
+        return getattr(behavior, "id", "unknown")
 
     @staticmethod
     def _derive_unit_name(symbol_id: str) -> str:

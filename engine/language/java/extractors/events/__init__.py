@@ -22,23 +22,23 @@ class JavaEventExtractor(BaseExtractor):
     """
 
     EVENT_PATTERNS = [
-        (r'(\w+)\.publishEvent\s*\(', 'publish', 'spring'),
-        (r'(\w+)\.send\s*\(', 'send', 'generic'),
-        (r'(\w+)\.convertAndSend\s*\(', 'send', 'spring'),
-        (r'(\w+)\.publish\s*\(', 'publish', 'generic'),
-        (r'(\w+)\.emit\s*\(', 'emit', 'generic'),
-        (r'(\w+)\.dispatch\s*\(', 'dispatch', 'generic'),
-        (r'(\w+)\.broadcast\s*\(', 'broadcast', 'generic'),
-        (r'(\w+)\.trigger\s*\(', 'dispatch', 'generic'),
+        (r"(\w+)\.publishEvent\s*\(", "publish", "spring"),
+        (r"(\w+)\.send\s*\(", "send", "generic"),
+        (r"(\w+)\.convertAndSend\s*\(", "send", "spring"),
+        (r"(\w+)\.publish\s*\(", "publish", "generic"),
+        (r"(\w+)\.emit\s*\(", "emit", "generic"),
+        (r"(\w+)\.dispatch\s*\(", "dispatch", "generic"),
+        (r"(\w+)\.broadcast\s*\(", "broadcast", "generic"),
+        (r"(\w+)\.trigger\s*\(", "dispatch", "generic"),
     ]
 
     FRAMEWORK_DETECT = {
-        'kafkaTemplate': 'kafka',
-        'rabbitTemplate': 'rabbitmq',
-        'jmsTemplate': 'jms',
-        'eventPublisher': 'spring',
-        'applicationEventPublisher': 'spring',
-        'producer': 'kafka',
+        "kafkaTemplate": "kafka",
+        "rabbitTemplate": "rabbitmq",
+        "jmsTemplate": "jms",
+        "eventPublisher": "spring",
+        "applicationEventPublisher": "spring",
+        "producer": "kafka",
     }
 
     def extract(self, tree: list[str], file_path: str) -> list[dict[str, Any]]:
@@ -59,17 +59,21 @@ class JavaEventExtractor(BaseExtractor):
                 for match in re.finditer(pattern, line):
                     object_name = match.group(1)
                     caller_id = self._find_caller_method(tree, i - 1, file_path)
-                    framework = self.FRAMEWORK_DETECT.get(object_name, default_framework)
+                    framework = self.FRAMEWORK_DETECT.get(
+                        object_name, default_framework
+                    )
                     event_name = self._extract_event_name(line)
 
-                    events.append({
-                        'symbol_id': caller_id or '',
-                        'operation_kind': operation_kind,
-                        'event_name': event_name,
-                        'framework': framework,
-                        'file': file_path,
-                        'line': i,
-                    })
+                    events.append(
+                        {
+                            "symbol_id": caller_id or "",
+                            "operation_kind": operation_kind,
+                            "event_name": event_name,
+                            "framework": framework,
+                            "file": file_path,
+                            "line": i,
+                        }
+                    )
 
         return events
 
@@ -81,17 +85,19 @@ class JavaEventExtractor(BaseExtractor):
             return string_match.group(1)
 
         # Look for class reference argument
-        class_match = re.search(r'\(\s*(\w+)\.class', line)
+        class_match = re.search(r"\(\s*(\w+)\.class", line)
         if class_match:
             return class_match.group(1)
 
-        return ''
+        return ""
 
-    def _find_caller_method(self, lines: list[str], line_idx: int, file_path: str) -> str | None:
+    def _find_caller_method(
+        self, lines: list[str], line_idx: int, file_path: str
+    ) -> str | None:
         """Find the method enclosing a line."""
-        method_pattern = r'(?:public|private|protected)?\s*(?:\w+)\s+(\w+)\s*\('
+        method_pattern = r"(?:public|private|protected)?\s*(?:\w+)\s+(\w+)\s*\("
         for i in range(line_idx, -1, -1):
             match = re.search(method_pattern, lines[i])
-            if match and 'class ' not in lines[i] and 'interface ' not in lines[i]:
+            if match and "class " not in lines[i] and "interface " not in lines[i]:
                 return f"java://{file_path}::{match.group(1)}"
         return None

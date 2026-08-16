@@ -18,20 +18,17 @@ These are observable metrics, not scores or judgments.
 
 from __future__ import annotations
 
-from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import cast
 
+from engine.operational.compiler.passes.api.impl import APIModel
 from engine.operational.compiler.passes.base import (
     OperationalCompilerPass,
     OperationalPassContext,
 )
-from engine.repository.model import Symbol
-from engine.operational.model import OperationalChangeModel
-from engine.operational.compiler.passes.dependency.impl import DependencyModel
 from engine.operational.compiler.passes.data.impl import DataModel
+from engine.operational.compiler.passes.dependency.impl import DependencyModel
 from engine.operational.compiler.passes.events.impl import EventModel
-from engine.operational.compiler.passes.api.impl import APIModel
 from engine.operational.compiler.passes.validation.impl import ValidationModel
 
 
@@ -105,7 +102,12 @@ class MetricsCompilationPass(OperationalCompilerPass):
             return context
 
         # 1. Behavior count
-        behaviors = len(model.behavior.behaviors)
+        if hasattr(model.behavior, "behaviors"):
+            behaviors = len(model.behavior.behaviors)
+        elif hasattr(model.behavior, "affected_symbols"):
+            behaviors = len(model.behavior.affected_symbols)
+        else:
+            behaviors = 0
 
         # 2. Service count (from dependency model)
         services = 0
@@ -172,11 +174,9 @@ class MetricsCompilationPass(OperationalCompilerPass):
         traversal_size = 0
         if model.dependency is not None:
             dependency = cast(DependencyModel, model.dependency)
-            traversal_size = (
-                len(dependency.callers)
-                + len(dependency.dependents)
-            )
-        traversal_size += len(model.repository.symbols)
+            traversal_size = len(dependency.callers) + len(dependency.dependents)
+        if hasattr(model.repository, "symbols"):
+            traversal_size += len(model.repository.symbols)
 
         metrics = DiscoveryMetrics(
             behaviors=behaviors,
@@ -199,7 +199,7 @@ class MetricsCompilationPass(OperationalCompilerPass):
             data=model.data,
             event=model.event,
             validation=model.validation,
-            api=model.api if hasattr(model, 'api') else None,
+            api=model.api if hasattr(model, "api") else None,
             metrics=metrics,
         )
 

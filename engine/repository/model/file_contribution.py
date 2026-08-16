@@ -1,7 +1,7 @@
 """File contribution - structural facts owned by a single source file."""
 
+import sys
 from dataclasses import dataclass, field
-from typing import Any
 
 from .repository_index import (
     CallEntry,
@@ -19,7 +19,7 @@ from .repository_index import (
 )
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class FileContribution:
     """
     Represents the structural facts owned by a single source file.
@@ -27,6 +27,7 @@ class FileContribution:
     This matches the structure of FileIndex but is named as a contribution
     to the patchable RepositoryGraph.
     """
+
     file_path: str
     language: str
     symbols: tuple[SymbolEntry, ...] = field(default_factory=tuple)
@@ -42,8 +43,17 @@ class FileContribution:
     configurations: tuple[ConfigEntry, ...] = field(default_factory=tuple)
     source_hash: str = ""
 
+    def __post_init__(self):
+        """Intern string fields after initialization."""
+        object.__setattr__(self, "file_path", sys.intern(self.file_path))
+        object.__setattr__(self, "language", sys.intern(self.language))
+        if self.source_hash:
+            object.__setattr__(self, "source_hash", sys.intern(self.source_hash))
+
     @classmethod
-    def from_file_index(cls, file_index: FileIndex, source_hash: str = "") -> "FileContribution":
+    def from_file_index(
+        cls, file_index: FileIndex, source_hash: str = ""
+    ) -> "FileContribution":
         """Create a FileContribution from a FileIndex."""
         return cls(
             file_path=file_index.path,

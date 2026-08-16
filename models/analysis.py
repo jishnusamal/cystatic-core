@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from .core import RepositoryReference, PullRequestReference, DiffSnapshot
+from .core import DiffSnapshot, PullRequestReference, RepositoryReference
 
 
 class AnalysisTrigger(str, Enum):

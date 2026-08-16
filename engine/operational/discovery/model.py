@@ -8,6 +8,7 @@ Rules:
 3. Evidence supports the statement — evidence never replaces it.
 4. The Discovery IR contains no rendering information (no markdown, HTML, GitHub formatting).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -21,6 +22,7 @@ class DiscoveryKind(str, Enum):
     Each kind represents a distinct category of engineering insight.
     Kinds determine how discoveries are grouped, ordered, and presented.
     """
+
     HIDDEN_RELATIONSHIP = "hidden_relationship"
     DOMINANT_EXECUTION = "dominant_execution"
     BOUNDARY_INVARIANT = "boundary_invariant"
@@ -51,6 +53,7 @@ class DiscoveryEvidence:
         description: Human-readable description of the evidence.
         evidence_ref: URI to the underlying compiler artifact.
     """
+
     source: str
     source_id: str
     description: str
@@ -66,6 +69,7 @@ class DiscoverySupport:
 
     Metrics support discoveries. Metrics are not discoveries.
     """
+
     # Core measurements
     execution_reach: int = 0
     fan_in: int = 0
@@ -117,6 +121,7 @@ class Discovery:
         evidence: Traceable evidence supporting the statement.
         metadata: Additional structured data.
     """
+
     id: str
     kind: DiscoveryKind
     statement: str
@@ -128,9 +133,9 @@ class Discovery:
     def __post_init__(self):
         """Normalize mutable defaults to immutable types."""
         if isinstance(self.evidence, list):
-            object.__setattr__(self, 'evidence', tuple(self.evidence))
+            object.__setattr__(self, "evidence", tuple(self.evidence))
         if isinstance(self.metadata, dict):
-            object.__setattr__(self, 'metadata', dict(self.metadata))
+            object.__setattr__(self, "metadata", dict(self.metadata))
         if self.importance < 0.0 or self.importance > 1.0:
             raise ValueError(f"Importance must be in [0.0, 1.0], got {self.importance}")
 
@@ -138,6 +143,7 @@ class Discovery:
 @dataclass(frozen=True)
 class DiscoverySummary:
     """Summary statistics for a set of discoveries."""
+
     total_discoveries: int = 0
     hidden_relationships: int = 0
     dominant_executions: int = 0
@@ -152,6 +158,7 @@ class DiscoverySummary:
 @dataclass(frozen=True)
 class DiscoveryMetadata:
     """Metadata about the discovery compilation."""
+
     compiler_version: str = "1.0.0"
     compiled_at: str = ""
     discovery_count: int = 0
@@ -173,17 +180,20 @@ class DiscoveryIR:
         summary: Summary statistics.
         evidence_index: All evidence indexed by discovery ID.
     """
+
     metadata: DiscoveryMetadata
     discoveries: tuple[Discovery, ...] = field(default_factory=tuple)
     summary: DiscoverySummary = field(default_factory=DiscoverySummary)
-    evidence_index: dict[str, tuple[DiscoveryEvidence, ...]] = field(default_factory=dict)
+    evidence_index: dict[str, tuple[DiscoveryEvidence, ...]] = field(
+        default_factory=dict
+    )
 
     def __post_init__(self):
         """Normalize mutable defaults to immutable types."""
         if isinstance(self.discoveries, list):
-            object.__setattr__(self, 'discoveries', tuple(self.discoveries))
+            object.__setattr__(self, "discoveries", tuple(self.discoveries))
         if isinstance(self.evidence_index, dict):
-            object.__setattr__(self, 'evidence_index', dict(self.evidence_index))
+            object.__setattr__(self, "evidence_index", dict(self.evidence_index))
 
     def get_discoveries_by_kind(self, kind: DiscoveryKind) -> tuple[Discovery, ...]:
         """Get all discoveries of a specific kind."""

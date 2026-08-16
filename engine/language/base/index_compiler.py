@@ -10,27 +10,16 @@ This is an embarrassingly parallel stage — each file is independent.
 """
 
 import time
+from collections.abc import Iterable
 from typing import Any
 
 from engine.language.base.file_context import FileContext
-from engine.language.base.passes import BaseIndexPass
 from engine.language.base.instrumentation import get_instrumentation
+from engine.language.base.passes import BaseIndexPass
 from engine.repository.model.repository_index import (
-    CallEntry,
-    ConfigEntry,
-    EntrypointEntry,
-    EventEntry,
     FileIndex,
-    ImportEntry,
-    PersistenceEntry,
-    RawReference,
     RepositoryIndex,
-    RepositoryMethodEntry,
-    SymbolEntry,
-    TestEntry,
-    TypeRelationshipEntry,
 )
-
 
 # Type alias for the mutable builder dict used during indexing.
 # Keys match FileIndex field names exactly.
@@ -102,17 +91,17 @@ class IndexCompiler:
 
     def compile(
         self,
-        file_contexts: list[FileContext],
+        file_contexts: Iterable[FileContext],
         language: str,
         metadata: dict[str, Any] | None = None,
     ) -> RepositoryIndex:
-        """Compile a list of FileContexts into a RepositoryIndex.
+        """Compile an iterable of FileContexts into a RepositoryIndex.
 
         Each file is processed exactly once by all passes.
         The resulting FileIndex entries are aggregated into a RepositoryIndex.
 
         Args:
-            file_contexts: List of FileContexts (one per parsed file)
+            file_contexts: Iterable of FileContexts (one per parsed file)
             language: Programming language identifier
             metadata: Additional repository-level metadata
 
@@ -126,20 +115,30 @@ class IndexCompiler:
             builder = _empty_builder(context.path, context.language)
             for pass_instance in self._passes:
                 pass_name = type(pass_instance).__name__
-                
+
                 start = time.perf_counter()
                 try:
                     pass_instance.process(context, builder)
                 finally:
                     elapsed = time.perf_counter() - start
                     inst.record_pass_time(pass_name, elapsed, context.path)
-                    
+
                     # Count objects emitted
-                    for key in ['symbols', 'imports', 'calls', 'entrypoints', 'persistence_models', 
-                                'events', 'tests', 'configurations']:
+                    for key in [
+                        "symbols",
+                        "imports",
+                        "calls",
+                        "entrypoints",
+                        "persistence_models",
+                        "events",
+                        "tests",
+                        "configurations",
+                    ]:
                         if key in builder:
-                            inst.increment_counter(pass_name, f"{key}_emitted", len(builder[key]))
-            
+                            inst.increment_counter(
+                                pass_name, f"{key}_emitted", len(builder[key])
+                            )
+
             file_indices.append(_builder_to_file_index(builder))
 
         return RepositoryIndex(
@@ -152,18 +151,18 @@ class IndexCompiler:
 
     def compile_with_visitor(
         self,
-        file_contexts: list[FileContext],
+        file_contexts: Iterable[FileContext],
         language: str,
         visitor: Any,
         metadata: dict[str, Any] | None = None,
     ) -> RepositoryIndex:
-        """Compile a list of FileContexts using a composite visitor.
+        """Compile an iterable of FileContexts using a composite visitor.
 
         This method enables single AST traversal per file. The visitor
         walks each AST once and dispatches to all registered indexing passes.
 
         Args:
-            file_contexts: List of FileContexts (one per parsed file)
+            file_contexts: Iterable of FileContexts (one per parsed file)
             language: Programming language identifier
             visitor: Composite visitor that walks AST and dispatches to passes
             metadata: Additional repository-level metadata
@@ -176,7 +175,7 @@ class IndexCompiler:
 
         for context in file_contexts:
             builder = _empty_builder(context.path, context.language)
-            
+
             # Time the visitor execution
             start = time.perf_counter()
             try:
@@ -184,7 +183,7 @@ class IndexCompiler:
             finally:
                 elapsed = time.perf_counter() - start
                 inst.record_pass_time("Visitor", elapsed, context.path)
-            
+
             file_indices.append(_builder_to_file_index(builder))
 
         return RepositoryIndex(

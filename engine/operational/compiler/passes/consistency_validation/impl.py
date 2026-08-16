@@ -13,7 +13,6 @@ Checks:
 This is compiler validation, not business validation.
 """
 
-from typing import cast
 
 from engine.operational.compiler.passes.base import (
     OperationalCompilerPass,
@@ -67,32 +66,31 @@ class ConsistencyValidationPass(OperationalCompilerPass):
         errors: list[str] = []
 
         # Get symbol IDs from both base and head repositories for cross-model validation
-        head_symbol_ids = {s.id for s in model.repository.symbols}
-        base_symbol_ids: frozenset[str] = frozenset()
-        if context.repository_delta is not None:
-            base_symbol_ids = context.repository_delta.get_base_symbol_ids()
+        if hasattr(model.repository, "symbols"):
+            head_symbol_ids = {s.id for s in model.repository.symbols}
+        else:
+            head_symbol_ids = None
 
-        # 1. Validate changed symbols using cross-model validation
-        errors.extend(
-            self._validate_changed_symbols_cross_model(
-                model, base_symbol_ids, head_symbol_ids
+        if head_symbol_ids is not None:
+            base_symbol_ids: frozenset[str] = frozenset()
+            if context.repository_delta is not None:
+                base_symbol_ids = context.repository_delta.get_base_symbol_ids()
+
+            # 1. Validate changed symbols using cross-model validation
+            errors.extend(
+                self._validate_changed_symbols_cross_model(
+                    model, base_symbol_ids, head_symbol_ids
+                )
             )
-        )
 
-        # 2. Every behavior references valid symbols (in head repository)
-        errors.extend(
-            self._validate_behavior_symbols(model, head_symbol_ids)
-        )
+            # 2. Every behavior references valid symbols (in head repository)
+            errors.extend(self._validate_behavior_symbols(model, head_symbol_ids))
 
-        # 3. Every entry point belongs to RepositoryModel
-        errors.extend(
-            self._validate_entry_points(model, head_symbol_ids)
-        )
+            # 3. Every entry point belongs to RepositoryModel
+            errors.extend(self._validate_entry_points(model, head_symbol_ids))
 
-        # 4. Every execution graph references known nodes
-        errors.extend(
-            self._validate_execution_graphs(model, head_symbol_ids)
-        )
+            # 4. Every execution graph references known nodes
+            errors.extend(self._validate_execution_graphs(model, head_symbol_ids))
 
         context.consistency_errors = errors
         return context
@@ -211,7 +209,11 @@ class ConsistencyValidationPass(OperationalCompilerPass):
         """Check that every entry point handler exists in the repository."""
         errors: list[str] = []
 
-        for entry_point in model.repository.entry_points:
+        entry_points = getattr(model.repository, "entry_points", ())
+        if not entry_points and hasattr(model.repository, "get_entry_points"):
+            entry_points = model.repository.get_entry_points()
+
+        for entry_point in entry_points:
             if entry_point.handler_id not in known_symbol_ids:
                 errors.append(
                     f"Entry point '{entry_point.route}' references unknown "

@@ -20,8 +20,8 @@ class PythonTestExtractor(BaseExtractor):
     file, line, fixtures, assertions.
     """
 
-    PYTEST_PREFIX = 'test_'
-    UNITTEST_BASE = 'TestCase'
+    PYTEST_PREFIX = "test_"
+    UNITTEST_BASE = "TestCase"
 
     def extract(self, tree: ast.AST, file_path: str) -> list[dict[str, Any]]:
         """
@@ -50,36 +50,41 @@ class PythonTestExtractor(BaseExtractor):
 
         return tests
 
-    def _collect_fixtures(self, tree: ast.AST, file_path: str) -> dict[str, dict[str, Any]]:
+    def _collect_fixtures(
+        self, tree: ast.AST, file_path: str
+    ) -> dict[str, dict[str, Any]]:
         """Collect all pytest fixture definitions."""
         fixtures = {}
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef):
                 decorators = self._get_decorator_names(node)
-                if 'fixture' in decorators:
-                    scope = 'function'
+                if "fixture" in decorators:
+                    scope = "function"
                     for dec in node.decorator_list:
                         if isinstance(dec, ast.Call) and dec.args:
                             for kw in dec.keywords:
-                                if kw.arg == 'scope' and isinstance(kw.value, ast.Constant):
+                                if kw.arg == "scope" and isinstance(
+                                    kw.value, ast.Constant
+                                ):
                                     scope = str(kw.value.value)
 
                     fixtures[node.name] = {
-                        'name': node.name,
-                        'scope': scope,
-                        'symbol_id': f"python://{file_path}::{node.name}",
-                        'file': file_path,
-                        'line': node.lineno,
+                        "name": node.name,
+                        "scope": scope,
+                        "symbol_id": f"python://{file_path}::{node.name}",
+                        "file": file_path,
+                        "line": node.lineno,
                     }
         return fixtures
 
-    def _extract_test_function(self, node: ast.FunctionDef, file_path: str,
-                               fixtures: dict) -> dict[str, Any] | None:
+    def _extract_test_function(
+        self, node: ast.FunctionDef, file_path: str, fixtures: dict
+    ) -> dict[str, Any] | None:
         """Extract a test function definition."""
         framework = self._detect_framework(node)
 
         # Not a test function
-        if framework == 'unknown':
+        if framework == "unknown":
             return None
 
         symbol_id = f"python://{file_path}::{node.name}"
@@ -87,21 +92,22 @@ class PythonTestExtractor(BaseExtractor):
         assertions = self._find_assertions(node)
 
         return {
-            'symbol_id': symbol_id,
-            'name': node.name,
-            'kind': 'function',
-            'framework': framework,
-            'file': file_path,
-            'line': node.lineno,
-            'fixtures': used_fixtures,
-            'assertions': assertions,
+            "symbol_id": symbol_id,
+            "name": node.name,
+            "kind": "function",
+            "framework": framework,
+            "file": file_path,
+            "line": node.lineno,
+            "fixtures": used_fixtures,
+            "assertions": assertions,
         }
 
-    def _extract_test_class(self, node: ast.ClassDef, file_path: str,
-                            fixtures: dict) -> dict[str, Any] | None:
+    def _extract_test_class(
+        self, node: ast.ClassDef, file_path: str, fixtures: dict
+    ) -> dict[str, Any] | None:
         """Extract a test class definition with its test methods."""
         framework = self._detect_class_framework(node)
-        if framework == 'unknown':
+        if framework == "unknown":
             return None
 
         class_symbol_id = f"python://{file_path}#{node.name}"
@@ -109,53 +115,55 @@ class PythonTestExtractor(BaseExtractor):
 
         for child in node.body:
             if isinstance(child, ast.FunctionDef):
-                if child.name.startswith('test_') or child.name.startswith('test'):
+                if child.name.startswith("test_") or child.name.startswith("test"):
                     method_sym = f"python://{file_path}#{node.name}.{child.name}"
                     used_fixtures = self._find_used_fixtures(child, fixtures)
                     assertions = self._find_assertions(child)
 
-                    test_methods.append({
-                        'symbol_id': method_sym,
-                        'name': child.name,
-                        'kind': 'method',
-                        'framework': framework,
-                        'file': file_path,
-                        'line': child.lineno,
-                        'fixtures': used_fixtures,
-                        'assertions': assertions,
-                    })
+                    test_methods.append(
+                        {
+                            "symbol_id": method_sym,
+                            "name": child.name,
+                            "kind": "method",
+                            "framework": framework,
+                            "file": file_path,
+                            "line": child.lineno,
+                            "fixtures": used_fixtures,
+                            "assertions": assertions,
+                        }
+                    )
 
         return {
-            'symbol_id': class_symbol_id,
-            'name': node.name,
-            'kind': 'class',
-            'framework': framework,
-            'file': file_path,
-            'line': node.lineno,
-            'fixtures': [],
-            'assertions': [],
-            'test_methods': test_methods,
+            "symbol_id": class_symbol_id,
+            "name": node.name,
+            "kind": "class",
+            "framework": framework,
+            "file": file_path,
+            "line": node.lineno,
+            "fixtures": [],
+            "assertions": [],
+            "test_methods": test_methods,
         }
 
     def _detect_framework(self, node: ast.FunctionDef) -> str:
         """Detect the test framework for a function."""
         if node.name.startswith(self.PYTEST_PREFIX):
-            return 'pytest'
-        return 'unknown'
+            return "pytest"
+        return "unknown"
 
     def _detect_class_framework(self, node: ast.ClassDef) -> str:
         """Detect the test framework for a class."""
         # Check for unittest TestCase inheritance
         for base in node.bases:
             base_str = self._base_to_string(base)
-            if 'TestCase' in base_str:
-                return 'unittest'
+            if "TestCase" in base_str:
+                return "unittest"
 
         # Check for pytest naming convention
-        if node.name.startswith('Test'):
-            return 'pytest'
+        if node.name.startswith("Test"):
+            return "pytest"
 
-        return 'unknown'
+        return "unknown"
 
     def _base_to_string(self, node: ast.AST) -> str:
         """Convert a base class node to a string representation."""
@@ -169,8 +177,8 @@ class PythonTestExtractor(BaseExtractor):
                 current = current.value
             if isinstance(current, ast.Name):
                 parts.append(current.id)
-            return '.'.join(reversed(parts))
-        return ''
+            return ".".join(reversed(parts))
+        return ""
 
     def _get_decorator_names(self, node: ast.FunctionDef) -> list[str]:
         """Get decorator names from a function."""
@@ -186,8 +194,9 @@ class PythonTestExtractor(BaseExtractor):
                     decorators.append(dec.func.id)
         return decorators
 
-    def _find_used_fixtures(self, node: ast.FunctionDef,
-                            fixtures: dict) -> list[dict[str, Any]]:
+    def _find_used_fixtures(
+        self, node: ast.FunctionDef, fixtures: dict
+    ) -> list[dict[str, Any]]:
         """Find which fixtures are used by a test function."""
         used = []
         for child in ast.walk(node):
@@ -202,9 +211,20 @@ class PythonTestExtractor(BaseExtractor):
             if isinstance(child, ast.Call):
                 if isinstance(child.func, ast.Attribute):
                     name = child.func.attr
-                    if name.startswith('assert') or name in ('assertEqual', 'assertTrue',
-                           'assertFalse', 'assertIs', 'assertIsNot', 'assertIsNone',
-                           'assertIsNotNone', 'assertIn', 'assertNotIn', 'assertRaises',
-                           'assertGreater', 'assertLess', 'fail'):
+                    if name.startswith("assert") or name in (
+                        "assertEqual",
+                        "assertTrue",
+                        "assertFalse",
+                        "assertIs",
+                        "assertIsNot",
+                        "assertIsNone",
+                        "assertIsNotNone",
+                        "assertIn",
+                        "assertNotIn",
+                        "assertRaises",
+                        "assertGreater",
+                        "assertLess",
+                        "fail",
+                    ):
                         assertions.add(name)
         return list(assertions)

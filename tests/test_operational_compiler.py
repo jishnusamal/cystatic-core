@@ -1,47 +1,47 @@
 """Tests for the Operational Compiler."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
-
 from engine.language.model import (
+    CallEdge,
+    CallGraph,
+    EntryPoint,
+    EntryPointKind,
+    ReferenceGraph,
     RepositoryModel,
     Symbol,
     SymbolKind,
     SymbolVisibility,
-    CallGraph,
-    CallEdge,
-    ReferenceGraph,
-    EntryPoint,
-    EntryPointKind,
 )
-from engine.change.model import (
-    ChangeModel,
-    ModifiedSymbol,
-    ImportChange,
-    EndpointChange,
-)
+
 from engine.behavior.model import (
     Behavior,
     BehaviorKind,
     BehaviorModel,
+    ExecutionEdge,
     ExecutionGraph,
     ExecutionNode,
-    ExecutionEdge,
 )
-from engine.operational.model import OperationalChangeModel
+from engine.change.model import (
+    ChangeModel,
+    EndpointChange,
+    ImportChange,
+    ModifiedSymbol,
+)
 from engine.operational.compiler import OperationalCompiler
 from engine.operational.compiler.passes import (
-    ModelCompositionPass,
     ConsistencyValidationPass,
+    ModelCompositionPass,
     OperationalPassContext,
 )
-
+from engine.operational.model import OperationalChangeModel
 
 # ---------------------------------------------------------------------------
 # Test helpers
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class TestHelper:
@@ -117,6 +117,7 @@ class TestHelper:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def sample_symbols():
@@ -208,6 +209,7 @@ def sample_operational_model(
 # Tests: OperationalChangeModel
 # ---------------------------------------------------------------------------
 
+
 class TestOperationalChangeModel:
     """Tests for the OperationalChangeModel dataclass."""
 
@@ -217,7 +219,9 @@ class TestOperationalChangeModel:
         assert model.has_all_required_models()
         assert model.populated_optional_models == ()
 
-    def test_required_models_present(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_required_models_present(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test that has_all_required_models returns True when all set."""
         model = OperationalChangeModel(
             repository=sample_repository_model,
@@ -291,6 +295,7 @@ class TestOperationalChangeModel:
 # Tests: ModelCompositionPass
 # ---------------------------------------------------------------------------
 
+
 class TestModelCompositionPass:
     """Tests for the Model Composition pass."""
 
@@ -299,7 +304,9 @@ class TestModelCompositionPass:
         pass_ = ModelCompositionPass()
         assert pass_.name == "model_composition"
 
-    def test_compose_models(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_compose_models(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test composing all three models into one."""
         pass_ = ModelCompositionPass()
         context = OperationalPassContext(
@@ -351,7 +358,9 @@ class TestModelCompositionPass:
         with pytest.raises(ValueError, match="missing.*behavior_model"):
             pass_.run(context)
 
-    def test_validate_input(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_validate_input(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test validate_input returns True when all present."""
         pass_ = ModelCompositionPass()
         context = OperationalPassContext(
@@ -372,6 +381,7 @@ class TestModelCompositionPass:
 # Tests: ConsistencyValidationPass
 # ---------------------------------------------------------------------------
 
+
 class TestConsistencyValidationPass:
     """Tests for the Consistency Validation pass."""
 
@@ -390,7 +400,9 @@ class TestConsistencyValidationPass:
 
         assert len(result.consistency_errors) == 0
 
-    def test_changed_symbol_not_in_repository(self, sample_repository_model, sample_behavior_model):
+    def test_changed_symbol_not_in_repository(
+        self, sample_repository_model, sample_behavior_model
+    ):
         """Test detecting a changed symbol not in the repository."""
         pass_ = ConsistencyValidationPass()
 
@@ -417,7 +429,9 @@ class TestConsistencyValidationPass:
         assert len(result.consistency_errors) >= 1
         assert any("ghost" in err for err in result.consistency_errors)
 
-    def test_behavior_root_symbol_not_in_repository(self, sample_repository_model, sample_change_model):
+    def test_behavior_root_symbol_not_in_repository(
+        self, sample_repository_model, sample_change_model
+    ):
         """Test detecting a behavior referencing unknown root symbol."""
         pass_ = ConsistencyValidationPass()
 
@@ -447,7 +461,9 @@ class TestConsistencyValidationPass:
         assert len(result.consistency_errors) >= 1
         assert any("spooky" in err for err in result.consistency_errors)
 
-    def test_entry_point_handler_not_in_repository(self, sample_change_model, sample_behavior_model):
+    def test_entry_point_handler_not_in_repository(
+        self, sample_change_model, sample_behavior_model
+    ):
         """Test detecting an entry point handler not in repository."""
         pass_ = ConsistencyValidationPass()
 
@@ -475,7 +491,9 @@ class TestConsistencyValidationPass:
         assert len(result.consistency_errors) >= 1
         assert any("handler" in err for err in result.consistency_errors)
 
-    def test_execution_graph_unknown_node(self, sample_repository_model, sample_change_model):
+    def test_execution_graph_unknown_node(
+        self, sample_repository_model, sample_change_model
+    ):
         """Test detecting an execution graph with unknown node."""
         pass_ = ConsistencyValidationPass()
 
@@ -504,7 +522,9 @@ class TestConsistencyValidationPass:
         assert len(result.consistency_errors) >= 1
         assert any("phantom" in err for err in result.consistency_errors)
 
-    def test_execution_graph_edge_invalid_node(self, sample_repository_model, sample_change_model, sample_symbols):
+    def test_execution_graph_edge_invalid_node(
+        self, sample_repository_model, sample_change_model, sample_symbols
+    ):
         """Test detecting an execution graph edge referencing non-existent node."""
         pass_ = ConsistencyValidationPass()
 
@@ -567,6 +587,7 @@ class TestConsistencyValidationPass:
 # Tests: OperationalCompiler
 # ---------------------------------------------------------------------------
 
+
 class TestOperationalCompiler:
     """Tests for the OperationalCompiler."""
 
@@ -588,7 +609,9 @@ class TestOperationalCompiler:
         assert "validation_compilation" in names
         assert "metrics_compilation" in names
 
-    def test_full_compilation(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_full_compilation(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test a full compilation pipeline."""
         compiler = OperationalCompiler()
         result = compiler.compile(
@@ -603,7 +626,9 @@ class TestOperationalCompiler:
         assert result.behavior == sample_behavior_model
         assert result.has_all_required_models()
 
-    def test_consistency_error_raises(self, sample_repository_model, sample_behavior_model):
+    def test_consistency_error_raises(
+        self, sample_repository_model, sample_behavior_model
+    ):
         """Test that consistency errors raise ValueError."""
         compiler = OperationalCompiler()
 
@@ -646,7 +671,9 @@ class TestOperationalCompiler:
         assert result is None
         assert len(errors) >= 1
 
-    def test_compile_with_errors_success(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_compile_with_errors_success(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test compile_with_errors returns model on success."""
         compiler = OperationalCompiler()
 
@@ -660,7 +687,9 @@ class TestOperationalCompiler:
         assert len(errors) == 0
         assert isinstance(result, OperationalChangeModel)
 
-    def test_deterministic_output(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_deterministic_output(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test that compilation is deterministic."""
         compiler = OperationalCompiler()
 
@@ -705,7 +734,9 @@ class TestOperationalCompiler:
         assert isinstance(result, OperationalChangeModel)
         assert len(result.change.added_symbols) == 0
 
-    def test_full_compilation_enriches_all_models(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_full_compilation_enriches_all_models(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test that full compilation populates all optional models."""
         compiler = OperationalCompiler()
         result = compiler.compile(
@@ -729,7 +760,9 @@ class TestOperationalCompiler:
         assert "api" in optional
         assert "validation" in optional
 
-    def test_full_compilation_dependency_model(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_full_compilation_dependency_model(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test that dependency model is populated with correct structure."""
         compiler = OperationalCompiler()
         result = compiler.compile(
@@ -749,7 +782,9 @@ class TestOperationalCompiler:
         assert hasattr(dep, "fan_out")
         assert hasattr(dep, "dependency_depth")
 
-    def test_full_compilation_data_model(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_full_compilation_data_model(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test that data model is populated with correct structure."""
         compiler = OperationalCompiler()
         result = compiler.compile(
@@ -768,7 +803,9 @@ class TestOperationalCompiler:
         assert hasattr(data, "caches")
         assert hasattr(data, "external_storage")
 
-    def test_full_compilation_event_model(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_full_compilation_event_model(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test that event model is populated with correct structure."""
         compiler = OperationalCompiler()
         result = compiler.compile(
@@ -786,7 +823,9 @@ class TestOperationalCompiler:
         assert hasattr(event, "async_chains")
         assert hasattr(event, "event_graph")
 
-    def test_full_compilation_api_model(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_full_compilation_api_model(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test that API model is populated with correct structure."""
         compiler = OperationalCompiler()
         result = compiler.compile(
@@ -804,7 +843,9 @@ class TestOperationalCompiler:
         assert hasattr(api, "cron")
         assert hasattr(api, "workers")
 
-    def test_full_compilation_validation_model(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_full_compilation_validation_model(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test that validation model is populated with correct structure."""
         compiler = OperationalCompiler()
         result = compiler.compile(
@@ -822,7 +863,9 @@ class TestOperationalCompiler:
         assert hasattr(validation, "production_replays")
         assert hasattr(validation, "coverage_links")
 
-    def test_discovery_metrics_in_context(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_discovery_metrics_in_context(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test that discovery metrics are stored in pass context metadata."""
         compiler = OperationalCompiler()
         result = compiler.compile(
@@ -845,25 +888,35 @@ class TestOperationalCompiler:
 # Tests: DependencyCompilationPass
 # ---------------------------------------------------------------------------
 
+
 class TestDependencyCompilationPass:
     """Tests for the Dependency Analysis pass."""
 
     def test_pass_name(self):
         """Test the pass name property."""
-        from engine.operational.compiler.passes.dependency import DependencyCompilationPass
+        from engine.operational.compiler.passes.dependency import (
+            DependencyCompilationPass,
+        )
+
         pass_ = DependencyCompilationPass()
         assert pass_.name == "dependency_compilation"
 
     def test_validate_input_no_model(self):
         """Test validate_input returns False when no composed model."""
-        from engine.operational.compiler.passes.dependency import DependencyCompilationPass
+        from engine.operational.compiler.passes.dependency import (
+            DependencyCompilationPass,
+        )
+
         pass_ = DependencyCompilationPass()
         context = OperationalPassContext()
         assert pass_.validate_input(context) is False
 
     def test_validate_input_with_model(self, sample_operational_model):
         """Test validate_input returns True when composed model present."""
-        from engine.operational.compiler.passes.dependency import DependencyCompilationPass
+        from engine.operational.compiler.passes.dependency import (
+            DependencyCompilationPass,
+        )
+
         pass_ = DependencyCompilationPass()
         context = OperationalPassContext()
         context.composed_model = sample_operational_model
@@ -871,7 +924,10 @@ class TestDependencyCompilationPass:
 
     def test_dependency_model_creation(self, sample_operational_model):
         """Test that dependency analysis produces a DependencyModel."""
-        from engine.operational.compiler.passes.dependency import DependencyCompilationPass
+        from engine.operational.compiler.passes.dependency import (
+            DependencyCompilationPass,
+        )
+
         pass_ = DependencyCompilationPass()
         context = OperationalPassContext()
         context.composed_model = sample_operational_model
@@ -886,9 +942,14 @@ class TestDependencyCompilationPass:
         assert hasattr(dep, "dependents")
         assert hasattr(dep, "dependency_depth")
 
-    def test_dependency_model_empty_behavior(self, sample_repository_model, sample_change_model):
+    def test_dependency_model_empty_behavior(
+        self, sample_repository_model, sample_change_model
+    ):
         """Test dependency analysis with empty behavior model."""
-        from engine.operational.compiler.passes.dependency import DependencyCompilationPass
+        from engine.operational.compiler.passes.dependency import (
+            DependencyCompilationPass,
+        )
+
         pass_ = DependencyCompilationPass()
         behavior_model = TestHelper.create_behavior_model()
         model = OperationalChangeModel(
@@ -910,18 +971,21 @@ class TestDependencyCompilationPass:
 # Tests: DataCompilationPass
 # ---------------------------------------------------------------------------
 
+
 class TestDataCompilationPass:
     """Tests for the Data Analysis pass."""
 
     def test_pass_name(self):
         """Test the pass name property."""
         from engine.operational.compiler.passes.data import DataCompilationPass
+
         pass_ = DataCompilationPass()
         assert pass_.name == "data_compilation"
 
     def test_validate_input_no_model(self):
         """Test validate_input returns False when no composed model."""
         from engine.operational.compiler.passes.data import DataCompilationPass
+
         pass_ = DataCompilationPass()
         context = OperationalPassContext()
         assert pass_.validate_input(context) is False
@@ -929,6 +993,7 @@ class TestDataCompilationPass:
     def test_data_model_creation(self, sample_operational_model):
         """Test that data analysis produces a DataModel."""
         from engine.operational.compiler.passes.data import DataCompilationPass
+
         pass_ = DataCompilationPass()
         context = OperationalPassContext()
         context.composed_model = sample_operational_model
@@ -942,9 +1007,12 @@ class TestDataCompilationPass:
         assert hasattr(data, "reads")
         assert hasattr(data, "writes")
 
-    def test_data_model_with_model_class(self, sample_repository_model, sample_change_model):
+    def test_data_model_with_model_class(
+        self, sample_repository_model, sample_change_model
+    ):
         """Test data analysis detects model classes when reachable."""
         from engine.operational.compiler.passes.data import DataCompilationPass
+
         pass_ = DataCompilationPass()
 
         # Create a model class symbol that is also an affected symbol
@@ -990,18 +1058,21 @@ class TestDataCompilationPass:
 # Tests: EventCompilationPass
 # ---------------------------------------------------------------------------
 
+
 class TestEventCompilationPass:
     """Tests for the Event Analysis pass."""
 
     def test_pass_name(self):
         """Test the pass name property."""
         from engine.operational.compiler.passes.events import EventCompilationPass
+
         pass_ = EventCompilationPass()
         assert pass_.name == "event_compilation"
 
     def test_validate_input_no_model(self):
         """Test validate_input returns False when no composed model."""
         from engine.operational.compiler.passes.events import EventCompilationPass
+
         pass_ = EventCompilationPass()
         context = OperationalPassContext()
         assert pass_.validate_input(context) is False
@@ -1009,6 +1080,7 @@ class TestEventCompilationPass:
     def test_event_model_creation(self, sample_operational_model):
         """Test that event analysis produces an EventModel."""
         from engine.operational.compiler.passes.events import EventCompilationPass
+
         pass_ = EventCompilationPass()
         context = OperationalPassContext()
         context.composed_model = sample_operational_model
@@ -1027,18 +1099,21 @@ class TestEventCompilationPass:
 # Tests: APICompilationPass
 # ---------------------------------------------------------------------------
 
+
 class TestAPICompilationPass:
     """Tests for the API Analysis pass."""
 
     def test_pass_name(self):
         """Test the pass name property."""
         from engine.operational.compiler.passes.api import APICompilationPass
+
         pass_ = APICompilationPass()
         assert pass_.name == "api_compilation"
 
     def test_validate_input_no_model(self):
         """Test validate_input returns False when no composed model."""
         from engine.operational.compiler.passes.api import APICompilationPass
+
         pass_ = APICompilationPass()
         context = OperationalPassContext()
         assert pass_.validate_input(context) is False
@@ -1046,6 +1121,7 @@ class TestAPICompilationPass:
     def test_api_model_creation(self, sample_operational_model):
         """Test that API analysis produces an APIModel."""
         from engine.operational.compiler.passes.api import APICompilationPass
+
         pass_ = APICompilationPass()
         context = OperationalPassContext()
         context.composed_model = sample_operational_model
@@ -1061,9 +1137,12 @@ class TestAPICompilationPass:
         assert hasattr(api, "cron")
         assert hasattr(api, "workers")
 
-    def test_api_model_detects_rest_endpoint(self, sample_repository_model, sample_change_model, sample_behavior_model):
+    def test_api_model_detects_rest_endpoint(
+        self, sample_repository_model, sample_change_model, sample_behavior_model
+    ):
         """Test that API analysis detects affected REST endpoints."""
         from engine.operational.compiler.passes.api import APICompilationPass
+
         pass_ = APICompilationPass()
 
         model = OperationalChangeModel(
@@ -1086,25 +1165,35 @@ class TestAPICompilationPass:
 # Tests: ValidationCompilationPass
 # ---------------------------------------------------------------------------
 
+
 class TestValidationCompilationPass:
     """Tests for the Validation Analysis pass."""
 
     def test_pass_name(self):
         """Test the pass name property."""
-        from engine.operational.compiler.passes.validation import ValidationCompilationPass
+        from engine.operational.compiler.passes.validation import (
+            ValidationCompilationPass,
+        )
+
         pass_ = ValidationCompilationPass()
         assert pass_.name == "validation_compilation"
 
     def test_validate_input_no_model(self):
         """Test validate_input returns False when no composed model."""
-        from engine.operational.compiler.passes.validation import ValidationCompilationPass
+        from engine.operational.compiler.passes.validation import (
+            ValidationCompilationPass,
+        )
+
         pass_ = ValidationCompilationPass()
         context = OperationalPassContext()
         assert pass_.validate_input(context) is False
 
     def test_validation_model_creation(self, sample_operational_model):
         """Test that validation analysis produces a ValidationModel."""
-        from engine.operational.compiler.passes.validation import ValidationCompilationPass
+        from engine.operational.compiler.passes.validation import (
+            ValidationCompilationPass,
+        )
+
         pass_ = ValidationCompilationPass()
         context = OperationalPassContext()
         context.composed_model = sample_operational_model
@@ -1125,18 +1214,21 @@ class TestValidationCompilationPass:
 # Tests: MetricsCompilationPass
 # ---------------------------------------------------------------------------
 
+
 class TestMetricsCompilationPass:
     """Tests for the Discovery Metrics pass."""
 
     def test_pass_name(self):
         """Test the pass name property."""
         from engine.operational.compiler.passes.metrics import MetricsCompilationPass
+
         pass_ = MetricsCompilationPass()
         assert pass_.name == "metrics_compilation"
 
     def test_validate_input_no_model(self):
         """Test validate_input returns False when no composed model."""
         from engine.operational.compiler.passes.metrics import MetricsCompilationPass
+
         pass_ = MetricsCompilationPass()
         context = OperationalPassContext()
         assert pass_.validate_input(context) is False
@@ -1144,6 +1236,7 @@ class TestMetricsCompilationPass:
     def test_metrics_in_metadata(self, sample_operational_model):
         """Test that metrics are stored in context metadata."""
         from engine.operational.compiler.passes.metrics import MetricsCompilationPass
+
         pass_ = MetricsCompilationPass()
         context = OperationalPassContext()
         context.composed_model = sample_operational_model
@@ -1165,6 +1258,7 @@ class TestMetricsCompilationPass:
     def test_metrics_counts(self, sample_operational_model):
         """Test that metrics counts are reasonable."""
         from engine.operational.compiler.passes.metrics import MetricsCompilationPass
+
         pass_ = MetricsCompilationPass()
         context = OperationalPassContext()
         context.composed_model = sample_operational_model

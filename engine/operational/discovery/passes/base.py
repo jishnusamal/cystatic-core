@@ -1,12 +1,13 @@
 """Base classes for discovery compiler passes."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
-from engine.operational.model import EngineeringDiscoveryModel
 from engine.operational.discovery.model import Discovery, DiscoveryIR
+from engine.operational.model import EngineeringDiscoveryModel
 
 
 @dataclass
@@ -46,7 +47,6 @@ class DiscoveryCompilerPass(ABC):
     @abstractmethod
     def name(self) -> str:
         """Return the name of this pass."""
-        pass
 
     @abstractmethod
     def run(self, context: DiscoveryPassContext) -> DiscoveryPassContext:
@@ -58,7 +58,6 @@ class DiscoveryCompilerPass(ABC):
         Returns:
             Updated pass context with new discoveries appended.
         """
-        pass
 
     def validate_input(self, context: DiscoveryPassContext) -> bool:
         """Validate that the context has required inputs for this pass."""

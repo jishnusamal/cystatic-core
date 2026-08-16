@@ -19,7 +19,7 @@ from integrations.github.webhooks import GitHubWebhookProvider
 
 class GitHubIntegration:
     """High-level façade for GitHub integration.
-    
+
     Internally composes:
     - Auth
     - Client
@@ -27,7 +27,7 @@ class GitHubIntegration:
     - Webhook
     - Comment
     """
-    
+
     def __init__(
         self,
         app_id: str | None = None,
@@ -36,7 +36,7 @@ class GitHubIntegration:
         webhook_secret: str | None = None,
     ) -> None:
         """Initialize GitHub integration.
-        
+
         Args:
             app_id: GitHub App ID
             private_key: GitHub App private key
@@ -48,35 +48,35 @@ class GitHubIntegration:
             private_key=private_key or "",
             client_secret=client_secret,
         )
-        
+
         self.client = GitHubClient()
         self.webhook_secret = webhook_secret
-        
+
         # Initialize providers
         self._repository_provider = GitHubRepositoryProvider(auth=self.auth)
         self._webhook_provider = GitHubWebhookProvider(secret=webhook_secret)
         self._comment_provider = GitHubCommentProvider(auth=self.auth)
         self._installation_provider = self.auth  # type: ignore[assignment,return-value]
-    
+
     def get_repository_provider(self) -> RepositoryProvider:
         """Get the repository provider."""
         return self._repository_provider
-    
+
     def get_event_provider(self) -> EventProvider:
         """Get the event provider."""
         return self._webhook_provider
-    
+
     def get_installation_provider(self) -> InstallationProvider:
         """Get the installation provider for this integration."""
         return self._installation_provider  # type: ignore[return-value]
-    
+
     def get_output_provider(self) -> OutputProvider:
         """Get the output provider."""
         return self._comment_provider
-    
+
     def register(self, registry: Any) -> None:
         """Register all providers with the integration registry.
-        
+
         Args:
             registry: IntegrationRegistry instance
         """

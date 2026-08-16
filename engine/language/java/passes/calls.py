@@ -23,7 +23,7 @@ class JavaCallIndexPass(BaseIndexPass):
         lines = context.ast
         file_path = context.path
 
-        call_pattern = r'(\w+)\.(\w+)\s*\('
+        call_pattern = r"(\w+)\.(\w+)\s*\("
 
         for i, line in enumerate(lines, 1):
             for match in re.finditer(call_pattern, line):
@@ -31,7 +31,7 @@ class JavaCallIndexPass(BaseIndexPass):
                 callee_name = match.group(2)
 
                 # Skip common noise
-                if callee_name in ('main', 'println', 'print'):
+                if callee_name in ("main", "println", "print"):
                     continue
 
                 builder["calls"].append(

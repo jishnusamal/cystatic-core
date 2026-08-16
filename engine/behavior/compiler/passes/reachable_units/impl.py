@@ -1,7 +1,8 @@
 """Reachable Units Pass - identifies execution units reachable from changed symbols."""
 
+from engine.behavior.model import ExecutionGraph, ExecutionUnit
+
 from ..base import BehaviorCompilerPass, BehaviorPassContext
-from engine.behavior.model import ExecutionUnit, ExecutionGraph
 
 
 class ReachableUnitsPass(BehaviorCompilerPass):

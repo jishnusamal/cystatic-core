@@ -19,28 +19,33 @@ Every pass:
     - Never performs duplicate graph traversal
     - Is independently testable
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from engine.operational.model import EngineeringDiscoveryModel
 from engine.operational.discovery.model import (
+    DiscoveryEvidence,
     DiscoveryIR,
-    Discovery,
     DiscoveryMetadata,
     DiscoverySummary,
-    DiscoveryEvidence,
 )
-from engine.operational.discovery.passes.base import DiscoveryPassContext, DiscoveryCompilerPass
-from engine.operational.discovery.passes.hidden_relationship import HiddenRelationshipPass
-from engine.operational.discovery.passes.dominant_execution import DominantExecutionPass
+from engine.operational.discovery.passes.base import (
+    DiscoveryCompilerPass,
+    DiscoveryPassContext,
+)
 from engine.operational.discovery.passes.boundary_invariant import BoundaryInvariantPass
-from engine.operational.discovery.passes.validation_gap import ValidationGapPass
+from engine.operational.discovery.passes.compression import CompressionPass
+from engine.operational.discovery.passes.dominant_execution import DominantExecutionPass
+from engine.operational.discovery.passes.hidden_relationship import (
+    HiddenRelationshipPass,
+)
+from engine.operational.discovery.passes.ranking import RankingPass
 from engine.operational.discovery.passes.shared_execution import SharedExecutionPass
 from engine.operational.discovery.passes.significance import SignificanceEvaluationPass
-from engine.operational.discovery.passes.ranking import RankingPass
 from engine.operational.discovery.passes.surprise import SurpriseDetectionPass
-from engine.operational.discovery.passes.compression import CompressionPass
+from engine.operational.discovery.passes.validation_gap import ValidationGapPass
+from engine.operational.model import EngineeringDiscoveryModel
 
 
 class DiscoveryCompiler:
@@ -61,15 +66,15 @@ class DiscoveryCompiler:
     def __init__(self) -> None:
         """Initialize the compiler with all discovery passes."""
         self.passes: list[DiscoveryCompilerPass] = [
-            HiddenRelationshipPass(),       # Pass 1  - Non-obvious relationships
-            DominantExecutionPass(),         # Pass 2  - Greatest execution reach
-            BoundaryInvariantPass(),         # Pass 3  - Unchanged boundaries
-            ValidationGapPass(),             # Pass 4  - Missing validation
-            SharedExecutionPass(),           # Pass 5  - Shared infrastructure
-            SignificanceEvaluationPass(),    # Pass 6  [MOVED] - Measurements
-            RankingPass(),                   # Pass 7  [MOVED] - Lexicographic ORDER BY
-            SurpriseDetectionPass(),         # Pass 8  [MOVED] - Ratio vectors
-            CompressionPass(),               # Pass 9  [MOVED] - Group related
+            HiddenRelationshipPass(),  # Pass 1  - Non-obvious relationships
+            DominantExecutionPass(),  # Pass 2  - Greatest execution reach
+            BoundaryInvariantPass(),  # Pass 3  - Unchanged boundaries
+            ValidationGapPass(),  # Pass 4  - Missing validation
+            SharedExecutionPass(),  # Pass 5  - Shared infrastructure
+            SignificanceEvaluationPass(),  # Pass 6  [MOVED] - Measurements
+            RankingPass(),  # Pass 7  [MOVED] - Lexicographic ORDER BY
+            SurpriseDetectionPass(),  # Pass 8  [MOVED] - Ratio vectors
+            CompressionPass(),  # Pass 9  [MOVED] - Group related
         ]
 
     def compile(
@@ -133,9 +138,9 @@ class DiscoveryCompiler:
             total_discoveries=len(discoveries),
             hidden_relationships=kind_counts.get("hidden_relationship", 0),
             dominant_executions=kind_counts.get("dominant_execution", 0)
-                + kind_counts.get("fan_in", 0)
-                + kind_counts.get("fan_out", 0)
-                + kind_counts.get("execution_depth", 0),
+            + kind_counts.get("fan_in", 0)
+            + kind_counts.get("fan_out", 0)
+            + kind_counts.get("execution_depth", 0),
             boundary_invariants=kind_counts.get("boundary_invariant", 0),
             validation_gaps=kind_counts.get("validation_gap", 0),
             shared_executions=kind_counts.get("shared_execution", 0),
@@ -150,7 +155,7 @@ class DiscoveryCompiler:
         # Build metadata
         metadata = DiscoveryMetadata(
             compiler_version=self.COMPILER_VERSION,
-            compiled_at=datetime.now(timezone.utc).isoformat(),
+            compiled_at=datetime.now(UTC).isoformat(),
             discovery_count=len(discoveries),
             evidence_count=total_evidence,
             pass_count=len(self.passes),

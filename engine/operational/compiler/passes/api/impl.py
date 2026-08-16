@@ -16,14 +16,12 @@ This is the public operational surface.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, cast
 
 from engine.operational.compiler.passes.base import (
     OperationalCompilerPass,
     OperationalPassContext,
 )
-from engine.repository.model import EntryPoint, EntryPointKind, RepositoryModel, Symbol
-from engine.operational.model import OperationalChangeModel
+from engine.repository.model import EntryPointKind, RepositoryModel
 
 
 @dataclass(frozen=True)
@@ -62,7 +60,10 @@ class APIModel:
 
 # GraphQL patterns
 _GRAPHQL_TYPE_PATTERNS = {
-    "query", "mutation", "subscription", "resolver",
+    "query",
+    "mutation",
+    "subscription",
+    "resolver",
 }
 
 
@@ -97,7 +98,7 @@ class APICompilationPass(OperationalCompilerPass):
         model = context.composed_model
         if model is None:
             return context
-        
+
         repo = model.repository
 
         # Use cached values from context
@@ -108,6 +109,7 @@ class APICompilationPass(OperationalCompilerPass):
         # Build reverse reachability: find all symbols that can reach an affected symbol
         # within 50 hops in the call graph (equivalent to traversing reverse call graph)
         from collections import deque
+
         can_reach_affected: set[str] = set(affected_symbol_ids)
         queue: deque[tuple[str, int]] = deque((sid, 0) for sid in affected_symbol_ids)
         visited_reverse: set[str] = set(affected_symbol_ids)
@@ -130,7 +132,11 @@ class APICompilationPass(OperationalCompilerPass):
         cron_jobs: list[tuple[str, str, str]] = []
         worker_entries: list[tuple[str, str]] = []
 
-        for ep in repo.entry_points:
+        entry_points = getattr(repo, "entry_points", ())
+        if not entry_points and hasattr(repo, "get_entry_points"):
+            entry_points = repo.get_entry_points()
+
+        for ep in entry_points:
             # Check if this entry point's handler is affected or can reach an affected symbol
             handler_affected = ep.handler_id in affected_symbol_ids
             handler_reachable = ep.handler_id in can_reach_affected
@@ -191,7 +197,7 @@ class APICompilationPass(OperationalCompilerPass):
             sym = symbol_map.get(sid)
             if sym is None:
                 continue
-            props = sym.properties
+            props = getattr(sym, "properties", {})
             if props.get("graphql_type") or props.get("resolver_for"):
                 gql_type = props.get("graphql_type", "query")
                 field_name = props.get("resolver_for", sym.name)
@@ -216,7 +222,7 @@ class APICompilationPass(OperationalCompilerPass):
             event=model.event,
             validation=model.validation,
             api=api_model,
-            metrics=model.metrics if hasattr(model, 'metrics') else None,
+            metrics=model.metrics if hasattr(model, "metrics") else None,
         )
 
         return context
@@ -236,6 +242,7 @@ class APICompilationPass(OperationalCompilerPass):
             return True
 
         from collections import deque
+
         adj: dict[str, list[str]] = {}
         for edge in repo.call_graph.edges:
             if edge.caller_id not in adj:

@@ -8,7 +8,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-
 # ─── Repository ──────────────────────────────────────────────────────────────
 
 
@@ -36,7 +35,7 @@ class RepositoryReference:
     @classmethod
     def from_full_name(
         cls, provider: str, full_name: str, default_branch: str = "main"
-    ) -> "RepositoryReference":
+    ) -> RepositoryReference:
         """Create from a full repository name."""
         parts = full_name.split("/", 1)
         if len(parts) != 2:

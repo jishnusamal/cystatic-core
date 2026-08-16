@@ -4,14 +4,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
-from engine.behavior.model import (
-    ExecutionUnit,
-    ExecutionChain,
-    EntryPoint,
-    TerminalPoint,
-    SharedExecution,
-)
-
 
 @dataclass
 class BehaviorPassContext:
@@ -20,6 +12,7 @@ class BehaviorPassContext:
 
     This is a mutable container that accumulates state as passes execute.
     """
+
     # Pass 1 output: Discovered behaviors
     behaviors: list = field(default_factory=list)
 
@@ -60,7 +53,6 @@ class BehaviorCompilerPass(ABC):
     @abstractmethod
     def name(self) -> str:
         """Return the name of this pass."""
-        pass
 
     @abstractmethod
     def run(self, context: BehaviorPassContext) -> BehaviorPassContext:
@@ -73,7 +65,6 @@ class BehaviorCompilerPass(ABC):
         Returns:
             Updated pass context
         """
-        pass
 
     def validate_input(self, context: BehaviorPassContext) -> bool:
         """

@@ -23,7 +23,7 @@ class JavaSymbolIndexPass(BaseIndexPass):
         """Extract symbols from a Java file context."""
         lines = context.ast
         file_path = context.path
-        content = '\n'.join(lines)
+        content = "\n".join(lines)
 
         # Extract classes
         for cls in self._extract_classes(content, lines, file_path):
@@ -41,7 +41,9 @@ class JavaSymbolIndexPass(BaseIndexPass):
     ) -> list[SymbolEntry]:
         """Extract class definitions with their methods."""
         classes: list[SymbolEntry] = []
-        class_pattern = r'(public|private|protected)?\s*(abstract|final)?\s*class\s+(\w+)'
+        class_pattern = (
+            r"(public|private|protected)?\s*(abstract|final)?\s*class\s+(\w+)"
+        )
 
         for i, line in enumerate(lines, 1):
             match = re.search(class_pattern, line)
@@ -53,10 +55,10 @@ class JavaSymbolIndexPass(BaseIndexPass):
                 methods = self._extract_methods_from_block(lines, i - 1, end_line)
 
                 properties: dict[str, Any] = {}
-                if '@Entity' in content:
-                    properties['is_entity'] = True
-                if '@RestController' in content or '@Controller' in content:
-                    properties['is_controller'] = True
+                if "@Entity" in content:
+                    properties["is_entity"] = True
+                if "@RestController" in content or "@Controller" in content:
+                    properties["is_controller"] = True
 
                 class_sym = SymbolEntry(
                     name=class_name,
@@ -93,26 +95,28 @@ class JavaSymbolIndexPass(BaseIndexPass):
     ) -> list[SymbolEntry]:
         """Extract top-level functions (methods not in classes)."""
         functions: list[SymbolEntry] = []
-        method_pattern = r'(public|private|protected)?\s*(static)?\s*\w+\s+(\w+)\s*\('
+        method_pattern = r"(public|private|protected)?\s*(static)?\s*\w+\s+(\w+)\s*\("
 
         for i, line in enumerate(lines, 1):
             if self._is_inside_class(lines, i - 1):
                 continue
 
             match = re.search(method_pattern, line)
-            if match and 'class ' not in line:
+            if match and "class " not in line:
                 visibility = self._parse_visibility(match.group(1))
                 func_name = match.group(3)
                 end_line = self._find_block_end(lines, i - 1)
 
-                functions.append(SymbolEntry(
-                    name=func_name,
-                    kind="function",
-                    file=file_path,
-                    start_line=i,
-                    end_line=end_line,
-                    visibility=visibility,
-                ))
+                functions.append(
+                    SymbolEntry(
+                        name=func_name,
+                        kind="function",
+                        file=file_path,
+                        start_line=i,
+                        end_line=end_line,
+                        visibility=visibility,
+                    )
+                )
 
         return functions
 
@@ -128,30 +132,32 @@ class JavaSymbolIndexPass(BaseIndexPass):
         Parent and file are set by the caller when adding to results.
         """
         methods: list[SymbolEntry] = []
-        method_pattern = r'(public|private|protected)?\s*(static)?\s*\w+\s+(\w+)\s*\('
+        method_pattern = r"(public|private|protected)?\s*(static)?\s*\w+\s+(\w+)\s*\("
 
         for i in range(start_idx, min(end_idx, len(lines))):
             line = lines[i]
             match = re.search(method_pattern, line)
-            if match and 'class ' not in line and 'interface ' not in line:
+            if match and "class " not in line and "interface " not in line:
                 visibility = self._parse_visibility(match.group(1))
                 method_name = match.group(3)
                 method_end = self._find_block_end(lines, i)
 
-                methods.append(SymbolEntry(
-                    name=method_name,
-                    kind="method",
-                    file="",
-                    start_line=i + 1,
-                    end_line=method_end,
-                    visibility=visibility,
-                ))
+                methods.append(
+                    SymbolEntry(
+                        name=method_name,
+                        kind="method",
+                        file="",
+                        start_line=i + 1,
+                        end_line=method_end,
+                        visibility=visibility,
+                    )
+                )
 
         return methods
 
     def _parse_visibility(self, visibility_str: str | None) -> str:
         """Parse Java visibility modifier."""
-        return visibility_str or 'public'
+        return visibility_str or "public"
 
     def _is_inside_class(self, lines: list[str], line_idx: int) -> bool:
         """Check if a line is inside a class definition."""
@@ -161,7 +167,7 @@ class JavaSymbolIndexPass(BaseIndexPass):
         open_braces = 0
         for i in range(line_idx):
             line = lines[i]
-            open_braces += line.count('{') - line.count('}')
+            open_braces += line.count("{") - line.count("}")
 
         return open_braces > 0
 
@@ -174,11 +180,11 @@ class JavaSymbolIndexPass(BaseIndexPass):
             line = lines[i]
 
             if not found_open:
-                if '{' in line:
+                if "{" in line:
                     found_open = True
                     brace_count = 1
             else:
-                brace_count += line.count('{') - line.count('}')
+                brace_count += line.count("{") - line.count("}")
 
                 if brace_count <= 0:
                     return i + 1

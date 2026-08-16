@@ -9,9 +9,6 @@ This is the linker and compilation stage in the factor-api compilation pipeline.
 
 from typing import Any, cast
 
-from engine.behavior.model import BehaviorModel
-from engine.change.model import ChangeModel, RepositoryDelta
-from engine.repository.model import RepositoryModel
 from engine.operational.model import OperationalChangeModel
 
 from .passes import (
@@ -60,55 +57,51 @@ class OperationalCompiler:
 
     def compile(
         self,
-        repository_model: RepositoryModel | None = None,
-        change_model: ChangeModel | None = None,
-        behavior_model: BehaviorModel | None = None,
-        repository_delta: RepositoryDelta | None = None,
+        repository_model: Any = None,
+        change_model: Any = None,
+        behavior_model: Any = None,
+        repository_delta: Any = None,
+        repository_query: Any = None,
     ) -> OperationalChangeModel:
         """
         Compile deterministic models into an enriched OperationalChangeModel.
-
-        Args:
-            repository_model: RepositoryModel (deprecated, use repository_delta)
-            change_model: ChangeModel
-            behavior_model: BehaviorModel
-            repository_delta: RepositoryDelta containing both base and head models
-
-        Returns:
-            OperationalChangeModel with all optional models populated
-
-        Raises:
-            ValueError: If consistency validation fails
         """
         # Support both old and new interface for backward compatibility
-        head_model: RepositoryModel | None
+        head_model: Any = None
         if repository_delta is not None:
-            head_model = repository_delta.head_model
-        else:
+            head_model = getattr(repository_delta, "head_model", None)
+        elif repository_model is not None:
             head_model = repository_model
+        elif repository_query is not None:
+            head_model = repository_query
 
-        # Type checker: ensure head_model is not None
+        if head_model is None and repository_query is not None:
+            head_model = repository_query
+
         if head_model is None:
-            raise ValueError("Either repository_delta or repository_model must be provided")
-        
-        # After None check, head_model is guaranteed to be RepositoryModel
+            raise ValueError(
+                "Either repository_delta, repository_model, or repository_query must be provided"
+            )
+
         # Initialize pass context with models
         context = OperationalPassContext(
-            repository_model=head_model,  # type: ignore[arg-type]
+            repository_model=head_model,
             repository_delta=repository_delta,
             change_model=change_model,
             behavior_model=behavior_model,
             metadata={
-                'repository_model': head_model,
-                'repository_delta': repository_delta,
-                'change_model': change_model,
-                'behavior_model': behavior_model,
-            }
+                "repository_model": head_model,
+                "repository_delta": repository_delta,
+                "change_model": change_model,
+                "behavior_model": behavior_model,
+                "repository_query": repository_query,
+            },
         )
 
         # Execute each pass in sequence
         for compiler_pass in self.passes:
             import time
+
             start_time = time.perf_counter()
             print(f"[timer] START {compiler_pass.name}")
             context = compiler_pass.run(context)
@@ -128,40 +121,31 @@ class OperationalCompiler:
 
     def compile_with_errors(
         self,
-        repository_model: RepositoryModel | None = None,
-        change_model: ChangeModel | None = None,
-        behavior_model: BehaviorModel | None = None,
-        repository_delta: RepositoryDelta | None = None,
+        repository_model: Any = None,
+        change_model: Any = None,
+        behavior_model: Any = None,
+        repository_delta: Any = None,
+        repository_query: Any = None,
     ) -> tuple[OperationalChangeModel | None, list[str]]:
-        """
-        Compile and return errors instead of raising.
-
-        This is useful when callers want to inspect validation failures
-        without exception handling.
-
-        Args:
-            repository_model: RepositoryModel (deprecated, use repository_delta)
-            change_model: ChangeModel
-            behavior_model: BehaviorModel
-            repository_delta: RepositoryDelta containing both base and head models
-
-        Returns:
-            Tuple of (OperationalChangeModel or None, list of error strings)
-        """
         # Support both old and new interface for backward compatibility
-        head_model: RepositoryModel | None
+        head_model: Any = None
         if repository_delta is not None:
-            head_model = repository_delta.head_model
-        else:
+            head_model = getattr(repository_delta, "head_model", None)
+        elif repository_model is not None:
             head_model = repository_model
+        elif repository_query is not None:
+            head_model = repository_query
 
-        # Type checker: ensure head_model is not None
+        if head_model is None and repository_query is not None:
+            head_model = repository_query
+
         if head_model is None:
-            raise ValueError("Either repository_delta or repository_model must be provided")
-        
-        # After None check, head_model is guaranteed to be RepositoryModel
+            raise ValueError(
+                "Either repository_delta, repository_model, or repository_query must be provided"
+            )
+
         context = OperationalPassContext(
-            repository_model=head_model,  # type: ignore[arg-type]
+            repository_model=head_model,
             repository_delta=repository_delta,
             change_model=change_model,
             behavior_model=behavior_model,
@@ -169,6 +153,7 @@ class OperationalCompiler:
 
         for compiler_pass in self.passes:
             import time
+
             start_time = time.perf_counter()
             print(f"[timer] START {compiler_pass.name}")
             context = compiler_pass.run(context)

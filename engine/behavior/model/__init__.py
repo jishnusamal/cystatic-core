@@ -1,26 +1,26 @@
 """Behavior model package."""
 
 from .behavior import Behavior, BehaviorKind
-from .execution import (
-    ExecutionUnit,
-    ExecutionChain,
-    EntryPoint,
-    TerminalPoint,
-    SharedExecution,
-)
-from .execution_graph import ExecutionGraph, ExecutionNode, ExecutionEdge
 from .behavior_model import BehaviorModel
+from .execution import (
+    EntryPoint,
+    ExecutionChain,
+    ExecutionUnit,
+    SharedExecution,
+    TerminalPoint,
+)
+from .execution_graph import ExecutionEdge, ExecutionGraph, ExecutionNode
 
 __all__ = [
     "Behavior",
     "BehaviorKind",
-    "ExecutionUnit",
-    "ExecutionChain",
+    "BehaviorModel",
     "EntryPoint",
-    "TerminalPoint",
-    "SharedExecution",
+    "ExecutionChain",
+    "ExecutionEdge",
     "ExecutionGraph",
     "ExecutionNode",
-    "ExecutionEdge",
-    "BehaviorModel",
+    "ExecutionUnit",
+    "SharedExecution",
+    "TerminalPoint",
 ]

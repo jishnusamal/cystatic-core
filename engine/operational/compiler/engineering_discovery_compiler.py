@@ -3,23 +3,24 @@
 This compiler is a projection-only pass that transforms the OperationalChangeModel
 into an EngineeringDiscoveryModel with all execution-oriented abstractions.
 """
+
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import cast
 
 from engine.behavior.model import BehaviorModel
 from engine.change.model import ChangeModel, RepositoryDelta
+from engine.operational.model import EngineeringDiscoveryModel, OperationalChangeModel
 from engine.repository.model import RepositoryModel
-from engine.operational.model import OperationalChangeModel, EngineeringDiscoveryModel
 
 from .passes import (
-    OperationalPassContext,
-    DependencyCompilationPass,
-    DataCompilationPass,
-    EventCompilationPass,
     APICompilationPass,
-    ValidationCompilationPass,
+    DataCompilationPass,
+    DependencyCompilationPass,
+    EventCompilationPass,
     MetricsCompilationPass,
+    OperationalPassContext,
+    ValidationCompilationPass,
 )
 
 
@@ -78,8 +79,10 @@ class EngineeringDiscoveryCompiler:
             head_model = repository_model
 
         if head_model is None:
-            raise ValueError("Either repository_delta or repository_model must be provided")
-        
+            raise ValueError(
+                "Either repository_delta or repository_model must be provided"
+            )
+
         # After None check, head_model is guaranteed to be RepositoryModel
         if change_model is None:
             raise ValueError("change_model is required")
@@ -182,6 +185,7 @@ class EngineeringDiscoveryCompiler:
 
         # Run the composition pass first to create the base model
         from .passes import ModelCompositionPass
+
         context = ModelCompositionPass().run(context)
 
         # Run all enrichment passes
@@ -206,21 +210,32 @@ class EngineeringDiscoveryCompiler:
         Returns:
             EngineeringDiscoveryModel.
         """
+        behavior = operational_model.behavior
+        execution_chains = getattr(behavior, "execution_chains", ())
+        entry_points = getattr(behavior, "entry_points", ())
+        terminal_points = getattr(behavior, "terminal_points", ())
+        shared_executions = getattr(behavior, "shared_executions", ())
+        reachable_units = getattr(behavior, "reachable_units", frozenset())
+        execution_depth = getattr(behavior, "execution_depth", 0)
+
+        execution_units = (
+            tuple(u for chain in execution_chains for u in chain.units)
+            if execution_chains
+            else ()
+        )
+
         return EngineeringDiscoveryModel(
             repository=operational_model.repository,
             change=operational_model.change,
             behavior=operational_model.behavior,
             operational=operational_model,
-            execution_units=tuple(
-                u for chain in operational_model.behavior.execution_chains
-                for u in chain.units
-            ),
-            execution_chains=operational_model.behavior.execution_chains,
-            entry_points=operational_model.behavior.entry_points,
-            terminal_points=operational_model.behavior.terminal_points,
-            shared_executions=operational_model.behavior.shared_executions,
-            reachable_units=operational_model.behavior.reachable_units,
-            execution_depth=operational_model.behavior.execution_depth,
+            execution_units=execution_units,
+            execution_chains=execution_chains,
+            entry_points=entry_points,
+            terminal_points=terminal_points,
+            shared_executions=shared_executions,
+            reachable_units=reachable_units,
+            execution_depth=execution_depth,
             dependency=operational_model.dependency,
             data=operational_model.data,
             event=operational_model.event,

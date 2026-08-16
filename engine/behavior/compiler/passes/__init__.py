@@ -1,22 +1,22 @@
 """Behavior compiler passes package."""
 
-from .base import BehaviorPassContext, BehaviorCompilerPass
+from .base import BehaviorCompilerPass, BehaviorPassContext
 from .behavior_discovery.impl import BehaviorCompilationPass
 from .behavior_graph.impl import BehaviorGraphPass
-from .execution_chain.impl import ExecutionChainPass
 from .entry_point.impl import EntryPointPass
-from .terminal_point.impl import TerminalPointPass
-from .shared_execution.impl import SharedExecutionPass
+from .execution_chain.impl import ExecutionChainPass
 from .reachable_units.impl import ReachableUnitsPass
+from .shared_execution.impl import SharedExecutionPass
+from .terminal_point.impl import TerminalPointPass
 
 __all__ = [
-    "BehaviorPassContext",
-    "BehaviorCompilerPass",
     "BehaviorCompilationPass",
+    "BehaviorCompilerPass",
     "BehaviorGraphPass",
-    "ExecutionChainPass",
+    "BehaviorPassContext",
     "EntryPointPass",
-    "TerminalPointPass",
-    "SharedExecutionPass",
+    "ExecutionChainPass",
     "ReachableUnitsPass",
+    "SharedExecutionPass",
+    "TerminalPointPass",
 ]

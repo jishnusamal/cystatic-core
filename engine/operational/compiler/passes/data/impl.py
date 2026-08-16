@@ -19,14 +19,13 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import FrozenSet, cast
 
 from engine.operational.compiler.passes.base import (
     OperationalCompilerPass,
     OperationalPassContext,
 )
 from engine.repository.model import RepositoryModel, Symbol, SymbolKind
-from engine.operational.model import OperationalChangeModel
+
 
 @dataclass(frozen=True)
 class DataModel:
@@ -78,22 +77,50 @@ class DataModel:
 
 # Patterns used to infer data operations from symbol properties
 _READ_PATTERNS = {
-    "get", "fetch", "load", "find", "query", "select", "retrieve",
-    "list", "search", "read", "lookup", "resolve",
+    "get",
+    "fetch",
+    "load",
+    "find",
+    "query",
+    "select",
+    "retrieve",
+    "list",
+    "search",
+    "read",
+    "lookup",
+    "resolve",
 }
 
 _WRITE_PATTERNS = {
-    "save", "create", "update", "delete", "insert", "remove",
-    "store", "persist", "write", "put", "patch", "destroy",
+    "save",
+    "create",
+    "update",
+    "delete",
+    "insert",
+    "remove",
+    "store",
+    "persist",
+    "write",
+    "put",
+    "patch",
+    "destroy",
 }
 
 _TRANSACTION_PATTERNS = {
-    "transaction", "transactional", "atomic", "db_transaction",
+    "transaction",
+    "transactional",
+    "atomic",
+    "db_transaction",
 }
 
 _CACHE_PATTERNS = {
-    "cache", "cached", "cache_result", "cache_key", "redis_cache",
-    "memcached", "ttl",
+    "cache",
+    "cached",
+    "cache_result",
+    "cache_key",
+    "redis_cache",
+    "memcached",
+    "ttl",
 }
 
 _STORAGE_PATTERNS = {
@@ -109,7 +136,16 @@ _STORAGE_PATTERNS = {
 _SQL_EXTENSIONS = {".sql", ".prisma", ".graphql"}
 
 # ORM model naming patterns
-_MODEL_SUFFIXES = {"model", "models", "entity", "entities", "schema", "schema", "dto", "dao", "repository"}
+_MODEL_SUFFIXES = {
+    "model",
+    "models",
+    "entity",
+    "entities",
+    "schema",
+    "dto",
+    "dao",
+    "repository",
+}
 
 
 class DataCompilationPass(OperationalCompilerPass):
@@ -149,8 +185,22 @@ class DataCompilationPass(OperationalCompilerPass):
         symbol_map = context.get_symbol_map()
         reachable_ids = context.get_reachable_ids()
 
-        # Combine affected + reachable for data analysis
+        # Combined affected + reachable for data analysis
         all_relevant_ids = affected_symbol_ids | reachable_ids
+
+        repo = model.repository
+
+        def get_symbol_file_path(s: Symbol) -> str:
+            if hasattr(s, "file") and s.file:
+                return s.file
+            if hasattr(s, "file_id") and s.file_id is not None:
+                if hasattr(repo, "get_file"):
+                    f = repo.get_file(s.file_id)
+                    if f is not None:
+                        return f.path
+                if isinstance(s.file_id, str):
+                    return s.file_id
+            return ""
 
         # Classify relevant symbols into data categories
         models: list[Symbol] = []
@@ -166,15 +216,15 @@ class DataCompilationPass(OperationalCompilerPass):
             if sym is None:
                 continue
 
-            # Check for data model classes
+            # Check if this is a data model symbol
             if self._is_data_model(sym):
                 models.append(sym)
 
-            # Check for read operations
+            # Check read operations
             if self._is_read_operation(sym):
                 reads.append(sym)
 
-            # Check for write operations
+            # Check write operations
             if self._is_write_operation(sym):
                 writes.append(sym)
 
@@ -200,7 +250,9 @@ class DataCompilationPass(OperationalCompilerPass):
         affected_files: set[str] = set()
         for sid in affected_symbol_ids:
             if sid in symbol_map:
-                affected_files.add(symbol_map[sid].file)
+                f_path = get_symbol_file_path(symbol_map[sid])
+                if f_path:
+                    affected_files.add(f_path)
         for file_path in affected_files:
             if any(file_path.endswith(ext) for ext in _SQL_EXTENSIONS):
                 # Infer table name from SQL file name
@@ -226,8 +278,8 @@ class DataCompilationPass(OperationalCompilerPass):
             data=data_model,
             event=model.event,
             validation=model.validation,
-            api=model.api if hasattr(model, 'api') else None,
-            metrics=model.metrics if hasattr(model, 'metrics') else None,
+            api=model.api if hasattr(model, "api") else None,
+            metrics=model.metrics if hasattr(model, "metrics") else None,
         )
 
         return context
@@ -244,9 +296,11 @@ class DataCompilationPass(OperationalCompilerPass):
         """
         # Build adjacency: caller -> list of callees
         from collections import deque
+
         adj: dict[str, list[str]] = defaultdict(list)
-        for edge in repo.call_graph.edges:
-            adj[edge.caller_id].append(edge.callee_id)
+        if hasattr(repo, "call_graph") and repo.call_graph is not None:
+            for edge in repo.call_graph.edges:
+                adj[edge.caller_id].append(edge.callee_id)
 
         reachable: set[str] = set()
         queue: deque[str] = deque(seed_ids)
@@ -256,9 +310,16 @@ class DataCompilationPass(OperationalCompilerPass):
             if current in reachable:
                 continue
             reachable.add(current)
-            for neighbor in adj.get(current, []):
-                if neighbor not in reachable:
-                    queue.append(neighbor)
+            if hasattr(repo, "get_callees") and not (
+                hasattr(repo, "call_graph") and repo.call_graph is not None
+            ):
+                for call in repo.get_callees(current):
+                    if call.callee_id not in reachable:
+                        queue.append(call.callee_id)
+            else:
+                for neighbor in adj.get(current, []):
+                    if neighbor not in reachable:
+                        queue.append(neighbor)
 
         return reachable - seed_ids
 
@@ -271,15 +332,19 @@ class DataCompilationPass(OperationalCompilerPass):
             if any(name_lower.endswith(suffix) for suffix in _MODEL_SUFFIXES):
                 return True
             # Check properties for ORM annotations
-            props = sym.properties
+            props = getattr(sym, "properties", {})
             if props.get("decorators"):
                 decorators = props["decorators"]
                 if isinstance(decorators, (list, tuple)):
                     deco_str = " ".join(str(d).lower() for d in decorators)
-                    if any(p in deco_str for p in ("model", "entity", "table", "document")):
+                    if any(
+                        p in deco_str for p in ("model", "entity", "table", "document")
+                    ):
                         return True
             # Check for database-related properties
-            if any(k in props for k in ("table", "collection", "tablename", "table_name")):
+            if any(
+                k in props for k in ("table", "collection", "tablename", "table_name")
+            ):
                 return True
         return False
 
@@ -290,7 +355,7 @@ class DataCompilationPass(OperationalCompilerPass):
         if any(pattern in name_lower for pattern in _READ_PATTERNS):
             return True
         # Check properties for query annotations
-        props = sym.properties
+        props = getattr(sym, "properties", {})
         if props.get("decorators"):
             decorators = props["decorators"]
             if isinstance(decorators, (list, tuple)):
@@ -306,12 +371,15 @@ class DataCompilationPass(OperationalCompilerPass):
         if any(pattern in name_lower for pattern in _WRITE_PATTERNS):
             return True
         # Check properties for mutation annotations
-        props = sym.properties
+        props = getattr(sym, "properties", {})
         if props.get("decorators"):
             decorators = props["decorators"]
             if isinstance(decorators, (list, tuple)):
                 deco_str = " ".join(str(d).lower() for d in decorators)
-                if any(p in deco_str for p in ("insert", "update", "delete", "save", "write")):
+                if any(
+                    p in deco_str
+                    for p in ("insert", "update", "delete", "save", "write")
+                ):
                     return True
         return False
 
@@ -322,7 +390,7 @@ class DataCompilationPass(OperationalCompilerPass):
         if any(pattern in name_lower for pattern in _TRANSACTION_PATTERNS):
             return True
         # Check properties for transaction annotations
-        props = sym.properties
+        props = getattr(sym, "properties", {})
         if props.get("decorators"):
             decorators = props["decorators"]
             if isinstance(decorators, (list, tuple)):
@@ -334,7 +402,7 @@ class DataCompilationPass(OperationalCompilerPass):
     @staticmethod
     def _extract_table_name(sym: Symbol) -> str | None:
         """Extract a database table name from a symbol's properties."""
-        props = sym.properties
+        props = getattr(sym, "properties", {})
         # Check explicit table name properties
         for key in ("table", "collection", "tablename", "table_name", "from_table"):
             if key in props:
@@ -344,6 +412,7 @@ class DataCompilationPass(OperationalCompilerPass):
             # Convert CamelCase to snake_case as a convention
             name = sym.name
             import re
+
             snake = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
             # Common pluralization
             if not snake.endswith("s"):
@@ -357,7 +426,7 @@ class DataCompilationPass(OperationalCompilerPass):
         name_lower = sym.name.lower()
         if any(pattern in name_lower for pattern in _CACHE_PATTERNS):
             return sym.name
-        props = sym.properties
+        props = getattr(sym, "properties", {})
         if props.get("decorators"):
             decorators = props["decorators"]
             if isinstance(decorators, (list, tuple)):
@@ -373,7 +442,7 @@ class DataCompilationPass(OperationalCompilerPass):
         """Extract external storage references from a symbol."""
         refs: list[tuple[str, str]] = []
         name_lower = sym.name.lower()
-        props = sym.properties
+        props = getattr(sym, "properties", {})
 
         # Check name for storage patterns
         for storage_type, patterns in _STORAGE_PATTERNS.items():

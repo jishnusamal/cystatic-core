@@ -23,9 +23,9 @@ def get_pipeline() -> Any:
     Lazily initialises the Pipeline on first call via the GitHub integration
     registry. Suitable for use as a FastAPI Depends() dependency.
     """
+    from engine.pipeline.pipeline import Pipeline
     from integrations.base.registry import get_registry
     from integrations.github.provider import GitHubIntegration
-    from engine.pipeline.pipeline import Pipeline
 
     settings = get_settings()
     registry = get_registry()

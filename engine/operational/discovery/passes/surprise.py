@@ -52,13 +52,17 @@ Must Never:
     - Use AI, heuristics, or risk assessment.
     - Label discoveries as risky, dangerous, or problematic.
 """
+
 from __future__ import annotations
 
 from engine.operational.discovery.model import (
     Discovery,
     DiscoverySupport,
 )
-from engine.operational.discovery.passes.base import DiscoveryPassContext, DiscoveryCompilerPass
+from engine.operational.discovery.passes.base import (
+    DiscoveryCompilerPass,
+    DiscoveryPassContext,
+)
 
 
 class SurpriseDetectionPass(DiscoveryCompilerPass):
@@ -87,7 +91,7 @@ class SurpriseDetectionPass(DiscoveryCompilerPass):
         # Get changed endpoint count from model
         endpoint_count = 0
         if model is not None and model.change is not None:
-            endpoint_count = len(getattr(model.change, 'changed_endpoints', ()))
+            endpoint_count = len(getattr(model.change, "changed_endpoints", ()))
 
         updated: list[Discovery] = []
         for d in context.discoveries:
@@ -132,15 +136,17 @@ class SurpriseDetectionPass(DiscoveryCompilerPass):
             if max_ratio >= self.MIN_SURPRISE_RATIO:
                 importance = min(importance + self.SURPRISE_BOOST, 1.0)
 
-            updated.append(Discovery(
-                id=d.id,
-                kind=d.kind,
-                statement=d.statement,
-                importance=importance,
-                support=new_support,
-                evidence=d.evidence,
-                metadata=d.metadata,
-            ))
+            updated.append(
+                Discovery(
+                    id=d.id,
+                    kind=d.kind,
+                    statement=d.statement,
+                    importance=importance,
+                    support=new_support,
+                    evidence=d.evidence,
+                    metadata=d.metadata,
+                )
+            )
 
         context.discoveries = updated
         return context

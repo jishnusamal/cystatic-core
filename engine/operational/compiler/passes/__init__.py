@@ -1,14 +1,14 @@
 """Operational compiler passes package."""
 
+from .api.impl import APICompilationPass
 from .base import OperationalCompilerPass, OperationalPassContext
 from .consistency_validation.impl import ConsistencyValidationPass
-from .model_composition.impl import ModelCompositionPass
-from .dependency.impl import DependencyCompilationPass
 from .data.impl import DataCompilationPass
+from .dependency.impl import DependencyCompilationPass
 from .events.impl import EventCompilationPass
-from .api.impl import APICompilationPass
-from .validation.impl import ValidationCompilationPass
 from .metrics.impl import MetricsCompilationPass
+from .model_composition.impl import ModelCompositionPass
+from .validation.impl import ValidationCompilationPass
 
 __all__ = [
     "APICompilationPass",

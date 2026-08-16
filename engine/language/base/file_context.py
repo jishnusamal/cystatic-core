@@ -24,7 +24,7 @@ class FileContext(Generic[T]):
         metadata: Additional file-level key-value pairs
     """
 
-    __slots__ = ("path", "source", "ast", "language", "metadata")
+    __slots__ = ("ast", "language", "metadata", "path", "source")
 
     def __init__(
         self,

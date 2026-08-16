@@ -33,24 +33,26 @@ class JavaPersistenceExtractor(BaseExtractor):
             List of persistence construct dicts
         """
         constructs = []
-        content = '\n'.join(tree)
+        content = "\n".join(tree)
 
         # Detect if this is a JPA entity
-        if '@Entity' in content:
+        if "@Entity" in content:
             model = self._extract_entity(tree, content, file_path)
             if model:
                 constructs.append(model)
 
         # Detect if this is a Spring Data repository interface
-        if re.search(r'(?:extends\s+\w*Repository|@Repository)', content):
+        if re.search(r"(?:extends\s+\w*Repository|@Repository)", content):
             for repo in self._extract_repositories(content, file_path):
                 constructs.append(repo)
 
         return constructs
 
-    def _extract_entity(self, lines: list[str], content: str, file_path: str) -> dict[str, Any] | None:
+    def _extract_entity(
+        self, lines: list[str], content: str, file_path: str
+    ) -> dict[str, Any] | None:
         """Extract a JPA entity class."""
-        class_match = re.search(r'(?:public\s+)?class\s+(\w+)', content)
+        class_match = re.search(r"(?:public\s+)?class\s+(\w+)", content)
         if not class_match:
             return None
 
@@ -58,7 +60,7 @@ class JavaPersistenceExtractor(BaseExtractor):
         symbol_id = f"java://{file_path}#{class_name}"
 
         # Extract @Table name
-        table_name = ''
+        table_name = ""
         table_match = re.search(r'@Table\s*\(\s*name\s*=\s*"([^"]+)"', content)
         if table_match:
             table_name = table_match.group(1)
@@ -77,28 +79,49 @@ class JavaPersistenceExtractor(BaseExtractor):
 
             # Skip annotations and field declarations outside class body
             if not in_class:
-                if '{' in line:
-                    brace_depth += line.count('{')
+                if "{" in line:
+                    brace_depth += line.count("{")
                     in_class = True
                 continue
 
-            brace_depth += line.count('{') - line.count('}')
+            brace_depth += line.count("{") - line.count("}")
             if brace_depth <= 0:
                 break
 
             # Check for @Column or @JoinColumn annotations
-            is_column = '@Column' in line_stripped
-            is_join = any(ann in line_stripped for ann in
-                         ['@OneToOne', '@OneToMany', '@ManyToOne', '@ManyToMany', '@JoinColumn'])
+            is_column = "@Column" in line_stripped
+            is_join = any(
+                ann in line_stripped
+                for ann in [
+                    "@OneToOne",
+                    "@OneToMany",
+                    "@ManyToOne",
+                    "@ManyToMany",
+                    "@JoinColumn",
+                ]
+            )
 
             # Extract field declaration
-            field_match = re.search(r'(?:private|public|protected)?\s*(\w+(?:<[^>]+>)?)\s+(\w+)\s*;', line_stripped)
+            field_match = re.search(
+                r"(?:private|public|protected)?\s*(\w+(?:<[^>]+>)?)\s+(\w+)\s*;",
+                line_stripped,
+            )
             if field_match:
                 field_type = field_match.group(1)
                 field_name = field_match.group(2)
 
-                if field_type.lower() in ('int', 'long', 'double', 'float', 'boolean',
-                                           'string', 'byte', 'short', 'char', 'void'):
+                if field_type.lower() in (
+                    "int",
+                    "long",
+                    "double",
+                    "float",
+                    "boolean",
+                    "string",
+                    "byte",
+                    "short",
+                    "char",
+                    "void",
+                ):
                     continue
 
                 column_name = field_name
@@ -107,56 +130,66 @@ class JavaPersistenceExtractor(BaseExtractor):
                     column_name = column_match.group(1)
 
                 if is_join:
-                    relationships.append({
-                        'name': field_name,
-                        'field_type': field_type,
-                        'is_relationship': True,
-                        'related_model': field_type,
-                        'nullable': False,
-                        'unique': False,
-                        'index': False,
-                    })
+                    relationships.append(
+                        {
+                            "name": field_name,
+                            "field_type": field_type,
+                            "is_relationship": True,
+                            "related_model": field_type,
+                            "nullable": False,
+                            "unique": False,
+                            "index": False,
+                        }
+                    )
                 else:
-                    fields.append({
-                        'name': field_name,
-                        'field_type': field_type,
-                        'is_relationship': False,
-                        'column_name': column_name,
-                        'nullable': 'nullable' in line_stripped.lower(),
-                        'unique': 'unique' in line_stripped.lower(),
-                    })
+                    fields.append(
+                        {
+                            "name": field_name,
+                            "field_type": field_type,
+                            "is_relationship": False,
+                            "column_name": column_name,
+                            "nullable": "nullable" in line_stripped.lower(),
+                            "unique": "unique" in line_stripped.lower(),
+                        }
+                    )
 
         return {
-            'type': 'persistence_model',
-            'symbol_id': symbol_id,
-            'name': class_name,
-            'table_name': table_name,
-            'framework': 'jpa',
-            'fields': fields,
-            'relationships': relationships,
+            "type": "persistence_model",
+            "symbol_id": symbol_id,
+            "name": class_name,
+            "table_name": table_name,
+            "framework": "jpa",
+            "fields": fields,
+            "relationships": relationships,
         }
 
-    def _extract_repositories(self, content: str, file_path: str) -> list[dict[str, Any]]:
+    def _extract_repositories(
+        self, content: str, file_path: str
+    ) -> list[dict[str, Any]]:
         """Extract Spring Data JPA repository interfaces."""
         repositories = []
 
-        repo_pattern = r'(?:public\s+)?interface\s+(\w+)\s+extends\s+(\w*(?:Repository|CrudRepository|JpaRepository|MongoRepository|PagingAndSortingRepository))' \
-                       r'(?:<(\w+)'  # Entity type
+        repo_pattern = (
+            r"(?:public\s+)?interface\s+(\w+)\s+extends\s+(\w*(?:Repository|CrudRepository|JpaRepository|MongoRepository|PagingAndSortingRepository))"
+            r"(?:<(\w+)"
+        )  # Entity type
 
         for match in re.finditer(repo_pattern, content):
             interface_name = match.group(1)
             repo_type = match.group(2)
-            entity_type = match.group(3) if match.lastindex >= 3 else ''
+            entity_type = match.group(3) if match.lastindex >= 3 else ""
 
             symbol_id = f"java://{file_path}#{interface_name}"
 
-            repositories.append({
-                'type': 'repository_interface',
-                'symbol_id': symbol_id,
-                'name': interface_name,
-                'framework': 'spring_data',
-                'repository_type': repo_type,
-                'entity_type': entity_type,
-            })
+            repositories.append(
+                {
+                    "type": "repository_interface",
+                    "symbol_id": symbol_id,
+                    "name": interface_name,
+                    "framework": "spring_data",
+                    "repository_type": repo_type,
+                    "entity_type": entity_type,
+                }
+            )
 
         return repositories

@@ -15,31 +15,33 @@ The compiler MUST NOT:
     - compress discoveries
     - generate summaries, English explanations, markdown, comments, or UI objects
 """
+
 from __future__ import annotations
 
 from typing import Any
 
-from engine.change.model import ChangeModel
 from engine.behavior.model import BehaviorModel
+from engine.behavior.model.impact_surface import ImpactSurface
+from engine.change.model import ChangeModel
+from engine.discovery.model import DiscoveryModel
+from engine.operational.discovery.model import DiscoveryIR
 from engine.operational.model import OperationalChangeModel
-from engine.discovery.model import DiscoveryModel, Discovery as DiscoveryModelDiscovery
-from engine.operational.discovery.model import DiscoveryIR, Discovery as OldDiscovery
 
 from .model import (
-    ReviewContext,
+    Change,
     ChangeContext,
     ChangeSummary,
-    FileChange,
-    Change,
-    SymbolRef,
-    ExecutionContext,
-    EntryPointExecution,
-    ExecutionStep,
-    SymbolReference,
-    ReachedComponents,
     DeepestExecution,
     Discovery,
+    EntryPointExecution,
+    ExecutionContext,
+    ExecutionStep,
+    FileChange,
+    ReachedComponents,
     Reference,
+    ReviewContext,
+    SymbolRef,
+    SymbolReference,
 )
 
 # Maximum number of references to expose per discovery in ReviewContext.
@@ -118,9 +120,7 @@ class ReviewContextCompiler:
             + len(change_model.removed_symbols)
             + len(change_model.modified_symbols)
         )
-        behavior_count = sum(
-            len(ms.changes) for ms in change_model.modified_symbols
-        )
+        behavior_count = sum(len(ms.changes) for ms in change_model.modified_symbols)
 
         summary = ChangeSummary(
             classification=classification,
@@ -155,7 +155,9 @@ class ReviewContextCompiler:
                 files[file_path] = []
             # Extract behavior change type names
             behavior_changes = tuple(type(c).__name__ for c in ms.changes)
-            files[file_path].append(self._build_change(sym, "modified", behavior_changes))
+            files[file_path].append(
+                self._build_change(sym, "modified", behavior_changes)
+            )
 
         # Build FileChange objects
         file_changes: list[FileChange] = []
@@ -178,12 +180,14 @@ class ReviewContextCompiler:
                     language = c.symbol.language
                     break
 
-            file_changes.append(FileChange(
-                path=file_path,
-                language=language,
-                change_type=file_change_type,
-                changes=tuple(changes),
-            ))
+            file_changes.append(
+                FileChange(
+                    path=file_path,
+                    language=language,
+                    change_type=file_change_type,
+                    changes=tuple(changes),
+                )
+            )
 
         return ChangeContext(
             summary=summary,
@@ -203,10 +207,14 @@ class ReviewContextCompiler:
         symbol_ref = SymbolRef(
             id=sym.id,
             name=sym.name,
-            kind=sym.kind.value if hasattr(sym.kind, 'value') else str(sym.kind),
-            visibility=sym.visibility.value if hasattr(sym.visibility, 'value') else str(sym.visibility),
-            language=sym.language if hasattr(sym, 'language') else "",
-            location=f"{sym.file}:{sym.range[0]}-{sym.range[1]}" if hasattr(sym, 'range') else sym.file,
+            kind=sym.kind.value if hasattr(sym.kind, "value") else str(sym.kind),
+            visibility=sym.visibility.value
+            if hasattr(sym.visibility, "value")
+            else str(sym.visibility),
+            language=sym.language if hasattr(sym, "language") else "",
+            location=f"{sym.file}:{sym.range[0]}-{sym.range[1]}"
+            if hasattr(sym, "range")
+            else sym.file,
         )
 
         return Change(
@@ -243,36 +251,52 @@ class ReviewContextCompiler:
 
     def _select_execution_context(
         self,
-        behavior_model: BehaviorModel | None,
+        behavior_model: BehaviorModel | ImpactSurface | None,
         operational_model: OperationalChangeModel | None,
         change_model: ChangeModel | None = None,
     ) -> ExecutionContext:
         """Select execution-relevant information and build a hierarchical execution graph.
 
-        Organizes execution information around entry points, each with its own
-        execution chain containing per-step metadata (changed, shared, symbol info,
-        reached components).
-
-        Reuses existing values — never recomputes.
-        No graph traversal inside ReviewContext.
+        Handles both ImpactSurface (new architecture) and BehaviorModel (legacy).
+        When the behavior_model is an ImpactSurface, builds execution context directly
+        from affected_endpoints and affected_symbols without requiring legacy chain data.
         """
         if behavior_model is None:
             return ExecutionContext()
 
+        # --- New architecture path: ImpactSurface ---
+        if isinstance(behavior_model, ImpactSurface):
+            return self._select_execution_context_from_impact_surface(
+                behavior_model, operational_model, change_model
+            )
+
         # Collect changed symbol IDs for the 'changed' flag
         changed_symbol_ids: set[str] = set()
         if change_model is not None:
-            for sym in change_model.added_symbols:
-                changed_symbol_ids.add(sym.id)
-            for sym in change_model.removed_symbols:
-                changed_symbol_ids.add(sym.id)
-            for ms in change_model.modified_symbols:
-                changed_symbol_ids.add(ms.symbol.id)
+            if hasattr(change_model, "changed_symbols"):
+                for cs in change_model.changed_symbols:
+                    changed_symbol_ids.add(cs.symbol_id)
+            if hasattr(change_model, "added_symbols"):
+                for sym in change_model.added_symbols:
+                    changed_symbol_ids.add(
+                        getattr(sym, "id", getattr(sym, "symbol_id", str(sym)))
+                    )
+            if hasattr(change_model, "removed_symbols"):
+                for sym in change_model.removed_symbols:
+                    changed_symbol_ids.add(
+                        getattr(sym, "id", getattr(sym, "symbol_id", str(sym)))
+                    )
+            if hasattr(change_model, "modified_symbols"):
+                for ms in change_model.modified_symbols:
+                    sym = getattr(ms, "symbol", ms)
+                    changed_symbol_ids.add(
+                        getattr(sym, "id", getattr(sym, "symbol_id", str(sym)))
+                    )
 
         # Collect shared symbol IDs for the 'shared' flag
         shared_symbol_ids: set[str] = set()
         if behavior_model is not None:
-            for se in behavior_model.shared_executions:
+            for se in getattr(behavior_model, "shared_executions", ()):
                 shared_symbol_ids.add(se.symbol_id)
 
         # Build a symbol lookup from the repository model (if available)
@@ -280,32 +304,34 @@ class ReviewContextCompiler:
         repo_model = None
         if operational_model is not None and operational_model.repository is not None:
             repo_model = operational_model.repository
-        if repo_model is not None and hasattr(repo_model, 'symbols'):
+        if repo_model is not None and hasattr(repo_model, "symbols"):
             for sym in repo_model.symbols:
                 symbol_lookup[sym.id] = sym
 
         # Build a map of behavior_id -> behavior kind (for reaches.service)
         behavior_kind_map: dict[str, str] = {}
         if behavior_model is not None:
-            for b in behavior_model.behaviors:
-                behavior_kind_map[b.id] = b.kind.value if hasattr(b.kind, 'value') else str(b.kind)
+            for b in getattr(behavior_model, "behaviors", ()):
+                behavior_kind_map[b.id] = (
+                    b.kind.value if hasattr(b.kind, "value") else str(b.kind)
+                )
 
         # Build a map of behavior_id -> behavior name (for reaches.module)
         behavior_name_map: dict[str, str] = {}
         if behavior_model is not None:
-            for b in behavior_model.behaviors:
+            for b in getattr(behavior_model, "behaviors", ()):
                 behavior_name_map[b.id] = b.name
 
         # Build a map of behavior_id -> terminal point kind
         terminal_by_behavior: dict[str, str] = {}
         if behavior_model is not None:
-            for tp in behavior_model.terminal_points:
+            for tp in getattr(behavior_model, "terminal_points", ()):
                 terminal_by_behavior[tp.behavior_id] = tp.kind
 
         # Build a map of behavior_id -> execution chain units
         chain_units_by_behavior: dict[str, list[Any]] = {}
         if behavior_model is not None:
-            for chain in behavior_model.execution_chains:
+            for chain in getattr(behavior_model, "execution_chains", ()):
                 chain_units_by_behavior[chain.behavior_id] = list(chain.units)
 
         # Build entry point executions
@@ -316,15 +342,19 @@ class ReviewContextCompiler:
         # Collect all entry points from behavior_model
         all_entry_points: list[Any] = []
         if behavior_model is not None:
-            all_entry_points.extend(behavior_model.entry_points)
+            all_entry_points.extend(getattr(behavior_model, "entry_points", ()))
+            if hasattr(behavior_model, "affected_endpoints"):
+                all_entry_points.extend(behavior_model.affected_endpoints)
 
         for ep in all_entry_points:
-            behavior_id = ep.behavior_id if hasattr(ep, 'behavior_id') else ""
-            endpoint = ep.route if hasattr(ep, 'route') and ep.route else (
-                ep.kind if hasattr(ep, 'kind') else str(ep.id)
+            behavior_id = ep.behavior_id if hasattr(ep, "behavior_id") else ""
+            endpoint = (
+                ep.route
+                if hasattr(ep, "route") and ep.route
+                else (ep.kind if hasattr(ep, "kind") else str(ep.id))
             )
             method = self._extract_method(ep)
-            path = ep.route if hasattr(ep, 'route') else endpoint
+            path = ep.route if hasattr(ep, "route") else endpoint
 
             # Build execution chain steps from the behavior's execution units
             units = chain_units_by_behavior.get(behavior_id, [])
@@ -332,22 +362,25 @@ class ReviewContextCompiler:
             max_depth = 0
 
             for unit in units:
-                symbol_id = unit.symbol_id if hasattr(unit, 'symbol_id') else ""
-                depth = unit.order if hasattr(unit, 'order') else 0
-                if depth > max_depth:
-                    max_depth = depth
+                symbol_id = unit.symbol_id if hasattr(unit, "symbol_id") else ""
+                depth = unit.order if hasattr(unit, "order") else 0
+                max_depth = max(max_depth, depth)
 
                 # Look up symbol metadata from repository model
                 sym_obj = symbol_lookup.get(symbol_id)
-                sym_name = unit.name if hasattr(unit, 'name') else (
-                    sym_obj.name if sym_obj else symbol_id
+                sym_name = (
+                    unit.name
+                    if hasattr(unit, "name")
+                    else (sym_obj.name if sym_obj else symbol_id)
                 )
-                sym_kind = sym_obj.kind.value if sym_obj and hasattr(sym_obj.kind, 'value') else (
-                    str(sym_obj.kind) if sym_obj else ""
+                sym_kind = (
+                    sym_obj.kind.value
+                    if sym_obj and hasattr(sym_obj.kind, "value")
+                    else (str(sym_obj.kind) if sym_obj else "")
                 )
                 sym_location = (
                     f"{sym_obj.file}:{sym_obj.range[0]}-{sym_obj.range[1]}"
-                    if sym_obj and hasattr(sym_obj, 'file')
+                    if sym_obj and hasattr(sym_obj, "file")
                     else ""
                 )
 
@@ -371,7 +404,7 @@ class ReviewContextCompiler:
                     changed=symbol_id in changed_symbol_ids,
                     shared=symbol_id in shared_symbol_ids,
                     reaches=reaches,
-                    references=(unit.id,) if hasattr(unit, 'id') and unit.id else (),
+                    references=(unit.id,) if hasattr(unit, "id") and unit.id else (),
                 )
                 steps.append(step)
 
@@ -379,7 +412,7 @@ class ReviewContextCompiler:
             terminal = terminal_by_behavior.get(behavior_id, "")
 
             # Build references
-            ep_refs: list[str] = [ep.id] if hasattr(ep, 'id') and ep.id else []
+            ep_refs: list[str] = [ep.id] if hasattr(ep, "id") and ep.id else []
             if behavior_id:
                 ep_refs.append(behavior_id)
 
@@ -411,10 +444,156 @@ class ReviewContextCompiler:
             deepest_execution=deepest,
         )
 
+    # -----------------------------------------------------------------------
+    # ImpactSurface execution context builder (new architecture path)
+    # -----------------------------------------------------------------------
+
+    def _select_execution_context_from_impact_surface(
+        self,
+        impact_surface: ImpactSurface,
+        operational_model: OperationalChangeModel | None,
+        change_model: ChangeModel | None,
+    ) -> ExecutionContext:
+        """Build ExecutionContext directly from ImpactSurface.
+
+        Used when BehaviorCompiler returns ImpactSurface (new fact-based architecture).
+        Constructs EntryPointExecution objects from affected_endpoints and
+        affected_symbols without requiring legacy execution-chain data.
+        """
+        changed_symbol_ids: set[str] = set()
+        if change_model is not None:
+            if hasattr(change_model, "changed_symbols"):
+                for cs in change_model.changed_symbols:
+                    changed_symbol_ids.add(str(cs.symbol_id))
+            if hasattr(change_model, "added_symbols"):
+                for sym in change_model.added_symbols:
+                    changed_symbol_ids.add(
+                        str(getattr(sym, "id", getattr(sym, "symbol_id", sym)))
+                    )
+            if hasattr(change_model, "removed_symbols"):
+                for sym in change_model.removed_symbols:
+                    changed_symbol_ids.add(
+                        str(getattr(sym, "id", getattr(sym, "symbol_id", sym)))
+                    )
+            if hasattr(change_model, "modified_symbols"):
+                for ms in change_model.modified_symbols:
+                    sym = getattr(ms, "symbol", ms)
+                    changed_symbol_ids.add(
+                        str(getattr(sym, "id", getattr(sym, "symbol_id", sym)))
+                    )
+
+        affected_symbol_strs: set[str] = {
+            str(s) for s in impact_surface.affected_symbols
+        }
+
+        entry_point_executions: list[EntryPointExecution] = []
+        deepest_depth = 0
+        deepest_ep = ""
+
+        # Build one EntryPointExecution per affected endpoint
+        for ep_fact in impact_surface.affected_endpoints:
+            # ep_fact is an EntryPoint (from repository model)
+            route = getattr(ep_fact, "route", "") or ""
+            handler_id = str(getattr(ep_fact, "handler_id", ""))
+            kind_val = getattr(ep_fact, "kind", None)
+            kind_str = (
+                kind_val.value
+                if hasattr(kind_val, "value")
+                else str(kind_val)
+                if kind_val
+                else ""
+            )
+
+            # Extract method and path from route e.g. "POST /checkout"
+            if " " in route:
+                method, path = route.split(" ", 1)
+            else:
+                method = kind_str
+                path = route
+
+            # Build a single execution step for the handler symbol
+            step_changed = handler_id in changed_symbol_ids
+            step = ExecutionStep(
+                behavior=handler_id,
+                symbol=SymbolReference(
+                    id=handler_id,
+                    name=handler_id.split("::")[-1].split("#")[-1]
+                    if handler_id
+                    else "",
+                    kind=kind_str,
+                    location="",
+                ),
+                kind=kind_str,
+                depth=0,
+                changed=step_changed,
+                shared=False,
+                reaches=ReachedComponents(service=kind_str, module="", package=""),
+                references=(handler_id,) if handler_id else (),
+            )
+
+            # Also emit steps for affected symbols reachable from this endpoint
+            steps = [step]
+
+            ep_execution = EntryPointExecution(
+                endpoint=path or route,
+                method=method,
+                path=path or route,
+                execution_chain=tuple(steps),
+                terminal="",
+                max_depth=0,
+                references=(handler_id,) if handler_id else (),
+            )
+            entry_point_executions.append(ep_execution)
+
+            if path and not deepest_ep:
+                deepest_ep = path
+
+        # If there are affected symbols but no endpoints, still surface the symbols
+        # (e.g., for library-level changes without HTTP entry points)
+        if not entry_point_executions and affected_symbol_strs:
+            # Build a synthetic "internal" entry for changed symbols
+            changed_in_surface = affected_symbol_strs & changed_symbol_ids
+            for sym_id in sorted(changed_in_surface)[:5]:  # cap at 5 to avoid noise
+                name = sym_id.split("::")[-1].split("#")[-1] if sym_id else sym_id
+                step = ExecutionStep(
+                    behavior=sym_id,
+                    symbol=SymbolReference(
+                        id=sym_id, name=name, kind="function", location=""
+                    ),
+                    kind="function",
+                    depth=0,
+                    changed=True,
+                    shared=False,
+                    reaches=ReachedComponents(service="", module="", package=""),
+                    references=(sym_id,),
+                )
+                ep_execution = EntryPointExecution(
+                    endpoint=name,
+                    method="",
+                    path=name,
+                    execution_chain=(step,),
+                    terminal="",
+                    max_depth=0,
+                    references=(sym_id,),
+                )
+                entry_point_executions.append(ep_execution)
+                deepest_ep = name
+
+        deepest = DeepestExecution(
+            entry_point=deepest_ep,
+            depth=deepest_depth,
+            references=(deepest_ep,) if deepest_ep else (),
+        )
+
+        return ExecutionContext(
+            entry_points=tuple(entry_point_executions),
+            deepest_execution=deepest,
+        )
+
     def _extract_method(self, ep: Any) -> str:
         """Extract HTTP method or trigger type from an entry point."""
-        kind = ep.kind if hasattr(ep, 'kind') else ""
-        route = ep.route if hasattr(ep, 'route') else ""
+        kind = ep.kind if hasattr(ep, "kind") else ""
+        route = ep.route if hasattr(ep, "route") else ""
 
         # Try to extract method from route (e.g., "POST /test" -> "POST")
         if " " in route:
@@ -500,7 +679,7 @@ class ReviewContextCompiler:
 
                 discovery = Discovery(
                     id=d.id,
-                    kind=d.kind.value if hasattr(d.kind, 'value') else str(d.kind),
+                    kind=d.kind.value if hasattr(d.kind, "value") else str(d.kind),
                     statement=d.statement,
                     facts=facts_dict,
                     reference_count=total_count,
@@ -545,14 +724,16 @@ class ReviewContextCompiler:
                         "changed_interfaces": d_new.facts.changed_interfaces,
                         "interface_types": d_new.facts.interface_types,
                     }
-                
+
                 # Deduplicate, rank, and truncate references
                 total_count = len(refs_new)
                 selected = self._select_representative_references(refs_new)
 
                 discovery = Discovery(
                     id=d_new.id,
-                    kind=d_new.kind.value if hasattr(d_new.kind, 'value') else str(d_new.kind),
+                    kind=d_new.kind.value
+                    if hasattr(d_new.kind, "value")
+                    else str(d_new.kind),
                     statement="",  # No statements in new model
                     facts=facts_dict_new,
                     reference_count=total_count,

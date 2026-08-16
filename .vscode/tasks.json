@@ -36,6 +36,11 @@
       "label": "Count Lines",
       "type": "shell",
       "command": "wc -l **/*.py | sort -nr"
+    },
+    {
+      "label": "Run Benchmarks",
+      "type": "shell",
+      "command": "PYTHONPATH=. infisical run -- uv run python benchmark/run_benchmarks.py"
     }
   ]
 }

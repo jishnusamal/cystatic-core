@@ -1,0 +1,901 @@
+{
+  "pr_url": "https://github.com/pallets/click/pull/3762",
+  "checkpoints": [
+    {
+      "stage": "RSS before request",
+      "rss_mb": 75.046875,
+      "timestamp": 1786787411.4560268,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
+    },
+    {
+      "stage": "RSS after repository download",
+      "rss_mb": 83.625,
+      "timestamp": 1786787414.158668,
+      "source_files_reachable": 160,
+      "source_bytes_reachable": 1492292
+    },
+    {
+      "stage": "RSS after parsing",
+      "rss_mb": 124.359375,
+      "timestamp": 1786787414.444479,
+      "source_files_reachable": 160,
+      "source_bytes_reachable": 1492292
+    },
+    {
+      "stage": "RSS after symbol extraction",
+      "rss_mb": 153.546875,
+      "timestamp": 1786787415.289807,
+      "source_files_reachable": 160,
+      "source_bytes_reachable": 1492292
+    },
+    {
+      "stage": "RSS after endpoint extraction",
+      "rss_mb": 153.546875,
+      "timestamp": 1786787415.327998,
+      "source_files_reachable": 160,
+      "source_bytes_reachable": 1492292
+    },
+    {
+      "stage": "RSS after dependency/relationship extraction",
+      "rss_mb": 153.546875,
+      "timestamp": 1786787415.367342,
+      "source_files_reachable": 160,
+      "source_bytes_reachable": 1492292
+    },
+    {
+      "stage": "RSS after base graph compilation",
+      "rss_mb": 151.875,
+      "timestamp": 1786787416.0674062,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
+    },
+    {
+      "stage": "RSS after base RepositoryModel",
+      "rss_mb": 155.875,
+      "timestamp": 1786787416.39264,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
+    },
+    {
+      "stage": "RSS after head source load",
+      "rss_mb": 141.828125,
+      "timestamp": 1786787418.129167,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
+    },
+    {
+      "stage": "RSS immediately before graph clone",
+      "rss_mb": 141.828125,
+      "timestamp": 1786787418.214556,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
+    },
+    {
+      "stage": "RSS after graph clone",
+      "rss_mb": 144.09375,
+      "timestamp": 1786787418.6348429,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
+    },
+    {
+      "stage": "RSS after GraphPatcher",
+      "rss_mb": 148.234375,
+      "timestamp": 1786787419.047711,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
+    },
+    {
+      "stage": "RSS after head RepositoryModel",
+      "rss_mb": 132.234375,
+      "timestamp": 1786787419.167667,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
+    },
+    {
+      "stage": "RSS after head RepositoryModel",
+      "rss_mb": 132.25,
+      "timestamp": 1786787419.296175,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
+    },
+    {
+      "stage": "RSS after Change Compiler",
+      "rss_mb": 132.25,
+      "timestamp": 1786787419.425314,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
+    },
+    {
+      "stage": "After Behavior Compiler",
+      "rss_mb": 132.25,
+      "timestamp": 1786787419.653137,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
+    },
+    {
+      "stage": "After Operational Compiler",
+      "rss_mb": 132.359375,
+      "timestamp": 1786787419.922339,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
+    },
+    {
+      "stage": "After Engineering Discovery Compiler",
+      "rss_mb": 132.359375,
+      "timestamp": 1786787420.15467,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
+    },
+    {
+      "stage": "After Discovery IR Compiler",
+      "rss_mb": 130.296875,
+      "timestamp": 1786787420.379618,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
+    },
+    {
+      "stage": "After ReviewContext Compiler",
+      "rss_mb": 130.296875,
+      "timestamp": 1786787420.616215,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
+    },
+    {
+      "stage": "After LLMContext Compiler",
+      "rss_mb": 130.296875,
+      "timestamp": 1786787420.862556,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
+    },
+    {
+      "stage": "before LLM request",
+      "rss_mb": 130.296875,
+      "timestamp": 1786787420.994368,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
+    },
+    {
+      "stage": "after LLM request",
+      "rss_mb": 146.984375,
+      "timestamp": 1786787443.647805,
+      "source_files_reachable": 0,
+      "source_bytes_reachable": 0
+    }
+  ],
+  "metrics": {
+    "source_snapshot": {
+      "num_files": 163,
+      "total_chars": 1492106,
+      "total_bytes": 1492292
+    },
+    "ast": {
+      "num_files": 78,
+      "num_ast_roots": 78,
+      "retained_memory_bytes": 32928297
+    },
+    "raw_index_facts": {
+      "symbols": 1909,
+      "calls": 6276,
+      "imports": 637,
+      "type_relationships": 114,
+      "retained_size_bytes": 2749502
+    },
+    "base_graph": {
+      "retained_size_bytes": 8310540,
+      "symbol_count": 1537,
+      "import_count": 630,
+      "call_edges": 3902,
+      "reference_edges": 238,
+      "type_relationship_edges": 114
+    },
+    "graph_indexes": {
+      "call_graph": {
+        "edges_tuple": 2441971,
+        "outgoing": 2512523,
+        "incoming": 2473987
+      },
+      "reference_graph": {
+        "edges_tuple": 139929,
+        "outgoing": 153945,
+        "incoming": 148737
+      },
+      "type_relationship_graph": {
+        "edges_tuple": 78460,
+        "outgoing": 85388,
+        "incoming": 80812
+      },
+      "repository_graph_reverse_indexes": {
+        "symbol_to_callers": 188970,
+        "symbol_to_importers": 63160,
+        "unresolved_symbol_to_waiting_files": 280158,
+        "file_to_call_edges": 2450619,
+        "file_to_reference_edges": 144297
+      }
+    },
+    "base_repository_model": {
+      "retained_size_bytes": 5770418,
+      "symbol_map_size_bytes": 2579427,
+      "symbols_count": 2167
+    },
+    "pickle_clone": {
+      "pickle_byte_size": 2162156,
+      "base_graph_retained_size": 8310540,
+      "patched_graph_retained_size": 8101985,
+      "rss_before_dumps": 141.828125,
+      "rss_after_dumps": 143.90625,
+      "rss_after_loads": 144.09375,
+      "rss_after_serialized_bytes_deleted": 144.09375,
+      "ratio_pickle_base": 0.2601703379082466,
+      "ratio_clone_base": 0.9749047594981795,
+      "peak_delta_mb": 2.265625
+    },
+    "downstream_compilers": {
+      "Behavior Compiler": {
+        "rss_before": 132.25,
+        "rss_after": 132.25,
+        "delta_rss_mb": 0.0
+      },
+      "Operational Compiler": {
+        "rss_before": 132.265625,
+        "rss_after": 132.359375,
+        "delta_rss_mb": 0.09375
+      },
+      "Engineering Discovery Compiler": {
+        "rss_before": 132.359375,
+        "rss_after": 132.359375,
+        "delta_rss_mb": 0.0
+      },
+      "Discovery IR Compiler": {
+        "rss_before": 130.296875,
+        "rss_after": 130.296875,
+        "delta_rss_mb": 0.0
+      },
+      "ReviewContext Compiler": {
+        "rss_before": 130.296875,
+        "rss_after": 130.296875,
+        "delta_rss_mb": 0.0
+      },
+      "LLMContext Compiler": {
+        "rss_before": 130.296875,
+        "rss_after": 130.296875,
+        "delta_rss_mb": 0.0
+      }
+    },
+    "files_breakdown": {
+      "total_files": 78,
+      "total_retained_size_bytes": 3134161,
+      "files": {
+        "docs/conf.py": {
+          "symbols": 0,
+          "imports": 2,
+          "calls": 0,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 2179
+        },
+        "examples/aliases/aliases.py": {
+          "symbols": 16,
+          "imports": 3,
+          "calls": 51,
+          "references": 0,
+          "type_relationships": 1,
+          "size_bytes": 24776
+        },
+        "examples/colors/colors.py": {
+          "symbols": 1,
+          "imports": 1,
+          "calls": 11,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 5777
+        },
+        "examples/completion/completion.py": {
+          "symbols": 7,
+          "imports": 3,
+          "calls": 17,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 11013
+        },
+        "examples/complex/complex/__init__.py": {
+          "symbols": 0,
+          "imports": 0,
+          "calls": 0,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 1222
+        },
+        "examples/complex/complex/cli.py": {
+          "symbols": 8,
+          "imports": 3,
+          "calls": 13,
+          "references": 0,
+          "type_relationships": 1,
+          "size_bytes": 11296
+        },
+        "examples/complex/complex/commands/__init__.py": {
+          "symbols": 0,
+          "imports": 0,
+          "calls": 0,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 1231
+        },
+        "examples/complex/complex/commands/cmd_init.py": {
+          "symbols": 1,
+          "imports": 2,
+          "calls": 5,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 5091
+        },
+        "examples/complex/complex/commands/cmd_status.py": {
+          "symbols": 1,
+          "imports": 2,
+          "calls": 3,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 4647
+        },
+        "examples/imagepipe/imagepipe.py": {
+          "symbols": 21,
+          "imports": 5,
+          "calls": 82,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 35899
+        },
+        "examples/inout/inout.py": {
+          "symbols": 1,
+          "imports": 1,
+          "calls": 8,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 5641
+        },
+        "examples/naval/naval.py": {
+          "symbols": 8,
+          "imports": 1,
+          "calls": 28,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 13828
+        },
+        "examples/repo/repo.py": {
+          "symbols": 10,
+          "imports": 4,
+          "calls": 53,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 21927
+        },
+        "examples/termui/termui.py": {
+          "symbols": 13,
+          "imports": 4,
+          "calls": 68,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 26459
+        },
+        "examples/validation/validation.py": {
+          "symbols": 4,
+          "imports": 2,
+          "calls": 14,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 8809
+        },
+        "src/click/__init__.py": {
+          "symbols": 1,
+          "imports": 72,
+          "calls": 8,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 26561
+        },
+        "src/click/_compat.py": {
+          "symbols": 50,
+          "imports": 14,
+          "calls": 118,
+          "references": 0,
+          "type_relationships": 1,
+          "size_bytes": 59979
+        },
+        "src/click/_termui_impl.py": {
+          "symbols": 44,
+          "imports": 35,
+          "calls": 218,
+          "references": 0,
+          "type_relationships": 2,
+          "size_bytes": 87569
+        },
+        "src/click/_textwrap.py": {
+          "symbols": 6,
+          "imports": 6,
+          "calls": 46,
+          "references": 0,
+          "type_relationships": 1,
+          "size_bytes": 19816
+        },
+        "src/click/_utils.py": {
+          "symbols": 2,
+          "imports": 3,
+          "calls": 0,
+          "references": 0,
+          "type_relationships": 1,
+          "size_bytes": 4769
+        },
+        "src/click/_winconsole.py": {
+          "symbols": 25,
+          "imports": 29,
+          "calls": 68,
+          "references": 0,
+          "type_relationships": 4,
+          "size_bytes": 40367
+        },
+        "src/click/core.py": {
+          "symbols": 154,
+          "imports": 49,
+          "calls": 536,
+          "references": 0,
+          "type_relationships": 9,
+          "size_bytes": 255613
+        },
+        "src/click/decorators.py": {
+          "symbols": 35,
+          "imports": 15,
+          "calls": 97,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 57107
+        },
+        "src/click/exceptions.py": {
+          "symbols": 35,
+          "imports": 12,
+          "calls": 76,
+          "references": 0,
+          "type_relationships": 12,
+          "size_bytes": 43893
+        },
+        "src/click/formatting.py": {
+          "symbols": 18,
+          "imports": 7,
+          "calls": 86,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 36571
+        },
+        "src/click/globals.py": {
+          "symbols": 6,
+          "imports": 4,
+          "calls": 6,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 9691
+        },
+        "src/click/parser.py": {
+          "symbols": 25,
+          "imports": 20,
+          "calls": 98,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 44958
+        },
+        "src/click/shell_completion.py": {
+          "symbols": 40,
+          "imports": 16,
+          "calls": 73,
+          "references": 0,
+          "type_relationships": 5,
+          "size_bytes": 51800
+        },
+        "src/click/termui.py": {
+          "symbols": 28,
+          "imports": 30,
+          "calls": 107,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 69632
+        },
+        "src/click/testing.py": {
+          "symbols": 41,
+          "imports": 18,
+          "calls": 118,
+          "references": 0,
+          "type_relationships": 2,
+          "size_bytes": 63436
+        },
+        "src/click/types.py": {
+          "symbols": 102,
+          "imports": 22,
+          "calls": 216,
+          "references": 0,
+          "type_relationships": 15,
+          "size_bytes": 118584
+        },
+        "src/click/utils.py": {
+          "symbols": 35,
+          "imports": 23,
+          "calls": 105,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 62214
+        },
+        "tests/conftest.py": {
+          "symbols": 1,
+          "imports": 2,
+          "calls": 2,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 4096
+        },
+        "tests/test_arguments.py": {
+          "symbols": 80,
+          "imports": 5,
+          "calls": 252,
+          "references": 0,
+          "type_relationships": 2,
+          "size_bytes": 114756
+        },
+        "tests/test_basic.py": {
+          "symbols": 101,
+          "imports": 9,
+          "calls": 292,
+          "references": 0,
+          "type_relationships": 2,
+          "size_bytes": 137076
+        },
+        "tests/test_chain.py": {
+          "symbols": 43,
+          "imports": 3,
+          "calls": 90,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 48435
+        },
+        "tests/test_command_decorators.py": {
+          "symbols": 16,
+          "imports": 2,
+          "calls": 18,
+          "references": 0,
+          "type_relationships": 2,
+          "size_bytes": 18601
+        },
+        "tests/test_commands.py": {
+          "symbols": 78,
+          "imports": 4,
+          "calls": 185,
+          "references": 0,
+          "type_relationships": 2,
+          "size_bytes": 95722
+        },
+        "tests/test_compat.py": {
+          "symbols": 13,
+          "imports": 9,
+          "calls": 43,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 26835
+        },
+        "tests/test_context.py": {
+          "symbols": 90,
+          "imports": 12,
+          "calls": 233,
+          "references": 0,
+          "type_relationships": 6,
+          "size_bytes": 115830
+        },
+        "tests/test_custom_classes.py": {
+          "symbols": 20,
+          "imports": 1,
+          "calls": 32,
+          "references": 0,
+          "type_relationships": 11,
+          "size_bytes": 26821
+        },
+        "tests/test_defaults.py": {
+          "symbols": 43,
+          "imports": 6,
+          "calls": 132,
+          "references": 0,
+          "type_relationships": 2,
+          "size_bytes": 68041
+        },
+        "tests/test_deprecations.py": {
+          "symbols": 4,
+          "imports": 7,
+          "calls": 12,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 11223
+        },
+        "tests/test_formatting.py": {
+          "symbols": 48,
+          "imports": 3,
+          "calls": 136,
+          "references": 0,
+          "type_relationships": 1,
+          "size_bytes": 69577
+        },
+        "tests/test_imports.py": {
+          "symbols": 1,
+          "imports": 4,
+          "calls": 5,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 6233
+        },
+        "tests/test_info_dict.py": {
+          "symbols": 9,
+          "imports": 2,
+          "calls": 54,
+          "references": 0,
+          "type_relationships": 1,
+          "size_bytes": 23692
+        },
+        "tests/test_normalization.py": {
+          "symbols": 7,
+          "imports": 1,
+          "calls": 18,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 11619
+        },
+        "tests/test_options.py": {
+          "symbols": 214,
+          "imports": 13,
+          "calls": 733,
+          "references": 0,
+          "type_relationships": 13,
+          "size_bytes": 319344
+        },
+        "tests/test_parser.py": {
+          "symbols": 3,
+          "imports": 4,
+          "calls": 10,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 8835
+        },
+        "tests/test_shell_completion.py": {
+          "symbols": 48,
+          "imports": 19,
+          "calls": 252,
+          "references": 0,
+          "type_relationships": 3,
+          "size_bytes": 100887
+        },
+        "tests/test_stream_lifecycle.py": {
+          "symbols": 47,
+          "imports": 13,
+          "calls": 197,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 86405
+        },
+        "tests/test_termui.py": {
+          "symbols": 118,
+          "imports": 18,
+          "calls": 427,
+          "references": 0,
+          "type_relationships": 11,
+          "size_bytes": 187211
+        },
+        "tests/test_testing.py": {
+          "symbols": 88,
+          "imports": 14,
+          "calls": 314,
+          "references": 0,
+          "type_relationships": 3,
+          "size_bytes": 140557
+        },
+        "tests/test_types.py": {
+          "symbols": 21,
+          "imports": 10,
+          "calls": 129,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 52678
+        },
+        "tests/test_utils/__init__.py": {
+          "symbols": 0,
+          "imports": 0,
+          "calls": 0,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 1214
+        },
+        "tests/test_utils/test_KeepOpenFile.py": {
+          "symbols": 1,
+          "imports": 1,
+          "calls": 11,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 6703
+        },
+        "tests/test_utils/test_LazyFile.py": {
+          "symbols": 1,
+          "imports": 1,
+          "calls": 11,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 6719
+        },
+        "tests/test_utils/test__detect_program_name.py": {
+          "symbols": 3,
+          "imports": 3,
+          "calls": 11,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 7915
+        },
+        "tests/test_utils/test__expand_args.py": {
+          "symbols": 1,
+          "imports": 2,
+          "calls": 9,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 6679
+        },
+        "tests/test_utils/test_confirm.py": {
+          "symbols": 4,
+          "imports": 1,
+          "calls": 17,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 9898
+        },
+        "tests/test_utils/test_echo.py": {
+          "symbols": 8,
+          "imports": 7,
+          "calls": 75,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 27840
+        },
+        "tests/test_utils/test_echo_via_pager.py": {
+          "symbols": 10,
+          "imports": 10,
+          "calls": 59,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 27008
+        },
+        "tests/test_utils/test_format_filename.py": {
+          "symbols": 1,
+          "imports": 1,
+          "calls": 5,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 4983
+        },
+        "tests/test_utils/test_make_default_short_help.py": {
+          "symbols": 1,
+          "imports": 2,
+          "calls": 16,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 8060
+        },
+        "tests/test_utils/test_open_file.py": {
+          "symbols": 13,
+          "imports": 6,
+          "calls": 63,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 27505
+        },
+        "tests/test_utils/test_prompt.py": {
+          "symbols": 11,
+          "imports": 5,
+          "calls": 36,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 21151
+        },
+        "tests/test_utils/test_sentinel.py": {
+          "symbols": 1,
+          "imports": 3,
+          "calls": 13,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 7654
+        },
+        "tests/test_utils/test_style.py": {
+          "symbols": 3,
+          "imports": 2,
+          "calls": 9,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 7977
+        },
+        "tests/typing/typing_aliased_group.py": {
+          "symbols": 6,
+          "imports": 3,
+          "calls": 13,
+          "references": 0,
+          "type_relationships": 1,
+          "size_bytes": 10277
+        },
+        "tests/typing/typing_confirmation_option.py": {
+          "symbols": 1,
+          "imports": 2,
+          "calls": 3,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 4443
+        },
+        "tests/typing/typing_group_kw_options.py": {
+          "symbols": 1,
+          "imports": 2,
+          "calls": 1,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 3936
+        },
+        "tests/typing/typing_help_option.py": {
+          "symbols": 1,
+          "imports": 2,
+          "calls": 3,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 4576
+        },
+        "tests/typing/typing_options.py": {
+          "symbols": 1,
+          "imports": 2,
+          "calls": 5,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 4936
+        },
+        "tests/typing/typing_password_option.py": {
+          "symbols": 1,
+          "imports": 3,
+          "calls": 4,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 4958
+        },
+        "tests/typing/typing_progressbar.py": {
+          "symbols": 3,
+          "imports": 4,
+          "calls": 7,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 7744
+        },
+        "tests/typing/typing_prompt.py": {
+          "symbols": 4,
+          "imports": 2,
+          "calls": 2,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 5680
+        },
+        "tests/typing/typing_simple_example.py": {
+          "symbols": 1,
+          "imports": 2,
+          "calls": 5,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 5044
+        },
+        "tests/typing/typing_version_option.py": {
+          "symbols": 1,
+          "imports": 2,
+          "calls": 3,
+          "references": 0,
+          "type_relationships": 0,
+          "size_bytes": 4432
+        }
+      }
+    },
+    "cleanup_rss_drop": {
+      "before_cleanup_rss": 147.0,
+      "after_cleanup_rss": 147.0,
+      "reclaimed_mb": 0.0
+    }
+  }
+}

@@ -1,34 +1,26 @@
 """GraphPatcher - incrementally patches RepositoryGraph with file contributions."""
 
-from collections import deque
-import sys
-from typing import Any
+import dataclasses
 import os
 import time
-import dataclasses
+from typing import Any
 
+from core.runtime import assert_new_architecture
+from engine.language.base.semantic_compiler import SemanticCompiler, _build_symbol_id
 from engine.repository.model import (
-    Symbol,
-    SymbolKind,
     CallEdge,
     CallGraph,
-    ReferenceEdge,
-    ReferenceGraph,
-    TypeRelationshipEdge,
-    TypeRelationshipGraph,
-    EntryPoint,
-    AsyncEntryPoint,
-    PersistenceModel,
-    RepositoryMethod,
-    EventConstruct,
-    TestDefinition,
-    ConfigurationReference,
     Evidence,
     FileLocation,
+    ReferenceEdge,
+    ReferenceGraph,
+    Symbol,
+    SymbolKind,
+    TypeRelationshipEdge,
+    TypeRelationshipGraph,
 )
 from engine.repository.model.file_contribution import FileContribution
 from engine.repository.model.repository_graph import RepositoryGraph
-from engine.language.base.semantic_compiler import SemanticCompiler, _build_symbol_id
 
 
 class GraphPatcher:
@@ -40,6 +32,7 @@ class GraphPatcher:
     """
 
     def __init__(self) -> None:
+        assert_new_architecture("GraphPatcher")
         self.compiler = SemanticCompiler()
         self._affected_files_abs: set[str] | None = None
         self.metrics: dict[str, Any] = {}
@@ -47,9 +40,8 @@ class GraphPatcher:
     def _norm_path(self, p: str) -> str:
         if not p:
             return ""
-        norm = p.replace('\\', '/')
-        if norm.startswith('/'):
-            norm = norm[1:]
+        norm = p.replace("\\", "/")
+        norm = norm.removeprefix("/")
         return norm.lower()
 
     def _is_affected(self, path: str, affected_files: set[str]) -> bool:
@@ -95,16 +87,19 @@ class GraphPatcher:
 
         # Detect repo prefix
         repo_prefix = ""
-        for cf in changed_files.keys():
+        for cf in changed_files:
             if os.path.isabs(cf):
                 for gf in graph.files.keys():
-                    cf_norm = cf.replace('\\', '/')
-                    gf_norm = gf.replace('\\', '/')
-                    if cf_norm.lower().endswith('/' + gf_norm.lower()) or cf_norm.lower() == gf_norm.lower():
+                    cf_norm = cf.replace("\\", "/")
+                    gf_norm = gf.replace("\\", "/")
+                    if (
+                        cf_norm.lower().endswith("/" + gf_norm.lower())
+                        or cf_norm.lower() == gf_norm.lower()
+                    ):
                         if cf_norm.lower() == gf_norm.lower():
                             repo_prefix = ""
                         else:
-                            repo_prefix = cf[:-len(gf)]
+                            repo_prefix = cf[: -len(gf)]
                         break
                 if repo_prefix:
                     break
@@ -114,10 +109,9 @@ class GraphPatcher:
         for k, v in changed_files.items():
             norm_k = k
             if repo_prefix and k.startswith(repo_prefix):
-                norm_k = k[len(repo_prefix):]
-            norm_k = norm_k.replace('\\', '/')
-            if norm_k.startswith('/'):
-                norm_k = norm_k[1:]
+                norm_k = k[len(repo_prefix) :]
+            norm_k = norm_k.replace("\\", "/")
+            norm_k = norm_k.removeprefix("/")
 
             if v is not None:
                 normalized_contrib = dataclasses.replace(v, file_path=norm_k)
@@ -156,18 +150,28 @@ class GraphPatcher:
 
         old_symbols_by_file: dict[str, list[Symbol]] = {}
         for file_path in affected_files:
-            old_symbols_by_file[file_path] = symbols_by_file.get(self._norm_path(file_path), [])
+            old_symbols_by_file[file_path] = symbols_by_file.get(
+                self._norm_path(file_path), []
+            )
 
         deleted_symbol_ids: set[str] = set()
         for file_path in changed_paths:
             old_contrib = graph.files.get(file_path)
             if old_contrib:
                 new_contrib = changed_files[file_path]
-                new_symbol_names = {s.name for s in new_contrib.symbols} if new_contrib else set()
+                new_symbol_names = (
+                    {s.name for s in new_contrib.symbols} if new_contrib else set()
+                )
 
                 for old_sym in old_contrib.symbols:
                     if old_sym.name not in new_symbol_names:
-                        sym_id = _build_symbol_id(language, file_path, old_sym.name, old_sym.kind, old_sym.parent)
+                        sym_id = _build_symbol_id(
+                            language,
+                            file_path,
+                            old_sym.name,
+                            old_sym.kind,
+                            old_sym.parent,
+                        )
                         deleted_symbol_ids.add(sym_id)
                 for old_imp in old_contrib.imports:
                     if old_imp.names:
@@ -184,10 +188,8 @@ class GraphPatcher:
 
         if deleted_symbol_ids:
             for del_id in deleted_symbol_ids:
-                if del_id in graph.symbol_to_callers:
-                    affected_files.update(graph.symbol_to_callers[del_id])
-                if del_id in graph.symbol_to_importers:
-                    affected_files.update(graph.symbol_to_importers[del_id])
+                affected_files.update(graph.callers_of(del_id))
+                affected_files.update(graph.importers_of(del_id))
 
             # Fallback scan if reverse index was partially populated
             for edge in graph.call_graph.edges:
@@ -211,15 +213,18 @@ class GraphPatcher:
 
         if added_symbol_names:
             for sym_name in added_symbol_names:
-                if sym_name in graph.unresolved_symbol_to_waiting_files:
-                    affected_files.update(graph.unresolved_symbol_to_waiting_files[sym_name])
+                affected_files.update(graph.waiting_files_for(sym_name))
 
             # Fast fallback check across files
             for file_path, contrib in graph.files.items():
                 if self._is_affected(file_path, affected_files):
                     continue
-                has_unresolved_call = any(call.callee in added_symbol_names for call in contrib.calls)
-                has_unresolved_ref = any(ref.name in added_symbol_names for ref in contrib.references)
+                has_unresolved_call = any(
+                    call.callee in added_symbol_names for call in contrib.calls
+                )
+                has_unresolved_ref = any(
+                    ref.name in added_symbol_names for ref in contrib.references
+                )
                 if has_unresolved_call or has_unresolved_ref:
                     affected_files.add(file_path)
 
@@ -244,16 +249,7 @@ class GraphPatcher:
                 graph.imports.pop(imp.id, None)
 
             # Clear per-file edge and construct buckets for affected file
-            graph.file_to_call_edges.pop(file_path, None)
-            graph.file_to_reference_edges.pop(file_path, None)
-            graph.file_to_type_edges.pop(file_path, None)
-            graph.file_to_entry_points.pop(file_path, None)
-            graph.file_to_async_entry_points.pop(file_path, None)
-            graph.file_to_persistence.pop(file_path, None)
-            graph.file_to_methods.pop(file_path, None)
-            graph.file_to_events.pop(file_path, None)
-            graph.file_to_tests.pop(file_path, None)
-            graph.file_to_configs.pop(file_path, None)
+            graph.clear_file_indexes(file_path)
 
         log_phase("Remove contributions", time.perf_counter() - t_phase_start)
 
@@ -279,7 +275,9 @@ class GraphPatcher:
                 symbol = self.compiler._create_symbol(sym, file_path, language)
                 graph.symbols[symbol.id] = symbol
             for imp in contrib.imports:
-                import_sym = self.compiler._create_import_symbol(imp, file_path, language)
+                import_sym = self.compiler._create_import_symbol(
+                    imp, file_path, language
+                )
                 if import_sym:
                     graph.imports[import_sym.id] = import_sym
 
@@ -301,8 +299,11 @@ class GraphPatcher:
 
         # Filter unaffected reference edges
         unaffected_reference_edges = [
-            e for e in graph.reference_graph.edges
-            if not self._is_affected(self._get_file_from_symbol_id(e.source_id), affected_files)
+            e
+            for e in graph.reference_graph.edges
+            if not self._is_affected(
+                self._get_file_from_symbol_id(e.source_id), affected_files
+            )
             and e.target_id not in deleted_symbol_ids
         ]
 
@@ -313,15 +314,16 @@ class GraphPatcher:
             if file_path not in graph.files:
                 continue
             file_import_symbols = [
-                imp for imp in graph.imports.values()
-                if imp.file == file_path
+                imp for imp in graph.imports.values() if imp.file == file_path
             ]
             new_file_ref_edges: list[ReferenceEdge] = []
             for imp_sym in file_import_symbols:
-                self.compiler._resolve_import_references_fast(imp_sym, name_to_symbols, new_file_ref_edges)
+                self.compiler._resolve_import_references_fast(
+                    imp_sym, name_to_symbols, new_file_ref_edges
+                )
 
             reference_edges.extend(new_file_ref_edges)
-            graph.file_to_reference_edges[file_path] = new_file_ref_edges
+            graph.set_file_reference_edges(file_path, new_file_ref_edges)
 
         log_phase("Resolve imports", time.perf_counter() - t_phase_start)
 
@@ -376,35 +378,69 @@ class GraphPatcher:
                     parts = symbol.id.split("#")[-1].split(".")
                     if len(parts) == 2:
                         class_name, method_name = parts
-                        class_method_map[(symbol.file, class_name, method_name)] = symbol
+                        class_method_map[(symbol.file, class_name, method_name)] = (
+                            symbol
+                        )
             elif symbol.kind == SymbolKind.IMPORT:
                 continue
             else:
                 file_symbol_map[(symbol.file, symbol.name)] = symbol
 
         unaffected_call_edges = [
-            e for e in graph.call_graph.edges
+            e
+            for e in graph.call_graph.edges
             if not self._is_affected(e.file, affected_files)
-            and not self._is_affected(self._get_file_from_symbol_id(e.caller_id), affected_files)
+            and not self._is_affected(
+                self._get_file_from_symbol_id(e.caller_id), affected_files
+            )
             and e.callee_id not in deleted_symbol_ids
         ]
         call_edges = list(unaffected_call_edges)
         initial_call_edges_count = len(call_edges)
 
         unaffected_type_edges = [
-            e for e in graph.type_relationship_graph.edges
+            e
+            for e in graph.type_relationship_graph.edges
             if not self._is_affected(self._get_file_from_evidence(e), affected_files)
         ]
         type_edges = list(unaffected_type_edges)
         initial_type_edges_count = len(type_edges)
 
-        entry_points = [ep for ep in graph.entry_points if not self._is_affected(self._get_file_from_evidence(ep), affected_files)]
-        async_entry_points = [aep for aep in graph.async_entry_points if not self._is_affected(self._get_file_from_evidence(aep), affected_files)]
-        persistence_models = [pm for pm in graph.persistence_models if not self._is_affected(self._get_file_from_evidence(pm), affected_files)]
-        repository_methods = [rm for rm in graph.repository_methods if not self._is_affected(self._get_file_from_evidence(rm), affected_files)]
-        event_constructs = [ev for ev in graph.event_constructs if not self._is_affected(self._get_file_from_evidence(ev), affected_files)]
-        test_definitions = [td for td in graph.test_definitions if not self._is_affected(self._get_file_from_evidence(td), affected_files)]
-        configuration_references = [cr for cr in graph.configuration_references if not self._is_affected(self._get_file_from_evidence(cr), affected_files)]
+        entry_points = [
+            ep
+            for ep in graph.entry_points
+            if not self._is_affected(self._get_file_from_evidence(ep), affected_files)
+        ]
+        async_entry_points = [
+            aep
+            for aep in graph.async_entry_points
+            if not self._is_affected(self._get_file_from_evidence(aep), affected_files)
+        ]
+        persistence_models = [
+            pm
+            for pm in graph.persistence_models
+            if not self._is_affected(self._get_file_from_evidence(pm), affected_files)
+        ]
+        repository_methods = [
+            rm
+            for rm in graph.repository_methods
+            if not self._is_affected(self._get_file_from_evidence(rm), affected_files)
+        ]
+        event_constructs = [
+            ev
+            for ev in graph.event_constructs
+            if not self._is_affected(self._get_file_from_evidence(ev), affected_files)
+        ]
+        test_definitions = [
+            td
+            for td in graph.test_definitions
+            if not self._is_affected(self._get_file_from_evidence(td), affected_files)
+        ]
+        configuration_references = [
+            cr
+            for cr in graph.configuration_references
+            if not self._is_affected(self._get_file_from_evidence(cr), affected_files)
+        ]
 
         for file_path in affected_files:
             if file_path not in graph.files:
@@ -418,7 +454,7 @@ class GraphPatcher:
                     file_path,
                     call.caller,
                     kind="method" if call.caller_parent else "function",
-                    parent=call.caller_parent
+                    parent=call.caller_parent,
                 )
                 callee_id = self.compiler._resolve_callee_id(
                     call.callee,
@@ -451,7 +487,7 @@ class GraphPatcher:
                     call_edges.append(edge)
                     new_file_call_edges.append(edge)
 
-            graph.file_to_call_edges[file_path] = new_file_call_edges
+            graph.set_file_call_edges(file_path, new_file_call_edges)
 
             # Re-resolve structural constructs for affected files
             new_type_edges: list[TypeRelationshipEdge] = []
@@ -460,7 +496,7 @@ class GraphPatcher:
                 if t_edge:
                     type_edges.append(t_edge)
                     new_type_edges.append(t_edge)
-            graph.file_to_type_edges[file_path] = new_type_edges
+            graph.set_file_type_edges(file_path, new_type_edges)
 
             new_eps = []
             for ep in contrib.entrypoints:
@@ -468,7 +504,7 @@ class GraphPatcher:
                 if entry_point:
                     entry_points.append(entry_point)
                     new_eps.append(entry_point)
-            graph.file_to_entry_points[file_path] = new_eps
+            graph.set_file_entry_points(file_path, new_eps)
 
             new_pms = []
             for pm in contrib.persistence_models:
@@ -476,15 +512,17 @@ class GraphPatcher:
                 if model:
                     persistence_models.append(model)
                     new_pms.append(model)
-            graph.file_to_persistence[file_path] = new_pms
+            graph.set_file_persistence(file_path, new_pms)
 
             new_rms = []
             for rm in contrib.repository_methods:
-                method = self.compiler._create_repository_method(rm, file_path, language)
+                method = self.compiler._create_repository_method(
+                    rm, file_path, language
+                )
                 if method:
                     repository_methods.append(method)
                     new_rms.append(method)
-            graph.file_to_methods[file_path] = new_rms
+            graph.set_file_methods(file_path, new_rms)
 
             new_evs = []
             for ev in contrib.events:
@@ -492,7 +530,7 @@ class GraphPatcher:
                 if event:
                     event_constructs.append(event)
                     new_evs.append(event)
-            graph.file_to_events[file_path] = new_evs
+            graph.set_file_events(file_path, new_evs)
 
             new_tds = []
             for td in contrib.tests:
@@ -500,7 +538,7 @@ class GraphPatcher:
                 if test:
                     test_definitions.append(test)
                     new_tds.append(test)
-            graph.file_to_tests[file_path] = new_tds
+            graph.set_file_tests(file_path, new_tds)
 
             new_crs = []
             for cr in contrib.configurations:
@@ -508,7 +546,7 @@ class GraphPatcher:
                 if config:
                     configuration_references.append(config)
                     new_crs.append(config)
-            graph.file_to_configs[file_path] = new_crs
+            graph.set_file_configs(file_path, new_crs)
 
         # Update graphs in graph instance
         graph.call_graph = CallGraph(edges=tuple(call_edges))
@@ -548,7 +586,11 @@ class GraphPatcher:
             if file_path not in graph.files:
                 symbols_removed += len(old_syms)
             else:
-                new_syms = [s for s in graph.symbols.values() if self._norm_path(s.file) == self._norm_path(file_path)]
+                new_syms = [
+                    s
+                    for s in graph.symbols.values()
+                    if self._norm_path(s.file) == self._norm_path(file_path)
+                ]
                 new_sym_names = {s.name for s in new_syms}
 
                 for ns in new_syms:
@@ -564,7 +606,11 @@ class GraphPatcher:
         updated_call_edges_count = len(call_edges) - initial_call_edges_count
         updated_reference_edges_count = len(reference_edges) - initial_ref_edges_count
         updated_type_edges_count = len(type_edges) - initial_type_edges_count
-        edges_updated = updated_call_edges_count + updated_reference_edges_count + updated_type_edges_count
+        edges_updated = (
+            updated_call_edges_count
+            + updated_reference_edges_count
+            + updated_type_edges_count
+        )
 
         affected_symbols_count = sum(
             len(graph.files[f].symbols) for f in affected_files if f in graph.files
@@ -596,7 +642,9 @@ class GraphPatcher:
         unique_symbol_ids = set()
         for file_path, contrib in graph.files.items():
             for sym in contrib.symbols:
-                sym_id = _build_symbol_id(language, file_path, sym.name, sym.kind, sym.parent)
+                sym_id = _build_symbol_id(
+                    language, file_path, sym.name, sym.kind, sym.parent
+                )
                 unique_symbol_ids.add(sym_id)
 
         if len(graph.symbols) != len(unique_symbol_ids):

@@ -3,15 +3,16 @@
 Every dataclass is frozen (immutable) and contains only engineering concepts.
 No presentation metadata, no scores, no ranking vectors, no rendering hints.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Change — hierarchical, file-centered structure
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class ChangeSummary:
@@ -20,6 +21,7 @@ class ChangeSummary:
     These values are derived from existing compiler outputs.
     No new computation.
     """
+
     classification: str = ""
     scope: str = ""
     file_count: int = 0
@@ -34,6 +36,7 @@ class SymbolRef:
     Populated from existing symbol metadata.
     No invented metadata.
     """
+
     id: str = ""
     name: str = ""
     kind: str = ""
@@ -49,6 +52,7 @@ class Change:
     Assembled from existing compiler artifacts.
     No new discovery.
     """
+
     symbol: SymbolRef = field(default_factory=SymbolRef)
     change_type: str = ""  # "added", "removed", "modified"
     behavior_changes: tuple[str, ...] = field(default_factory=tuple)
@@ -60,6 +64,7 @@ class FileChange:
 
     The file is the primary review unit.
     """
+
     path: str = ""
     language: str = ""
     change_type: str = ""  # "added", "removed", "modified", "mixed"
@@ -73,6 +78,7 @@ class ChangeContext:
     Organized hierarchically around files.
     No compiler-oriented flat lists.
     """
+
     summary: ChangeSummary = field(default_factory=ChangeSummary)
     files: tuple[FileChange, ...] = field(default_factory=tuple)
 
@@ -81,6 +87,7 @@ class ChangeContext:
 # Execution — hierarchical execution graph
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class SymbolReference:
     """A reference to a repository symbol in an execution step.
@@ -88,6 +95,7 @@ class SymbolReference:
     Must include enough metadata for downstream consumers.
     Reuses existing RepositoryModel metadata.
     """
+
     id: str = ""
     name: str = ""
     kind: str = ""
@@ -101,6 +109,7 @@ class ReachedComponents:
     Describes what service, module, or package this step reaches.
     Populated from existing compiler metadata — no new computation.
     """
+
     service: str = ""
     module: str = ""
     package: str = ""
@@ -123,6 +132,7 @@ class ExecutionStep:
         reaches: Components (service, module, package) reached by this step.
         references: Compiler references backing this execution step.
     """
+
     behavior: str = ""
     symbol: SymbolReference = field(default_factory=SymbolReference)
     kind: str = ""
@@ -151,6 +161,7 @@ class EntryPointExecution:
         max_depth: Maximum execution depth from this entry point.
         references: Compiler references backing this entry point.
     """
+
     endpoint: str = ""
     method: str = ""
     path: str = ""
@@ -173,6 +184,7 @@ class DeepestExecution:
         depth: The maximum execution depth.
         references: Compiler references.
     """
+
     entry_point: str = ""
     depth: int = 0
     references: tuple[str, ...] = field(default_factory=tuple)
@@ -189,6 +201,7 @@ class ExecutionContext:
     These values already exist in Behavior and Discovery outputs.
     Reused — never recomputed.
     """
+
     entry_points: tuple[EntryPointExecution, ...] = field(default_factory=tuple)
     deepest_execution: DeepestExecution = field(default_factory=DeepestExecution)
 
@@ -197,12 +210,14 @@ class ExecutionContext:
 # Reference (replaces "Evidence")
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class Reference:
     """Traceability back to compiler artifacts.
 
     References are traceability only — no presentation metadata.
     """
+
     id: str = ""
     kind: str = ""
     location: str = ""
@@ -213,6 +228,7 @@ class Reference:
 # ---------------------------------------------------------------------------
 # Discovery
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class Discovery:
@@ -229,6 +245,7 @@ class Discovery:
         reference_count: Total number of supporting references discovered (before truncation).
         references: Representative subset of references (at most MAX_DISCOVERY_REFERENCES).
     """
+
     id: str = ""
     kind: str = ""
     statement: str = ""  # Deprecated: kept for backward compatibility
@@ -240,6 +257,7 @@ class Discovery:
 # ---------------------------------------------------------------------------
 # ReviewContext — the final contract
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class ReviewContext:
@@ -257,6 +275,7 @@ class ReviewContext:
     references collection. Discoveries contain their own references,
     execution contains its own evidence, etc.
     """
+
     change: ChangeContext = field(default_factory=ChangeContext)
     execution: ExecutionContext = field(default_factory=ExecutionContext)
     discoveries: tuple[Discovery, ...] = field(default_factory=tuple)

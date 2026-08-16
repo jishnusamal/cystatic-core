@@ -38,29 +38,35 @@ class PythonTypeExtractor(BaseExtractor):
                 for base in node.bases:
                     target = self._resolve_base_name(base)
                     if target:
-                        relationships.append({
-                            'source_sym': f"python://{file_path}#{node.name}",
-                            'target_sym': target,
-                            'relation_type': 'extends',
-                            'metadata': {'file': file_path, 'line': node.lineno},
-                        })
+                        relationships.append(
+                            {
+                                "source_sym": f"python://{file_path}#{node.name}",
+                                "target_sym": target,
+                                "relation_type": "extends",
+                                "metadata": {"file": file_path, "line": node.lineno},
+                            }
+                        )
 
                 # Composition relationships from type-annotated fields
                 for child in node.body:
-                    if isinstance(child, ast.AnnAssign) and isinstance(child.target, ast.Name):
+                    if isinstance(child, ast.AnnAssign) and isinstance(
+                        child.target, ast.Name
+                    ):
                         field_name = child.target.id
                         type_hint = self._resolve_type_hint(child.annotation)
                         if type_hint:
-                            relationships.append({
-                                'source_sym': f"python://{file_path}#{node.name}",
-                                'target_sym': type_hint,
-                                'relation_type': 'composes',
-                                'metadata': {
-                                    'field': field_name,
-                                    'file': file_path,
-                                    'line': child.lineno,
-                                },
-                            })
+                            relationships.append(
+                                {
+                                    "source_sym": f"python://{file_path}#{node.name}",
+                                    "target_sym": type_hint,
+                                    "relation_type": "composes",
+                                    "metadata": {
+                                        "field": field_name,
+                                        "file": file_path,
+                                        "line": child.lineno,
+                                    },
+                                }
+                            )
 
         return relationships
 
@@ -76,7 +82,7 @@ class PythonTypeExtractor(BaseExtractor):
                 current = current.value
             if isinstance(current, ast.Name):
                 parts.append(current.id)
-            return '.'.join(reversed(parts))
+            return ".".join(reversed(parts))
         elif isinstance(node, ast.Subscript):
             return self._resolve_base_name(node.value)
         return None
@@ -95,7 +101,7 @@ class PythonTypeExtractor(BaseExtractor):
                 current = current.value
             if isinstance(current, ast.Name):
                 parts.append(current.id)
-            return '.'.join(reversed(parts))
+            return ".".join(reversed(parts))
         elif isinstance(node, ast.Subscript):
             # Generic type like List[str], Optional[User]
             base = self._resolve_type_hint(node.value)

@@ -17,14 +17,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import FrozenSet, cast
 
 from engine.operational.compiler.passes.base import (
     OperationalCompilerPass,
     OperationalPassContext,
 )
-from engine.repository.model import Symbol, SymbolKind
-from engine.operational.model import OperationalChangeModel
+from engine.repository.model import Symbol
 
 
 @dataclass(frozen=True)
@@ -72,29 +70,62 @@ class EventModel:
 
 # Patterns for event-related symbols
 _EVENT_PUBLISH_PATTERNS = {
-    "publish", "emit", "dispatch", "send", "produce", "fire",
-    "notify", "broadcast", "raise_event", "trigger",
+    "publish",
+    "emit",
+    "dispatch",
+    "send",
+    "produce",
+    "fire",
+    "notify",
+    "broadcast",
+    "raise_event",
+    "trigger",
 }
 
 _EVENT_CONSUME_PATTERNS = {
-    "subscribe", "consume", "handle", "on_event", "listen",
-    "process_event", "receive", "on_message",
+    "subscribe",
+    "consume",
+    "handle",
+    "on_event",
+    "listen",
+    "process_event",
+    "receive",
+    "on_message",
 }
 
 _QUEUE_PATTERNS = {
-    "queue", "message_queue", "task_queue", "job_queue",
-    "rabbitmq", "sqs", "pubsub", "kafka_topic", "nats",
+    "queue",
+    "message_queue",
+    "task_queue",
+    "job_queue",
+    "rabbitmq",
+    "sqs",
+    "pubsub",
+    "kafka_topic",
+    "nats",
 }
 
 _WORKER_PATTERNS = {
-    "worker", "job", "task", "background_job", "scheduled_task",
-    "cron_job", "periodic_task", "async_task",
+    "worker",
+    "job",
+    "task",
+    "background_job",
+    "scheduled_task",
+    "cron_job",
+    "periodic_task",
+    "async_task",
 }
 
 _EVENT_DECORATORS = {
-    "on_event", "event_listener", "subscribe", "kafka_listener",
-    "rabbit_listener", "sqs_listener", "pubsub_listener",
-    "event_handler", "stream_listener",
+    "on_event",
+    "event_listener",
+    "subscribe",
+    "kafka_listener",
+    "rabbit_listener",
+    "sqs_listener",
+    "pubsub_listener",
+    "event_handler",
+    "stream_listener",
 }
 
 
@@ -204,8 +235,8 @@ class EventCompilationPass(OperationalCompilerPass):
             data=model.data,
             event=event_model,
             validation=model.validation,
-            api=model.api if hasattr(model, 'api') else None,
-            metrics=model.metrics if hasattr(model, 'metrics') else None,
+            api=model.api if hasattr(model, "api") else None,
+            metrics=model.metrics if hasattr(model, "metrics") else None,
         )
 
         return context
@@ -217,6 +248,7 @@ class EventCompilationPass(OperationalCompilerPass):
     ) -> set[str]:
         """BFS to find all reachable symbol IDs from seed IDs."""
         from collections import deque
+
         reachable: set[str] = set()
         queue: deque[str] = deque(seed_ids)
         while queue:
@@ -251,7 +283,7 @@ class EventCompilationPass(OperationalCompilerPass):
                     events.append(sym.name)
 
         # Check properties for event annotations
-        props = sym.properties
+        props = getattr(sym, "properties", {})
         if props.get("decorators"):
             decorators = props["decorators"]
             if isinstance(decorators, (list, tuple)):
@@ -294,7 +326,7 @@ class EventCompilationPass(OperationalCompilerPass):
                     events.append(sym.name)
 
         # Check properties for event listener annotations
-        props = sym.properties
+        props = getattr(sym, "properties", {})
         if props.get("decorators"):
             decorators = props["decorators"]
             if isinstance(decorators, (list, tuple)):
@@ -324,7 +356,7 @@ class EventCompilationPass(OperationalCompilerPass):
         for pattern in _QUEUE_PATTERNS:
             if pattern in name_lower:
                 return sym.name
-        props = sym.properties
+        props = getattr(sym, "properties", {})
         for key in ("queue", "queue_name", "topic", "channel"):
             if key in props:
                 return str(props[key])
@@ -338,7 +370,7 @@ class EventCompilationPass(OperationalCompilerPass):
             if pattern in name_lower:
                 return True
         # Check entry points for worker kind
-        props = sym.properties
+        props = getattr(sym, "properties", {})
         if props.get("kind") == "worker_entry":
             return True
         if props.get("decorators"):

@@ -4,40 +4,46 @@ Tests that LLMContextCompiler correctly transforms ReviewContext into a lossless
 compressed IR with enum encoding, string tables, URI decomposition, and
 source location normalization.
 """
+
 from __future__ import annotations
 
 from typing import Any
 
 import pytest
 
+from engine.llm_context.compiler import LLMContextCompiler
+from engine.llm_context.model import (
+    ENUM_REVERSE,
+    ExecutionGraph,
+    LLMContext,
+    StringTable,
+)
 from engine.review_context.model import (
-    ReviewContext,
+    Change,
     ChangeContext,
     ChangeSummary,
-    FileChange,
-    Change,
-    SymbolRef,
-    ExecutionContext,
-    EntryPointExecution,
-    ExecutionStep,
-    SymbolReference,
-    ReachedComponents,
     DeepestExecution,
     Discovery,
+    EntryPointExecution,
+    ExecutionContext,
+    ExecutionStep,
+    FileChange,
+    ReachedComponents,
     Reference,
+    ReviewContext,
+    SymbolRef,
+    SymbolReference,
 )
-from engine.llm_context.compiler import LLMContextCompiler
-from engine.llm_context.model import LLMContext, StringTable, ExecutionGraph
-from engine.llm_context.model import ENUM_REVERSE
-
 
 # ---------------------------------------------------------------------------
 # Enum lookup helpers for tests
 # ---------------------------------------------------------------------------
 
+
 def _enum_val(table: str, id: int) -> str:
     """Look up enum value by ID."""
     from engine.llm_context.model import ENUM_TABLES
+
     return ENUM_TABLES[table].get(id, "")
 
 
@@ -49,6 +55,7 @@ def _enum_id(table: str, val: str) -> int:
 # ---------------------------------------------------------------------------
 # Test helpers
 # ---------------------------------------------------------------------------
+
 
 class TestHelper:
     """Helper for creating test fixtures."""
@@ -236,6 +243,7 @@ class TestHelper:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def empty_review_context():
     """Create an empty ReviewContext."""
@@ -320,7 +328,9 @@ def simple_discoveries():
 
 
 @pytest.fixture
-def simple_review_context(simple_change_context, simple_execution_context, simple_discoveries):
+def simple_review_context(
+    simple_change_context, simple_execution_context, simple_discoveries
+):
     """Create a simple ReviewContext with all sections populated."""
     return ReviewContext(
         change=simple_change_context,
@@ -460,6 +470,7 @@ def multi_discovery_context():
 # Tests: LLMContextCompiler — Initialization
 # ---------------------------------------------------------------------------
 
+
 class TestLLMContextCompilerInit:
     """Tests for LLMContextCompiler initialization."""
 
@@ -492,6 +503,7 @@ class TestLLMContextCompilerInit:
 # ---------------------------------------------------------------------------
 # Tests: LLMContextCompiler — String Table
 # ---------------------------------------------------------------------------
+
 
 class TestStringTable:
     """Tests for the global string dictionary."""
@@ -531,6 +543,7 @@ class TestStringTable:
 # ---------------------------------------------------------------------------
 # Tests: LLMContextCompiler — Lookup Tables
 # ---------------------------------------------------------------------------
+
 
 class TestLookupTables:
     """Tests for normalized lookup tables."""
@@ -617,12 +630,14 @@ class TestLookupTables:
             assert isinstance(path_idx, int)
             # method_id must resolve to a known HTTP method via ENUM_METHOD
             from engine.llm_context.model import ENUM_METHOD
+
             assert method_id in ENUM_METHOD
 
 
 # ---------------------------------------------------------------------------
 # Tests: LLMContextCompiler — Change Section
 # ---------------------------------------------------------------------------
+
 
 class TestChangeSection:
     """Tests for the change section of LLMContext."""
@@ -650,7 +665,10 @@ class TestChangeSection:
         result = compiler.compile(simple_review_context)
         for file_entry in result.cf:
             file_idx = file_entry[0]
-            assert result.st.entries[result.f[file_idx][0]] == "test.py" or "test.py" in result.st.entries[result.f[file_idx][0]]
+            assert (
+                result.st.entries[result.f[file_idx][0]] == "test.py"
+                or "test.py" in result.st.entries[result.f[file_idx][0]]
+            )
 
     def test_change_symbol_references_correct_symbol(self, simple_review_context):
         """Test that change symbol references the correct symbol table entry."""
@@ -666,6 +684,7 @@ class TestChangeSection:
 # ---------------------------------------------------------------------------
 # Tests: LLMContextCompiler — Execution Section
 # ---------------------------------------------------------------------------
+
 
 class TestExecutionSection:
     """Tests for the execution section of LLMContext."""
@@ -730,6 +749,7 @@ class TestExecutionSection:
 # Tests: LLMContextCompiler — Discoveries Section
 # ---------------------------------------------------------------------------
 
+
 class TestDiscoveriesSection:
     """Tests for the discoveries section of LLMContext."""
 
@@ -760,6 +780,7 @@ class TestDiscoveriesSection:
 # ---------------------------------------------------------------------------
 # Tests: LLMContextCompiler — Determinism
 # ---------------------------------------------------------------------------
+
 
 class TestDeterminism:
     """Tests that the compiler is deterministic."""
@@ -800,6 +821,7 @@ class TestDeterminism:
 # Tests: LLMContextCompiler — Token Compression
 # ---------------------------------------------------------------------------
 
+
 class TestTokenCompression:
     """Tests that information is concisely compressed in LLMContext."""
 
@@ -839,6 +861,7 @@ class TestTokenCompression:
 # ---------------------------------------------------------------------------
 # Tests: LLMContextCompiler — Edge Cases
 # ---------------------------------------------------------------------------
+
 
 class TestEdgeCases:
     """Tests for edge cases in LLMContext compilation."""
@@ -921,7 +944,7 @@ class TestHighDensityFiltering:
             symbol_name="CheckoutController",
             symbol_kind="class",
             depth=0,
-            changed=False
+            changed=False,
         )
         step2 = TestHelper.create_execution_step(
             behavior="behavior://api1",
@@ -929,7 +952,7 @@ class TestHighDensityFiltering:
             symbol_name="Depends",
             symbol_kind="function",
             depth=1,
-            changed=False
+            changed=False,
         )
         step3 = TestHelper.create_execution_step(
             behavior="behavior://api1",
@@ -937,7 +960,7 @@ class TestHighDensityFiltering:
             symbol_name="CORSMiddleware",
             symbol_kind="class",
             depth=2,
-            changed=False
+            changed=False,
         )
         step4 = TestHelper.create_execution_step(
             behavior="behavior://api1",
@@ -945,30 +968,31 @@ class TestHighDensityFiltering:
             symbol_name="CheckoutService",
             symbol_kind="class",
             depth=3,
-            changed=False
+            changed=False,
         )
 
         ep = TestHelper.create_entry_point(
             endpoint="POST /checkout",
             method="POST",
             path="/checkout",
-            execution_chain=(step1, step2, step3, step4)
+            execution_chain=(step1, step2, step3, step4),
         )
         rc = TestHelper.create_review_context(
             execution=TestHelper.create_execution_context(entry_points=(ep,))
         )
 
-        from engine.llm_context.compiler import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
+
         pruned = prune_review_context(rc)
         chain = pruned.execution.entry_points[0].execution_chain
-        
+
         assert len(chain) == 2
         assert chain[0].symbol.name == "CheckoutController"
         assert chain[1].symbol.name == "CheckoutService"
 
         compiler = LLMContextCompiler()
         result = compiler.compile(rc)
-        
+
         nodes = result.eg.nodes
         assert len(nodes) == 2
 
@@ -985,22 +1009,22 @@ class TestHighDensityFiltering:
             symbol_name="json",
             symbol_kind="module",
             depth=0,
-            changed=True
+            changed=True,
         )
         ep = TestHelper.create_entry_point(execution_chain=(step,))
-        
+
         change = TestHelper.create_change(
             symbol_id="sym://stdlib/json",
             symbol_name="json",
             symbol_kind="module",
-            change_type="modified"
+            change_type="modified",
         )
         file_change = TestHelper.create_file_change(changes=(change,))
         change_ctx = TestHelper.create_change_context(files=(file_change,))
-        
+
         rc = TestHelper.create_review_context(
             change=change_ctx,
-            execution=TestHelper.create_execution_context(entry_points=(ep,))
+            execution=TestHelper.create_execution_context(entry_points=(ep,)),
         )
 
         compiler = LLMContextCompiler()
@@ -1018,7 +1042,7 @@ class TestHighDensityFiltering:
             symbol_name="Depends",
             symbol_kind="function",
             depth=0,
-            changed=False
+            changed=False,
         )
         step_changed = TestHelper.create_execution_step(
             behavior="behavior://test",
@@ -1026,22 +1050,24 @@ class TestHighDensityFiltering:
             symbol_name="APIRouter",
             symbol_kind="class",
             depth=1,
-            changed=True
+            changed=True,
         )
-        
-        ep = TestHelper.create_entry_point(execution_chain=(step_unchanged, step_changed))
+
+        ep = TestHelper.create_entry_point(
+            execution_chain=(step_unchanged, step_changed)
+        )
         change = TestHelper.create_change(
             symbol_id="sym://api/router",
             symbol_name="APIRouter",
             symbol_kind="class",
-            change_type="modified"
+            change_type="modified",
         )
         file_change = TestHelper.create_file_change(changes=(change,))
         change_ctx = TestHelper.create_change_context(files=(file_change,))
-        
+
         rc = TestHelper.create_review_context(
             change=change_ctx,
-            execution=TestHelper.create_execution_context(entry_points=(ep,))
+            execution=TestHelper.create_execution_context(entry_points=(ep,)),
         )
 
         compiler = LLMContextCompiler()
@@ -1059,7 +1085,7 @@ class TestHighDensityFiltering:
             symbol_name="CheckoutService",
             symbol_kind="class",
             depth=0,
-            changed=False
+            changed=False,
         )
         step_schema = TestHelper.create_execution_step(
             behavior="behavior://test",
@@ -1067,18 +1093,19 @@ class TestHighDensityFiltering:
             symbol_name="OrderEntity",
             symbol_kind="class",
             depth=1,
-            changed=False
+            changed=False,
         )
-        
+
         ep = TestHelper.create_entry_point(execution_chain=(step_business, step_schema))
         rc = TestHelper.create_review_context(
             execution=TestHelper.create_execution_context(entry_points=(ep,))
         )
 
-        from engine.llm_context.compiler import prune_review_context
+        from engine.llm_context.review_scope_builder import prune_review_context
+
         pruned = prune_review_context(rc)
         chain = pruned.execution.entry_points[0].execution_chain
-        
+
         assert len(chain) == 2
         assert chain[0].symbol.name == "CheckoutService"
         assert chain[1].symbol.name == "OrderEntity"
@@ -1093,13 +1120,13 @@ class TestHighDensityFiltering:
             id="ref://good/1",
             kind="behavior",
             location="file.py:10",
-            compiler_artifact="actual_source_code"
+            compiler_artifact="actual_source_code",
         )
         ref_noise = TestHelper.create_reference(
             id="unit://noise/1",
             kind="dependency",
             location="unit://noise/1",
-            compiler_artifact="graph_node"
+            compiler_artifact="graph_node",
         )
 
         discovery = Discovery(
@@ -1109,10 +1136,10 @@ class TestHighDensityFiltering:
             facts={
                 "path": "CheckoutController -> CheckoutService",
                 "internal_compiler_hash": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
-                "weight": "high"
+                "weight": "high",
             },
             reference_count=2,
-            references=(ref_good, ref_noise)
+            references=(ref_good, ref_noise),
         )
 
         rc = TestHelper.create_review_context(discoveries=(discovery,))
@@ -1132,6 +1159,7 @@ class TestHighDensityFiltering:
 # ---------------------------------------------------------------------------
 # Tests: Review Scope — Scope (what must be excluded)
 # ---------------------------------------------------------------------------
+
 
 class TestReviewScopeVerification:
     """Scope tests: verify that artifacts outside the review scope are excluded."""
@@ -1275,6 +1303,7 @@ class TestReviewScopeVerification:
 # ---------------------------------------------------------------------------
 # Tests: Review Scope — Preservation (what must be retained)
 # ---------------------------------------------------------------------------
+
 
 class TestReviewScopePreservation:
     """Preservation tests: verify that review-relevant artifacts are never discarded."""
@@ -1431,6 +1460,7 @@ class TestReviewScopePreservation:
 # Tests: Review Scope — Equivalence (output identity)
 # ---------------------------------------------------------------------------
 
+
 class TestReviewScopeEquivalence:
     """Equivalence tests: outputs are identical whether generated from original
     or pruned contexts, and are deterministic across multiple runs."""
@@ -1580,6 +1610,7 @@ class TestReviewScopeEquivalence:
 # Tests: Review Scope — Metrics (measurable reduction with assertions)
 # ---------------------------------------------------------------------------
 
+
 class TestReviewScopeMetrics:
     """Metrics tests: assert measurable token/size reductions when pruning applies."""
 
@@ -1661,13 +1692,13 @@ class TestReviewScopeMetrics:
     def _compile_without_pruning(self, rc: ReviewContext) -> LLMContext:
         """Compile rc bypassing the review-scope pruning phase."""
         import engine.llm_context.compiler as compiler_mod
+
         original_brs = compiler_mod.build_review_scope
         compiler_mod.build_review_scope = lambda ctx, *args, **kwargs: ctx
         try:
             return LLMContextCompiler().compile(rc)
         finally:
             compiler_mod.build_review_scope = original_brs
-
 
     def test_execution_node_count_smaller_after_pruning(self):
         """Pruning removes framework nodes — compiled graph has fewer nodes."""
@@ -1692,8 +1723,8 @@ class TestReviewScopeMetrics:
 
     def test_serialized_size_decreases_after_pruning(self):
         """JSON-serialized LLMContext is smaller after pruning than without it."""
-        import json
         import dataclasses
+        import json
 
         noisy_rc = self._build_noisy_review_context()
 
@@ -1724,6 +1755,7 @@ class TestReviewScopeMetrics:
 # Tests: Review Scope Wave 2 Optimizations
 # ---------------------------------------------------------------------------
 
+
 class TestWave2CompilerOptimizations:
     """Wave 2 tests for Change Context Pruning, Symbol Table Expansion, and Invariant Preservation."""
 
@@ -1737,7 +1769,9 @@ class TestWave2CompilerOptimizations:
             symbol_kind="function",
             symbol_location="src/app.py:1-10",
         )
-        file_prod = TestHelper.create_file_change(path="src/app.py", changes=(change_prod,))
+        file_prod = TestHelper.create_file_change(
+            path="src/app.py", changes=(change_prod,)
+        )
 
         change_test = TestHelper.create_change(
             symbol_id="sym://tests/test_app",
@@ -1745,7 +1779,9 @@ class TestWave2CompilerOptimizations:
             symbol_kind="function",
             symbol_location="tests/test_app.py:1-10",
         )
-        file_test = TestHelper.create_file_change(path="tests/test_app.py", changes=(change_test,))
+        file_test = TestHelper.create_file_change(
+            path="tests/test_app.py", changes=(change_test,)
+        )
 
         rc = TestHelper.create_review_context(
             change=TestHelper.create_change_context(files=(file_prod, file_test))
@@ -1828,6 +1864,7 @@ class TestWave2CompilerOptimizations:
     def test_compiler_settings_limits_truncation(self):
         """Test that compiler limits like MAX_DISCOVERY_EVIDENCE, MAX_REFERENCES_PER_NODE, etc. are respected."""
         from core.config import CompilerSettings
+
         custom_settings = CompilerSettings(
             LLM_CONTEXT_MAX_DISCOVERY_EVIDENCE=2,
             LLM_CONTEXT_MAX_REFERENCES_PER_NODE=1,
@@ -1837,10 +1874,18 @@ class TestWave2CompilerOptimizations:
         )
 
         # 1. Create a discovery with 3 references to test LLM_CONTEXT_MAX_DISCOVERY_EVIDENCE
-        ref1 = Reference(id="ref1", kind="symbol", location="loc1", compiler_artifact="art")
-        ref2 = Reference(id="ref2", kind="symbol", location="loc2", compiler_artifact="art")
-        ref3 = Reference(id="ref3", kind="symbol", location="loc3", compiler_artifact="art")
-        disc = TestHelper.create_discovery(references=(ref1, ref2, ref3), reference_count=3)
+        ref1 = Reference(
+            id="ref1", kind="symbol", location="loc1", compiler_artifact="art"
+        )
+        ref2 = Reference(
+            id="ref2", kind="symbol", location="loc2", compiler_artifact="art"
+        )
+        ref3 = Reference(
+            id="ref3", kind="symbol", location="loc3", compiler_artifact="art"
+        )
+        disc = TestHelper.create_discovery(
+            references=(ref1, ref2, ref3), reference_count=3
+        )
 
         # 2. Create steps with references to test LLM_CONTEXT_MAX_REFERENCES_PER_NODE
         step1 = TestHelper.create_execution_step(
@@ -1850,7 +1895,7 @@ class TestWave2CompilerOptimizations:
             symbol_location="foo.py:10",
             depth=1,
             references=("ref1", "ref2", "ref3"),
-            changed=False
+            changed=False,
         )
         step2 = TestHelper.create_execution_step(
             symbol_id="sym://foo/baz",
@@ -1859,20 +1904,25 @@ class TestWave2CompilerOptimizations:
             symbol_location="foo.py:20",
             depth=2,
             references=("ref1",),
-            changed=False
+            changed=False,
         )
 
-        ep1 = TestHelper.create_entry_point(endpoint="ep1", path="/ep1", execution_chain=(step1, step2))
-        ep2 = TestHelper.create_entry_point(endpoint="ep2", path="/ep2", execution_chain=(step2,))
+        ep1 = TestHelper.create_entry_point(
+            endpoint="ep1", path="/ep1", execution_chain=(step1, step2)
+        )
+        ep2 = TestHelper.create_entry_point(
+            endpoint="ep2", path="/ep2", execution_chain=(step2,)
+        )
 
         rc = TestHelper.create_review_context(
             execution=TestHelper.create_execution_context(entry_points=(ep1, ep2)),
-            discoveries=(disc,)
+            discoveries=(disc,),
         )
 
         compiler = LLMContextCompiler(settings=custom_settings)
         # We can also test prune_review_context directly to verify discovery and node references truncation
         from engine.llm_context.review_scope_builder import prune_review_context
+
         pruned_rc = prune_review_context(rc, settings=custom_settings)
 
         # Verify discovery evidence limit: max evidence = 2

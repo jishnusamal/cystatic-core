@@ -19,23 +19,23 @@ class JavaEventIndexPass(BaseIndexPass):
     """
 
     EVENT_PATTERNS = [
-        (r'(\w+)\.publishEvent\s*\(', 'publish', 'spring'),
-        (r'(\w+)\.send\s*\(', 'send', 'generic'),
-        (r'(\w+)\.convertAndSend\s*\(', 'send', 'spring'),
-        (r'(\w+)\.publish\s*\(', 'publish', 'generic'),
-        (r'(\w+)\.emit\s*\(', 'emit', 'generic'),
-        (r'(\w+)\.dispatch\s*\(', 'dispatch', 'generic'),
-        (r'(\w+)\.broadcast\s*\(', 'broadcast', 'generic'),
-        (r'(\w+)\.trigger\s*\(', 'dispatch', 'generic'),
+        (r"(\w+)\.publishEvent\s*\(", "publish", "spring"),
+        (r"(\w+)\.send\s*\(", "send", "generic"),
+        (r"(\w+)\.convertAndSend\s*\(", "send", "spring"),
+        (r"(\w+)\.publish\s*\(", "publish", "generic"),
+        (r"(\w+)\.emit\s*\(", "emit", "generic"),
+        (r"(\w+)\.dispatch\s*\(", "dispatch", "generic"),
+        (r"(\w+)\.broadcast\s*\(", "broadcast", "generic"),
+        (r"(\w+)\.trigger\s*\(", "dispatch", "generic"),
     ]
 
     FRAMEWORK_DETECT = {
-        'kafkaTemplate': 'kafka',
-        'rabbitTemplate': 'rabbitmq',
-        'jmsTemplate': 'jms',
-        'eventPublisher': 'spring',
-        'applicationEventPublisher': 'spring',
-        'producer': 'kafka',
+        "kafkaTemplate": "kafka",
+        "rabbitTemplate": "rabbitmq",
+        "jmsTemplate": "jms",
+        "eventPublisher": "spring",
+        "applicationEventPublisher": "spring",
+        "producer": "kafka",
     }
 
     def process(self, context: FileContext, builder: dict[str, Any]) -> None:
@@ -48,7 +48,9 @@ class JavaEventIndexPass(BaseIndexPass):
                 for match in re.finditer(pattern, line):
                     object_name = match.group(1)
                     caller_name = self._find_caller_method(lines, i - 1)
-                    framework = self.FRAMEWORK_DETECT.get(object_name, default_framework)
+                    framework = self.FRAMEWORK_DETECT.get(
+                        object_name, default_framework
+                    )
                     event_name = self._extract_event_name(line)
 
                     builder["events"].append(
@@ -68,17 +70,17 @@ class JavaEventIndexPass(BaseIndexPass):
         if string_match:
             return string_match.group(1)
 
-        class_match = re.search(r'\(\s*(\w+)\.class', line)
+        class_match = re.search(r"\(\s*(\w+)\.class", line)
         if class_match:
             return class_match.group(1)
 
-        return ''
+        return ""
 
     def _find_caller_method(self, lines: list[str], line_idx: int) -> str | None:
         """Find the method enclosing a line."""
-        method_pattern = r'(?:public|private|protected)?\s*(?:\w+)\s+(\w+)\s*\('
+        method_pattern = r"(?:public|private|protected)?\s*(?:\w+)\s+(\w+)\s*\("
         for i in range(line_idx, -1, -1):
             match = re.search(method_pattern, lines[i])
-            if match and 'class ' not in lines[i] and 'interface ' not in lines[i]:
+            if match and "class " not in lines[i] and "interface " not in lines[i]:
                 return match.group(1)
         return None

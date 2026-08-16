@@ -8,11 +8,11 @@ from dataclasses import dataclass, field
 
 from .behavior import Behavior
 from .execution import (
-    ExecutionUnit,
-    ExecutionChain,
     EntryPoint,
-    TerminalPoint,
+    ExecutionChain,
+    ExecutionUnit,
     SharedExecution,
+    TerminalPoint,
 )
 from .execution_graph import ExecutionGraph
 
@@ -38,6 +38,7 @@ class BehaviorModel:
         reachable_units: Execution units reachable from changed symbols
         execution_depth: Maximum execution depth across all behaviors
     """
+
     behaviors: tuple[Behavior, ...] = field(default_factory=tuple)
     execution_graphs: tuple[ExecutionGraph, ...] = field(default_factory=tuple)
 
@@ -52,19 +53,19 @@ class BehaviorModel:
     def __post_init__(self):
         """Validate behavior model after initialization."""
         if isinstance(self.behaviors, list):
-            object.__setattr__(self, 'behaviors', tuple(self.behaviors))
+            object.__setattr__(self, "behaviors", tuple(self.behaviors))
         if isinstance(self.execution_graphs, list):
-            object.__setattr__(self, 'execution_graphs', tuple(self.execution_graphs))
+            object.__setattr__(self, "execution_graphs", tuple(self.execution_graphs))
         if isinstance(self.execution_chains, list):
-            object.__setattr__(self, 'execution_chains', tuple(self.execution_chains))
+            object.__setattr__(self, "execution_chains", tuple(self.execution_chains))
         if isinstance(self.entry_points, list):
-            object.__setattr__(self, 'entry_points', tuple(self.entry_points))
+            object.__setattr__(self, "entry_points", tuple(self.entry_points))
         if isinstance(self.terminal_points, list):
-            object.__setattr__(self, 'terminal_points', tuple(self.terminal_points))
+            object.__setattr__(self, "terminal_points", tuple(self.terminal_points))
         if isinstance(self.shared_executions, list):
-            object.__setattr__(self, 'shared_executions', tuple(self.shared_executions))
+            object.__setattr__(self, "shared_executions", tuple(self.shared_executions))
         if isinstance(self.reachable_units, list):
-            object.__setattr__(self, 'reachable_units', tuple(self.reachable_units))
+            object.__setattr__(self, "reachable_units", tuple(self.reachable_units))
 
     def get_behavior_by_id(self, behavior_id: str) -> Behavior | None:
         """Get a behavior by its identifier."""
@@ -98,17 +99,22 @@ class BehaviorModel:
                 return ep
         return None
 
-    def get_terminal_points_for_behavior(self, behavior_id: str) -> tuple[TerminalPoint, ...]:
+    def get_terminal_points_for_behavior(
+        self, behavior_id: str
+    ) -> tuple[TerminalPoint, ...]:
         """Get all terminal points for a specific behavior."""
         return tuple(tp for tp in self.terminal_points if tp.behavior_id == behavior_id)
 
     def get_affected_behaviors_for_symbol(self, symbol_id: str) -> tuple[Behavior, ...]:
         """Get all behaviors that contain a changed symbol."""
-        return tuple(
-            b for b in self.behaviors
-            if symbol_id in b.changed_symbol_ids
-        )
+        return tuple(b for b in self.behaviors if symbol_id in b.changed_symbol_ids)
 
-    def get_reachable_units_for_behavior(self, behavior_id: str) -> tuple[ExecutionUnit, ...]:
+    def get_reachable_units_for_behavior(
+        self, behavior_id: str
+    ) -> tuple[ExecutionUnit, ...]:
         """Get all reachable execution units for a specific behavior."""
-        return tuple(ru for ru in self.reachable_units if ru.id.startswith(f"reachable://{behavior_id}"))
+        return tuple(
+            ru
+            for ru in self.reachable_units
+            if ru.id.startswith(f"reachable://{behavior_id}")
+        )

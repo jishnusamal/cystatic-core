@@ -1,30 +1,35 @@
 """Change model package."""
 
-from .change_model import ChangeModel, ModifiedSymbol, ImportChange, EndpointChange
+from .change_facts import ChangedSymbol, ChangeFacts, ChangeKind, ContractChange
+from .change_model import ChangeModel, EndpointChange, ImportChange, ModifiedSymbol
 from .changes import (
-    FunctionBodyChange,
-    SignatureChange,
-    VisibilityChange,
     DecoratorChange,
-    SuperclassChange,
-    InterfaceChange,
     EndpointAnnotationChange,
+    FunctionBodyChange,
+    InterfaceChange,
+    SignatureChange,
+    SuperclassChange,
+    VisibilityChange,
 )
 from .repository_comparison import RepositoryComparison
 from .repository_delta import RepositoryDelta
 
 __all__ = [
+    "ChangeFacts",
+    "ChangeKind",
     "ChangeModel",
-    "ModifiedSymbol",
-    "ImportChange",
+    "ChangedSymbol",
+    "ContractChange",
+    "DecoratorChange",
+    "EndpointAnnotationChange",
     "EndpointChange",
     "FunctionBodyChange",
-    "SignatureChange",
-    "VisibilityChange",
-    "DecoratorChange",
-    "SuperclassChange",
+    "ImportChange",
     "InterfaceChange",
-    "EndpointAnnotationChange",
+    "ModifiedSymbol",
     "RepositoryComparison",
     "RepositoryDelta",
+    "SignatureChange",
+    "SuperclassChange",
+    "VisibilityChange",
 ]

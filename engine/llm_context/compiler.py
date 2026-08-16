@@ -23,29 +23,24 @@ Compression Rules Applied:
 
 Given the same ReviewContext, this compiler always produces the exact same LLMContext.
 """
+
 from __future__ import annotations
 
 import re
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from engine.review_context.model import (
-    ReviewContext,
     ChangeContext,
     ChangeSummary,
-    FileChange,
-    Change,
-    SymbolRef,
-    ExecutionContext,
-    EntryPointExecution,
-    ExecutionStep,
-    SymbolReference,
-    ReachedComponents,
-    DeepestExecution,
     Discovery,
-    Reference,
+    EntryPointExecution,
+    ExecutionContext,
+    ExecutionStep,
+    FileChange,
+    ReviewContext,
 )
 
-from .model import LLMContext, StringTable, ExecutionGraph, ENUM_REVERSE
+from .model import ENUM_REVERSE, ExecutionGraph, LLMContext, StringTable
 
 if TYPE_CHECKING:
     from core.config import CompilerSettings
@@ -58,18 +53,15 @@ _LOCATION_RE = re.compile(r"^(.+?)(?::(\d+)(?:-(\d+))?)?$")
 # Review-scope pruning (imported from review_scope_builder to avoid circularity)
 # ---------------------------------------------------------------------------
 from .review_scope_builder import (
-    build_review_scope,
-    prune_review_context,
-    is_compiler_metadata,
-    classify_symbol,
-    LANGUAGE_PRIMITIVES,
-    STD_LIBS,
     FRAMEWORK_MODULES,
     FRAMEWORK_NAMES,
+    LANGUAGE_PRIMITIVES,
     ORM_MODULES,
     ORM_NAMES,
-    NOISE_CATEGORIES,
+    STD_LIBS,
+    build_review_scope,
 )
+
 
 def _parse_location(location: str) -> tuple[str, int, int]:
     """Parse a location string into (file_path, start_line, end_line).
@@ -112,6 +104,7 @@ def _resolve_symbol_name_from_uri(uri: str) -> str:
 # Discovery reference collection
 # ---------------------------------------------------------------------------
 
+
 def _collect_discovery_references(
     discoveries: tuple[Discovery, ...],
 ) -> tuple[set[str], set[str], set[str]]:
@@ -151,6 +144,7 @@ def _collect_discovery_references(
 # Chain compression
 # ---------------------------------------------------------------------------
 
+
 def _compress_chain(
     steps: list[ExecutionStep],
     changed_symbol_ids: set[str],
@@ -174,9 +168,11 @@ def _compress_chain(
     n = len(steps)
 
     for i, step in enumerate(steps):
-        is_first = (i == 0)
-        is_last = (i == n - 1)
-        is_changed = step.changed or (step.symbol and step.symbol.id in changed_symbol_ids)
+        is_first = i == 0
+        is_last = i == n - 1
+        is_changed = step.changed or (
+            step.symbol and step.symbol.id in changed_symbol_ids
+        )
         is_boundary = bool(step.reaches and step.reaches.service)
 
         if is_first or is_last or is_changed or is_boundary:
@@ -196,6 +192,7 @@ def _compress_chain(
 # ---------------------------------------------------------------------------
 # Dead-string elimination
 # ---------------------------------------------------------------------------
+
 
 def _collect_live_string_indices(
     file_table: list[tuple[int, int]],
@@ -251,6 +248,7 @@ def _collect_live_string_indices(
 # Main Compiler
 # ---------------------------------------------------------------------------
 
+
 class LLMContextCompiler:
     """Compiles ReviewContext into a compact LLMContext.
 
@@ -263,6 +261,7 @@ class LLMContextCompiler:
     def __init__(self, settings: CompilerSettings | None = None) -> None:
         if settings is None:
             from core.config import get_compiler_settings
+
             settings = get_compiler_settings()
         self._settings = settings
 
@@ -306,8 +305,8 @@ class LLMContextCompiler:
         # -----------------------------------------------------------------------
         # Step 2: Collect discovery-referenced IDs
         # -----------------------------------------------------------------------
-        disc_symbol_ids, disc_behavior_ids, disc_endpoint_keys = _collect_discovery_references(
-            pruned_context.discoveries
+        disc_symbol_ids, disc_behavior_ids, disc_endpoint_keys = (
+            _collect_discovery_references(pruned_context.discoveries)
         )
 
         # -----------------------------------------------------------------------
@@ -322,7 +321,11 @@ class LLMContextCompiler:
         )
 
         # Selected entry points within endpoint budget
-        changed_files = {f.path for f in pruned_context.change.files} if pruned_context.change and pruned_context.change.files else set()
+        changed_files = (
+            {f.path for f in pruned_context.change.files}
+            if pruned_context.change and pruned_context.change.files
+            else set()
+        )
         prioritized = []
         other = []
         for ep, compressed_steps in retained_eps:
@@ -411,6 +414,7 @@ class LLMContextCompiler:
 
         # Build endpoint_idx_map for execution building
         from .model import ENUM_METHOD
+
         endpoint_idx_map: dict[tuple[str, str], int] = {}
         for i, ep_entry in enumerate(endpoint_table):
             method_id, path_idx = ep_entry
@@ -472,8 +476,7 @@ class LLMContextCompiler:
 
         # Remap file table
         remapped_file_table = [
-            (old_to_new.get(path_idx, 0), ct_id)
-            for path_idx, ct_id in file_table
+            (old_to_new.get(path_idx, 0), ct_id) for path_idx, ct_id in file_table
         ]
 
         # Remap symbol table
@@ -595,14 +598,14 @@ class LLMContextCompiler:
                         name_idx,
                         _enum_id("kind", sym.kind),
                     )
-                    
+
                     if sym_entry not in seen_tuples:
                         idx = len(table)
                         table.append(sym_entry)
                         seen_tuples[sym_entry] = idx
                     else:
                         idx = seen_tuples[sym_entry]
-                        
+
                     symbol_id_map[sym.id] = idx
                     symbols_per_file[file_id] = symbols_per_file.get(file_id, 0) + 1
 
@@ -634,14 +637,14 @@ class LLMContextCompiler:
                         name_idx,
                         _enum_id("kind", sym.kind),
                     )
-                    
+
                     if sym_entry not in seen_tuples:
                         idx = len(table)
                         table.append(sym_entry)
                         seen_tuples[sym_entry] = idx
                     else:
                         idx = seen_tuples[sym_entry]
-                        
+
                     symbol_id_map[sym.id] = idx
                     symbols_per_file[file_id] = symbols_per_file.get(file_id, 0) + 1
 
@@ -649,7 +652,12 @@ class LLMContextCompiler:
         for ep, compressed_steps in retained_eps:
             for step in compressed_steps:
                 sym = step.symbol
-                if sym and sym.id and sym.id in disc_symbol_ids and sym.id not in symbol_id_map:
+                if (
+                    sym
+                    and sym.id
+                    and sym.id in disc_symbol_ids
+                    and sym.id not in symbol_id_map
+                ):
                     file_path, _, _ = _parse_location(sym.location)
                     file_id = file_idx_map.get(file_path, 0)
 
@@ -664,14 +672,14 @@ class LLMContextCompiler:
                         name_idx,
                         _enum_id("kind", sym.kind),
                     )
-                    
+
                     if sym_entry not in seen_tuples:
                         idx = len(table)
                         table.append(sym_entry)
                         seen_tuples[sym_entry] = idx
                     else:
                         idx = seen_tuples[sym_entry]
-                        
+
                     symbol_id_map[sym.id] = idx
                     symbols_per_file[file_id] = symbols_per_file.get(file_id, 0) + 1
 
@@ -690,7 +698,11 @@ class LLMContextCompiler:
         table: list[tuple[int, int]] = []
         seen: dict[tuple[str, str], int] = {}
 
-        changed_files = {f.path for f in change_ctx.files} if change_ctx and change_ctx.files else set()
+        changed_files = (
+            {f.path for f in change_ctx.files}
+            if change_ctx and change_ctx.files
+            else set()
+        )
 
         # Partition: EPs touching changed files first
         prioritized = []
@@ -767,7 +779,9 @@ class LLMContextCompiler:
             # Apply chain length limit (changed steps are never dropped)
             steps: list[ExecutionStep] = []
             for step in ep.execution_chain:
-                if step.changed or (step.symbol and step.symbol.id in changed_symbol_ids):
+                if step.changed or (
+                    step.symbol and step.symbol.id in changed_symbol_ids
+                ):
                     steps.append(step)
                 else:
                     if len(steps) < limit:
@@ -887,8 +901,12 @@ class LLMContextCompiler:
                     node_map[node_key] = node_idx
 
                     sym_idx = symbol_id_map.get(step.symbol.id, 0)
-                    reaches_svc_idx = sb.add(step.reaches.service) if step.reaches.service else 0
-                    reaches_mod_idx = sb.add(step.reaches.module) if step.reaches.module else 0
+                    reaches_svc_idx = (
+                        sb.add(step.reaches.service) if step.reaches.service else 0
+                    )
+                    reaches_mod_idx = (
+                        sb.add(step.reaches.module) if step.reaches.module else 0
+                    )
 
                     node = (
                         sym_idx,
@@ -912,7 +930,12 @@ class LLMContextCompiler:
 
             endpoint_idx = endpoint_idx_map[key]
             terminal_idx = sb.add(ep.terminal) if ep.terminal else 0
-            ep_tuple = (endpoint_idx, tuple(chain_node_idxs), terminal_idx, ep.max_depth)
+            ep_tuple = (
+                endpoint_idx,
+                tuple(chain_node_idxs),
+                terminal_idx,
+                ep.max_depth,
+            )
             entry_point_data.append(ep_tuple)
 
         return ExecutionGraph(
@@ -945,6 +968,7 @@ class LLMContextCompiler:
 # String Builder
 # ---------------------------------------------------------------------------
 
+
 class _StringBuilder:
     """Collects unique strings and assigns stable indices. Handles path prefix compression."""
 
@@ -963,7 +987,7 @@ class _StringBuilder:
 
     def add_path(self, path: str) -> int:
         """Add a path to the string table with directory prefix optimization.
-        
+
         Stores paths grouped under their directory prefix when applicable, e.g.:
             "payment/"
             " checkout.py"
@@ -1005,6 +1029,7 @@ class _StringBuilder:
 # Enum Helpers
 # ---------------------------------------------------------------------------
 
+
 def _enum_id(table_name: str, value: str) -> int:
     """Get the enum ID for a given value in the named enum table.
 
@@ -1023,10 +1048,10 @@ def _is_noise_string(name: str) -> bool:
     parts = name.split(".")
     first = parts[0]
     return (
-        name in LANGUAGE_PRIMITIVES or
-        first in STD_LIBS or
-        first in FRAMEWORK_MODULES or
-        name in FRAMEWORK_NAMES or
-        first in ORM_MODULES or
-        name in ORM_NAMES
+        name in LANGUAGE_PRIMITIVES
+        or first in STD_LIBS
+        or first in FRAMEWORK_MODULES
+        or name in FRAMEWORK_NAMES
+        or first in ORM_MODULES
+        or name in ORM_NAMES
     )

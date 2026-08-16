@@ -2,19 +2,21 @@
 
 from typing import Any
 
-from .passes import (
-    BehaviorPassContext,
-    BehaviorCompilationPass,
-    BehaviorGraphPass,
-    ExecutionChainPass,
-    EntryPointPass,
-    TerminalPointPass,
-    SharedExecutionPass,
-    ReachableUnitsPass,
-)
 from engine.behavior.model import BehaviorModel
 from engine.change.model import RepositoryDelta
 from engine.repository.model import RepositoryModel
+
+from .impact_engine import ImpactEngine
+from .passes import (
+    BehaviorCompilationPass,
+    BehaviorGraphPass,
+    BehaviorPassContext,
+    EntryPointPass,
+    ExecutionChainPass,
+    ReachableUnitsPass,
+    SharedExecutionPass,
+    TerminalPointPass,
+)
 
 
 class BehaviorCompiler:
@@ -49,6 +51,7 @@ class BehaviorCompiler:
         change_model: Any,
         repository_delta: RepositoryDelta | RepositoryModel | None = None,
         repository_model: Any = None,
+        repository_query: Any = None,
     ) -> BehaviorModel:
         """
         Compile changes into a Behavior Model.
@@ -63,7 +66,11 @@ class BehaviorCompiler:
         """
         # Support both old and new interface for backward compatibility
         # Check if repository_delta is actually a RepositoryDelta (new interface)
-        if repository_delta is not None and hasattr(repository_delta, 'head_model') and hasattr(repository_delta, 'base_model'):
+        if (
+            repository_delta is not None
+            and hasattr(repository_delta, "head_model")
+            and hasattr(repository_delta, "base_model")
+        ):
             head_model = repository_delta.head_model
             base_model = repository_delta.base_model
         elif repository_delta is not None:
@@ -74,21 +81,42 @@ class BehaviorCompiler:
             head_model = repository_model
             base_model = None
 
+        if repository_query is None:
+            if head_model is not None:
+                from engine.change.compiler.compiler import RepositoryModelQuery
+
+                repository_query = RepositoryModelQuery(head_model)
+
+        # Calculate impact surface using bounded traversal
+        impact_engine = ImpactEngine()
+        changed_ids = set()
+        for s in getattr(change_model, "added_symbols", ()):
+            changed_ids.add(s.id)
+        for s in getattr(change_model, "removed_symbols", ()):
+            changed_ids.add(s.id)
+        for m in getattr(change_model, "modified_symbols", ()):
+            changed_ids.add(m.symbol.id)
+
+        impact_surface = None
+        if repository_query is not None:
+            impact_surface = impact_engine.calculate_impact(
+                changed_ids, repository_query
+            )
+
         # Initialize pass context with models
         context = BehaviorPassContext(
             metadata={
-                'change_model': change_model,
-                'repository_model': head_model,
-                'repository_delta': repository_delta,
+                "change_model": change_model,
+                "repository_model": head_model,
+                "repository_delta": repository_delta,
+                "repository_query": repository_query,
+                "impact_surface": impact_surface,
             }
         )
 
-        # Execute each pass in sequence
-        for compiler_pass in self.passes:
-            context = compiler_pass.run(context)
-
-        # Create and return the behavior model
-        return self._build_behavior_model(context)
+        # Phase 8: We no longer run the legacy passes that depend on the materialized graph.
+        # Instead, we return the ImpactSurface produced by bounded traversal.
+        return impact_surface
 
     def _build_behavior_model(self, context: BehaviorPassContext) -> BehaviorModel:
         """
@@ -104,8 +132,7 @@ class BehaviorCompiler:
         max_depth = 0
         for chain in context.execution_chains:
             chain_depth = chain.get_max_depth()
-            if chain_depth > max_depth:
-                max_depth = chain_depth
+            max_depth = max(max_depth, chain_depth)
 
         return BehaviorModel(
             behaviors=tuple(context.behaviors),

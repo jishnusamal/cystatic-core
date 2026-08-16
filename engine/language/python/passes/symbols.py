@@ -14,11 +14,11 @@ from engine.repository.model.repository_index import SymbolEntry
 
 def _determine_visibility(name: str) -> str:
     """Determine visibility from naming convention."""
-    if name.startswith('__') and name.endswith('__'):
-        return 'public'
-    elif name.startswith('_'):
-        return 'private'
-    return 'public'
+    if name.startswith("__") and name.endswith("__"):
+        return "public"
+    elif name.startswith("_"):
+        return "private"
+    return "public"
 
 
 def _get_decorator_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
@@ -65,11 +65,18 @@ class PythonSymbolIndexPass(BaseIndexPass):
                 builder["symbols"].append(class_sym)
                 builder["symbols"].extend(method_syms)
 
-    def visit_FunctionDef(self, node: ast.FunctionDef | ast.AsyncFunctionDef, context: FileContext, builder: dict[str, Any]) -> None:
+    def visit_FunctionDef(
+        self,
+        node: ast.FunctionDef | ast.AsyncFunctionDef,
+        context: FileContext,
+        builder: dict[str, Any],
+    ) -> None:
         """Handle function definition node from visitor."""
         builder["symbols"].append(self._extract_function(node, context.path))
 
-    def visit_ClassDef(self, node: ast.ClassDef, context: FileContext, builder: dict[str, Any]) -> None:
+    def visit_ClassDef(
+        self, node: ast.ClassDef, context: FileContext, builder: dict[str, Any]
+    ) -> None:
         """Handle class definition node from visitor."""
         class_sym, method_syms = self._extract_class(node, context.path)
         builder["symbols"].append(class_sym)

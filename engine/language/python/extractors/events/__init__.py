@@ -21,23 +21,23 @@ class PythonEventExtractor(BaseExtractor):
     """
 
     EVENT_METHODS = {
-        'send': 'send',
-        'send_robust': 'send',
-        'publish': 'publish',
-        'emit': 'emit',
-        'dispatch': 'dispatch',
-        'broadcast': 'broadcast',
-        'trigger': 'dispatch',
-        'fire': 'emit',
+        "send": "send",
+        "send_robust": "send",
+        "publish": "publish",
+        "emit": "emit",
+        "dispatch": "dispatch",
+        "broadcast": "broadcast",
+        "trigger": "dispatch",
+        "fire": "emit",
     }
 
     FRAMEWORK_PATTERNS = {
-        'django': {'django.dispatch', 'django.core.signals'},
-        'fastapi': {'fastapi'},
-        'celery': {'celery'},
-        'dramatiq': {'dramatiq'},
-        'redis': {'redis'},
-        'pypubsub': {'pubsub'},
+        "django": {"django.dispatch", "django.core.signals"},
+        "fastapi": {"fastapi"},
+        "celery": {"celery"},
+        "dramatiq": {"dramatiq"},
+        "redis": {"redis"},
+        "pypubsub": {"pubsub"},
     }
 
     def extract(self, tree: ast.AST, file_path: str) -> list[dict[str, Any]]:
@@ -77,12 +77,12 @@ class PythonEventExtractor(BaseExtractor):
         framework = self._detect_framework(node)
 
         return {
-            'symbol_id': caller_id or '',
-            'operation_kind': operation_kind,
-            'event_name': event_name,
-            'framework': framework,
-            'file': file_path,
-            'line': node.lineno,
+            "symbol_id": caller_id or "",
+            "operation_kind": operation_kind,
+            "event_name": event_name,
+            "framework": framework,
+            "file": file_path,
+            "line": node.lineno,
         }
 
     def _get_caller_id(self, call_node: ast.Call) -> str | None:
@@ -91,7 +91,9 @@ class PythonEventExtractor(BaseExtractor):
             if isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 for child in ast.walk(parent):
                     if child is call_node:
-                        return f"python://{getattr(call_node, 'file', '')}::{parent.name}"
+                        return (
+                            f"python://{getattr(call_node, 'file', '')}::{parent.name}"
+                        )
         return None
 
     def _extract_event_name(self, node: ast.Call) -> str:
@@ -104,7 +106,7 @@ class PythonEventExtractor(BaseExtractor):
 
         # Check for keyword argument 'event' or 'signal'
         for kw in node.keywords:
-            if kw.arg in ('event', 'signal', 'name', 'type'):
+            if kw.arg in ("event", "signal", "name", "type"):
                 if isinstance(kw.value, ast.Constant):
                     return str(kw.value.value)
 
@@ -118,7 +120,7 @@ class PythonEventExtractor(BaseExtractor):
                 if isinstance(node.func.value.value, ast.Name):
                     return f"{node.func.value.value.id}.{node.func.value.attr}"
 
-        return ''
+        return ""
 
     def _detect_framework(self, node: ast.Call) -> str:
         """Try to detect the event framework from the call context."""
@@ -132,4 +134,4 @@ class PythonEventExtractor(BaseExtractor):
                 if current.id.lower() in patterns:
                     return framework
 
-        return ''
+        return ""

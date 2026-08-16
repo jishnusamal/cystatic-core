@@ -57,12 +57,12 @@ async def _process_pr_analysis(
     delivery_id: str | None,
 ) -> None:
     """Async implementation of PR analysis pipeline execution."""
+    from core.config import get_settings
+    from engine.pipeline.pipeline import Pipeline
     from integrations.base.registry import get_registry
     from integrations.github.provider import GitHubIntegration
-    from engine.pipeline.pipeline import Pipeline
-    from models.core import RepositoryReference, PullRequestReference
     from models.analysis import AnalysisRequest, AnalysisTrigger
-    from core.config import get_settings
+    from models.core import PullRequestReference, RepositoryReference
 
     settings = get_settings()
 
@@ -135,6 +135,29 @@ async def _process_pr_analysis(
                     destination["llm_comment"] = llm_comment
             except Exception as exc:
                 print(f"[analyze_pr] LLM comment generation failed: {exc}")
+
+        # Render and print deterministic repository artifacts
+        if context.ocm is not None:
+            try:
+                from integrations.github.renderers.github_renderer import GitHubRenderer
+
+                renderer = GitHubRenderer()
+                render_context = {
+                    "repository": repo_full_name,
+                    "pr_number": str(pr_number),
+                    "base_sha": base_sha or "",
+                    "head_sha": head_sha or "",
+                    "language": context.language or "unknown",
+                    "total_time": f"{context.total_time:.2f}"
+                    if context.total_time
+                    else "N/A",
+                }
+                report = renderer.render(context.ocm, render_context)
+                print("\n--- REPOSITORY ANALYSIS ARTIFACTS ---")
+                print(report)
+                print("-------------------------------------\n")
+            except Exception as exc:
+                print(f"[analyze_pr] Failed to render repository artifacts: {exc}")
 
         await output_provider.publish(context.ocm, destination)
         print(f"Successfully analyzed {repo_full_name} PR#{pr_number}")

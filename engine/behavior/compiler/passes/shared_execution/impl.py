@@ -1,7 +1,8 @@
 """Shared Execution Pass - identifies infrastructure shared across behaviors."""
 
+from engine.behavior.model import SharedExecution
+
 from ..base import BehaviorCompilerPass, BehaviorPassContext
-from engine.behavior.model import SharedExecution, ExecutionGraph
 
 
 class SharedExecutionPass(BehaviorCompilerPass):

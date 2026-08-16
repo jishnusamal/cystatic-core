@@ -2,9 +2,9 @@
 
 from collections import deque
 
+from engine.behavior.model import ExecutionEdge, ExecutionGraph, ExecutionNode
+
 from ..base import BehaviorCompilerPass, BehaviorPassContext
-from engine.behavior.model import ExecutionGraph, ExecutionNode, ExecutionEdge
-from engine.repository.model import Evidence, FileLocation
 
 
 class BehaviorGraphPass(BehaviorCompilerPass):
@@ -32,7 +32,7 @@ class BehaviorGraphPass(BehaviorCompilerPass):
         Returns:
             Updated context with execution graphs
         """
-        repository_model = context.metadata.get('repository_model')
+        repository_model = context.metadata.get("repository_model")
 
         if not context.behaviors or not repository_model:
             context.execution_graphs = []
@@ -92,12 +92,14 @@ class BehaviorGraphPass(BehaviorCompilerPass):
                     queue.append(edge.callee_id)
 
                 # Collect the edge with evidence
-                collected_edges.append(ExecutionEdge(
-                    caller_id=edge.caller_id,
-                    callee_id=edge.callee_id,
-                    call_type=edge.call_type,
-                    evidence=edge.evidence,
-                ))
+                collected_edges.append(
+                    ExecutionEdge(
+                        caller_id=edge.caller_id,
+                        callee_id=edge.callee_id,
+                        call_type=edge.call_type,
+                        evidence=edge.evidence,
+                    )
+                )
 
         # Create execution nodes sorted by order
         sorted_symbols = sorted(visited_nodes.items(), key=lambda x: x[1])
@@ -106,7 +108,8 @@ class BehaviorGraphPass(BehaviorCompilerPass):
                 symbol_id=symbol_id,
                 order=order,
                 evidence=repository_model.get_symbol_by_id(symbol_id).evidence
-                if repository_model.get_symbol_by_id(symbol_id) else None,
+                if repository_model.get_symbol_by_id(symbol_id)
+                else None,
             )
             for symbol_id, order in sorted_symbols
         )

@@ -22,17 +22,17 @@ class JavaConfigurationIndexPass(BaseIndexPass):
         """Extract configuration references from a Java file context."""
         lines = context.ast
         file_path = context.path
-        content = '\n'.join(lines)
+        content = "\n".join(lines)
 
         # Spring @Value annotations
         for match in re.finditer(r'@Value\s*\(\s*["\']\$\{([^}]+)\}["\']', content):
             config_key = match.group(1)
-            default_value = ''
-            if ':' in config_key:
-                parts = config_key.split(':', 1)
+            default_value = ""
+            if ":" in config_key:
+                parts = config_key.split(":", 1)
                 config_key = parts[0]
                 default_value = parts[1]
-            line = content[:match.start()].count('\n') + 1
+            line = content[: match.start()].count("\n") + 1
             caller = self._find_method_for_line(lines, line - 1)
 
             builder["configurations"].append(
@@ -49,7 +49,7 @@ class JavaConfigurationIndexPass(BaseIndexPass):
 
         # System.getenv() calls
         for match in re.finditer(r'System\.getenv\s*\(\s*"([^"]+)"', content):
-            line = content[:match.start()].count('\n') + 1
+            line = content[: match.start()].count("\n") + 1
             caller = self._find_method_for_line(lines, line - 1)
 
             builder["configurations"].append(
@@ -65,7 +65,7 @@ class JavaConfigurationIndexPass(BaseIndexPass):
 
         # System.getProperty() calls
         for match in re.finditer(r'System\.getProperty\s*\(\s*"([^"]+)"', content):
-            line = content[:match.start()].count('\n') + 1
+            line = content[: match.start()].count("\n") + 1
             caller = self._find_method_for_line(lines, line - 1)
 
             builder["configurations"].append(
@@ -81,9 +81,10 @@ class JavaConfigurationIndexPass(BaseIndexPass):
 
         # Environment.getProperty() (Spring)
         for match in re.finditer(
-            r'(?:env|environment|env\.getProperty)\s*\(\s*"([^"]+)"', content,
+            r'(?:env|environment|env\.getProperty)\s*\(\s*"([^"]+)"',
+            content,
         ):
-            line = content[:match.start()].count('\n') + 1
+            line = content[: match.start()].count("\n") + 1
             caller = self._find_method_for_line(lines, line - 1)
 
             builder["configurations"].append(
@@ -99,9 +100,10 @@ class JavaConfigurationIndexPass(BaseIndexPass):
 
         # @ConfigurationProperties prefix
         for match in re.finditer(
-            r'@ConfigurationProperties\s*\(\s*prefix\s*=\s*"([^"]+)"', content,
+            r'@ConfigurationProperties\s*\(\s*prefix\s*=\s*"([^"]+)"',
+            content,
         ):
-            line = content[:match.start()].count('\n') + 1
+            line = content[: match.start()].count("\n") + 1
 
             builder["configurations"].append(
                 ConfigEntry(
@@ -116,9 +118,9 @@ class JavaConfigurationIndexPass(BaseIndexPass):
 
     def _find_method_for_line(self, lines: list[str], line_idx: int) -> str | None:
         """Find the method enclosing a given line index."""
-        method_pattern = r'(?:public|private|protected)?\s*(?:\w+)\s+(\w+)\s*\('
+        method_pattern = r"(?:public|private|protected)?\s*(?:\w+)\s+(\w+)\s*\("
         for i in range(line_idx, -1, -1):
             match = re.search(method_pattern, lines[i])
-            if match and 'class ' not in lines[i] and 'interface ' not in lines[i]:
+            if match and "class " not in lines[i] and "interface " not in lines[i]:
                 return match.group(1)
         return None

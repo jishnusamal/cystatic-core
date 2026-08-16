@@ -1,7 +1,8 @@
 """Terminal Point Pass - identifies where execution ends."""
 
+from engine.behavior.model import ExecutionGraph, TerminalPoint
+
 from ..base import BehaviorCompilerPass, BehaviorPassContext
-from engine.behavior.model import TerminalPoint, ExecutionGraph
 
 
 class TerminalPointPass(BehaviorCompilerPass):
@@ -59,8 +60,7 @@ class TerminalPointPass(BehaviorCompilerPass):
 
         # Find nodes that are not callers (no outgoing edges)
         terminal_nodes = [
-            node for node in graph.nodes
-            if node.symbol_id not in called_symbols
+            node for node in graph.nodes if node.symbol_id not in called_symbols
         ]
 
         # If no terminal points found, use the last node in order

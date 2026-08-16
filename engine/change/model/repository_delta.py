@@ -28,8 +28,8 @@ class RepositoryDelta:
         head_sha: Head commit SHA
     """
 
-    base_model: RepositoryModel
-    head_model: RepositoryModel
+    base_model: RepositoryModel | None
+    head_model: RepositoryModel | None
     diff: dict[str, Any]
     base_sha: str
     head_sha: str
@@ -51,30 +51,50 @@ class RepositoryDelta:
         if not self.head_sha:
             raise ValueError("Head SHA cannot be empty")
 
+        # Pre-compute and store symbol IDs before models are released
+        object.__setattr__(
+            self, "_base_symbol_ids", frozenset(s.id for s in self.base_model.symbols)
+        )
+        object.__setattr__(
+            self, "_head_symbol_ids", frozenset(s.id for s in self.head_model.symbols)
+        )
+
+    def release_base_model(self) -> None:
+        """Release the base repository model reference to free memory."""
+        object.__setattr__(self, "base_model", None)
+
+    def release_head_model(self) -> None:
+        """Release the head repository model reference to free memory."""
+        object.__setattr__(self, "head_model", None)
+
     def is_same_commit(self) -> bool:
         """Check if base and head are the same commit."""
         return self.base_sha == self.head_sha
 
     def get_base_symbols(self) -> frozenset:
         """Get symbols from the base repository model."""
+        if self.base_model is None:
+            raise ValueError("Base repository model has been released")
         return self.base_model.symbols
 
     def get_head_symbols(self) -> frozenset:
         """Get symbols from the head repository model."""
+        if self.head_model is None:
+            raise ValueError("Head repository model has been released")
         return self.head_model.symbols
 
     def get_base_symbol_ids(self) -> frozenset[str]:
         """Get symbol IDs from the base repository model."""
-        return frozenset(s.id for s in self.base_model.symbols)
+        return self._base_symbol_ids
 
     def get_head_symbol_ids(self) -> frozenset[str]:
         """Get symbol IDs from the head repository model."""
-        return frozenset(s.id for s in self.head_model.symbols)
+        return self._head_symbol_ids
 
     def symbol_exists_in_base(self, symbol_id: str) -> bool:
         """Check if a symbol exists in the base repository."""
-        return symbol_id in self.get_base_symbol_ids()
+        return symbol_id in self._base_symbol_ids
 
     def symbol_exists_in_head(self, symbol_id: str) -> bool:
         """Check if a symbol exists in the head repository."""
-        return symbol_id in self.get_head_symbol_ids()
+        return symbol_id in self._head_symbol_ids

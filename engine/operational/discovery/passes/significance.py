@@ -31,14 +31,17 @@ Must Never:
     - Normalize, weight, or combine metrics into a single value.
     - Rank or order discoveries.
 """
+
 from __future__ import annotations
 
 from engine.operational.discovery.model import (
     Discovery,
-    DiscoveryKind,
     DiscoverySupport,
 )
-from engine.operational.discovery.passes.base import DiscoveryPassContext, DiscoveryCompilerPass
+from engine.operational.discovery.passes.base import (
+    DiscoveryCompilerPass,
+    DiscoveryPassContext,
+)
 
 
 class SignificanceEvaluationPass(DiscoveryCompilerPass):
@@ -60,49 +63,57 @@ class SignificanceEvaluationPass(DiscoveryCompilerPass):
 
         behavior = model.behavior
         change = model.change
-        dependency = getattr(model, 'dependency', None)
-        api = getattr(model, 'api', None)
-        data = getattr(model, 'data', None)
-        validation = getattr(model, 'validation', None)
-        event = getattr(model, 'event', None)
+        dependency = getattr(model, "dependency", None)
+        api = getattr(model, "api", None)
+        data = getattr(model, "data", None)
+        validation = getattr(model, "validation", None)
+        event = getattr(model, "event", None)
 
         # Pre-compute model-level aggregates
-        total_behaviors = len(getattr(behavior, 'behaviors', ())) if behavior else 0
+        total_behaviors = len(getattr(behavior, "behaviors", ())) if behavior else 0
         total_changed = (
-            len(getattr(change, 'added_symbols', ()))
-            + len(getattr(change, 'removed_symbols', ()))
-            + len(getattr(change, 'modified_symbols', ()))
-        ) if change else 0
-        exec_depth = getattr(behavior, 'execution_depth', 0) if behavior else 0
+            (
+                len(getattr(change, "added_symbols", ()))
+                + len(getattr(change, "removed_symbols", ()))
+                + len(getattr(change, "modified_symbols", ()))
+            )
+            if change
+            else 0
+        )
+        exec_depth = getattr(behavior, "execution_depth", 0) if behavior else 0
 
         fan_in_data: dict[str, int] = {}
         fan_out_data: dict[str, int] = {}
         cross_service_count = 0
         if dependency is not None:
-            fan_in_data = getattr(dependency, 'fan_in', {})
-            fan_out_data = getattr(dependency, 'fan_out', {})
-            cross_service_count = len(getattr(dependency, 'cross_service_references', ()))
+            fan_in_data = getattr(dependency, "fan_in", {})
+            fan_out_data = getattr(dependency, "fan_out", {})
+            cross_service_count = len(
+                getattr(dependency, "cross_service_references", ())
+            )
 
         api_endpoint_count = 0
         if api is not None:
             api_endpoint_count = (
-                len(getattr(api, 'rest', ()))
-                + len(getattr(api, 'graphql', ()))
-                + len(getattr(api, 'rpc', ()))
+                len(getattr(api, "rest", ()))
+                + len(getattr(api, "graphql", ()))
+                + len(getattr(api, "rpc", ()))
             )
 
         data_entity_count = 0
         if data is not None:
-            data_entity_count = self._count_attr(data, ('models', 'tables', 'entities'))
+            data_entity_count = self._count_attr(data, ("models", "tables", "entities"))
 
         validation_gaps = 0
         if validation is not None:
-            validation_gaps = self._count_attr(validation, ('gaps', 'missing_coverage', 'uncovered'))
+            validation_gaps = self._count_attr(
+                validation, ("gaps", "missing_coverage", "uncovered")
+            )
 
         event_count = 0
         if event is not None:
-            pub = getattr(event, 'published_events', ())
-            con = getattr(event, 'consumed_events', ())
+            pub = getattr(event, "published_events", ())
+            con = getattr(event, "consumed_events", ())
             event_count = len(pub) + len(con)
 
         # Enrich each discovery with model-level measurements
@@ -111,7 +122,7 @@ class SignificanceEvaluationPass(DiscoveryCompilerPass):
             support = d.support
 
             # Extract symbol_id from metadata if present
-            symbol_id = d.metadata.get('symbol_id', '')
+            symbol_id = d.metadata.get("symbol_id", "")
 
             # Populate from model-level data where not already set
             new_support = DiscoverySupport(
@@ -133,15 +144,17 @@ class SignificanceEvaluationPass(DiscoveryCompilerPass):
                 surprise_ratios=support.surprise_ratios,
             )
 
-            updated_discoveries.append(Discovery(
-                id=d.id,
-                kind=d.kind,
-                statement=d.statement,
-                importance=d.importance,
-                support=new_support,
-                evidence=d.evidence,
-                metadata=d.metadata,
-            ))
+            updated_discoveries.append(
+                Discovery(
+                    id=d.id,
+                    kind=d.kind,
+                    statement=d.statement,
+                    importance=d.importance,
+                    support=new_support,
+                    evidence=d.evidence,
+                    metadata=d.metadata,
+                )
+            )
 
         context.discoveries = updated_discoveries
         return context
@@ -154,7 +167,7 @@ class SignificanceEvaluationPass(DiscoveryCompilerPass):
                 items = getattr(obj, name)
                 if isinstance(items, (list, tuple, set, frozenset)):
                     return len(items)
-                if hasattr(items, '__len__'):
+                if hasattr(items, "__len__"):
                     return len(items)
                 return 1 if items else 0
         return 0

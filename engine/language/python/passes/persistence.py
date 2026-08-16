@@ -36,13 +36,17 @@ class PythonPersistenceIndexPass(BaseIndexPass):
                 if model:
                     builder["persistence_models"].append(model)
 
-    def visit_ClassDef(self, node: ast.ClassDef, context: FileContext, builder: dict[str, Any]) -> None:
+    def visit_ClassDef(
+        self, node: ast.ClassDef, context: FileContext, builder: dict[str, Any]
+    ) -> None:
         """Handle class definition node from visitor."""
         model = self._extract_model(node, context.path)
         if model:
             builder["persistence_models"].append(model)
 
-    def _extract_model(self, node: ast.ClassDef, file_path: str) -> PersistenceEntry | None:
+    def _extract_model(
+        self, node: ast.ClassDef, file_path: str
+    ) -> PersistenceEntry | None:
         """Extract a persistence model from a class definition."""
         framework = self._detect_framework(node)
         if not framework:
@@ -57,7 +61,9 @@ class PythonPersistenceIndexPass(BaseIndexPass):
             if isinstance(child, ast.Assign):
                 for target in child.targets:
                     if isinstance(target, ast.Name):
-                        field_info = self._extract_field(target.id, child.value, framework)
+                        field_info = self._extract_field(
+                            target.id, child.value, framework
+                        )
                         if field_info:
                             if field_info.get("is_relationship"):
                                 relationships.append(field_info)
@@ -107,7 +113,10 @@ class PythonPersistenceIndexPass(BaseIndexPass):
         for child in node.body:
             if isinstance(child, ast.Assign):
                 for target in child.targets:
-                    if isinstance(target, ast.Name) and target.id in ("__tablename__", "Meta"):
+                    if isinstance(target, ast.Name) and target.id in (
+                        "__tablename__",
+                        "Meta",
+                    ):
                         if isinstance(child.value, ast.Constant):
                             return str(child.value.value)
             if isinstance(child, ast.ClassDef) and child.name == "Meta":
@@ -119,7 +128,9 @@ class PythonPersistenceIndexPass(BaseIndexPass):
                                     return str(meta_child.value.value)
         return ""
 
-    def _extract_field(self, name: str, value: ast.AST, framework: str) -> dict[str, Any] | None:
+    def _extract_field(
+        self, name: str, value: ast.AST, framework: str
+    ) -> dict[str, Any] | None:
         """Extract a field definition from an assignment."""
         field_info: dict[str, Any] = {
             "name": name,

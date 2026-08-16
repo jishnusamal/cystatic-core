@@ -42,7 +42,9 @@ class PythonTestIndexPass(BaseIndexPass):
                 if test_class:
                     builder["tests"].append(test_class)
 
-    def visit_FunctionDef(self, node: ast.FunctionDef, context: FileContext, builder: dict[str, Any]) -> None:
+    def visit_FunctionDef(
+        self, node: ast.FunctionDef, context: FileContext, builder: dict[str, Any]
+    ) -> None:
         """Handle function definition node from visitor."""
         # Note: In visitor mode, we can't pre-collect fixtures across the whole tree
         # so we skip fixture-aware test extraction and just check for test_ prefix
@@ -58,7 +60,9 @@ class PythonTestIndexPass(BaseIndexPass):
             )
             builder["tests"].append(test)
 
-    def visit_ClassDef(self, node: ast.ClassDef, context: FileContext, builder: dict[str, Any]) -> None:
+    def visit_ClassDef(
+        self, node: ast.ClassDef, context: FileContext, builder: dict[str, Any]
+    ) -> None:
         """Handle class definition node from visitor."""
         framework = self._detect_class_framework(node)
         if framework == "unknown":
@@ -91,7 +95,9 @@ class PythonTestIndexPass(BaseIndexPass):
             )
         )
 
-    def _collect_fixtures(self, tree: ast.AST, file_path: str) -> dict[str, dict[str, Any]]:
+    def _collect_fixtures(
+        self, tree: ast.AST, file_path: str
+    ) -> dict[str, dict[str, Any]]:
         """Collect all pytest fixture definitions."""
         fixtures = {}
         for node in ast.walk(tree):
@@ -102,7 +108,9 @@ class PythonTestIndexPass(BaseIndexPass):
                     for dec in node.decorator_list:
                         if isinstance(dec, ast.Call):
                             for kw in dec.keywords or []:
-                                if kw.arg == "scope" and isinstance(kw.value, ast.Constant):
+                                if kw.arg == "scope" and isinstance(
+                                    kw.value, ast.Constant
+                                ):
                                     scope = str(kw.value.value)
                     fixtures[node.name] = {
                         "name": node.name,
@@ -233,10 +241,19 @@ class PythonTestIndexPass(BaseIndexPass):
                 if isinstance(child.func, ast.Attribute):
                     name = child.func.attr
                     if name.startswith("assert") or name in (
-                        "assertEqual", "assertTrue", "assertFalse",
-                        "assertIs", "assertIsNot", "assertIsNone",
-                        "assertIsNotNone", "assertIn", "assertNotIn",
-                        "assertRaises", "assertGreater", "assertLess", "fail",
+                        "assertEqual",
+                        "assertTrue",
+                        "assertFalse",
+                        "assertIs",
+                        "assertIsNot",
+                        "assertIsNone",
+                        "assertIsNotNone",
+                        "assertIn",
+                        "assertNotIn",
+                        "assertRaises",
+                        "assertGreater",
+                        "assertLess",
+                        "fail",
                     ):
                         assertions.add(name)
         return list(assertions)

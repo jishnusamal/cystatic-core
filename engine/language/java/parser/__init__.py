@@ -28,7 +28,7 @@ class JavaParser(BaseParser):
         Returns:
             List of lines from the source file
         """
-        return content.split('\n')
+        return content.split("\n")
 
     def supports_file(self, file_path: str) -> bool:
         """
@@ -40,4 +40,4 @@ class JavaParser(BaseParser):
         Returns:
             True if the file ends with .java
         """
-        return file_path.endswith('.java')
+        return file_path.endswith(".java")

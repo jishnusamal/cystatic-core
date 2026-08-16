@@ -17,4 +17,4 @@ redundancy through:
 from .compiler import LLMContextCompiler
 from .model import LLMContext
 
-__all__ = ["LLMContextCompiler", "LLMContext"]
+__all__ = ["LLMContext", "LLMContextCompiler"]
