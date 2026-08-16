@@ -17,6 +17,7 @@ from engine.behavior.model import (
     SharedExecution,
     TerminalPoint,
 )
+from engine.behavior.model.impact_surface import ImpactSurface
 from engine.change.model import ChangeModel
 from engine.repository.model import RepositoryModel
 
@@ -58,7 +59,7 @@ class EngineeringDiscoveryModel:
     # Core models
     repository: RepositoryModel
     change: ChangeModel
-    behavior: BehaviorModel
+    behavior: BehaviorModel | ImpactSurface
 
     # Full operational context (preserved for renderers and AI)
     operational: object | None = field(default=None, compare=False)
@@ -160,7 +161,9 @@ class EngineeringDiscoveryModel:
 
     def get_behaviors(self) -> tuple[Behavior, ...]:
         """Get all behaviors from the behavior model."""
-        return self.behavior.behaviors
+        if hasattr(self.behavior, "behaviors"):
+            return self.behavior.behaviors
+        return ()
 
     def get_execution_units_for_behavior(
         self, behavior_id: str

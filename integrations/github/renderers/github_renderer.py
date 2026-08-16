@@ -132,14 +132,27 @@ class GitHubRenderer:
         }
 
         # Behavior data
-        data["behavior"] = {
-            "behaviors_count": len(ocm.behavior.behaviors),
-            "execution_graphs_count": len(ocm.behavior.execution_graphs),
-            "behaviors": [self._render_behavior(b) for b in ocm.behavior.behaviors],
-            "execution_graphs": [
-                self._render_execution_graph(g) for g in ocm.behavior.execution_graphs
-            ],
-        }
+        if hasattr(ocm.behavior, "behaviors"):
+            data["behavior"] = {
+                "behaviors_count": len(ocm.behavior.behaviors),
+                "execution_graphs_count": len(ocm.behavior.execution_graphs),
+                "behaviors": [self._render_behavior(b) for b in ocm.behavior.behaviors],
+                "execution_graphs": [
+                    self._render_execution_graph(g) for g in ocm.behavior.execution_graphs
+                ],
+            }
+        else:
+            data["behavior"] = {
+                "behaviors_count": 0,
+                "execution_graphs_count": 0,
+                "behaviors": [],
+                "execution_graphs": [],
+                "affected_symbols_count": len(getattr(ocm.behavior, "affected_symbols", ())),
+                "affected_services_count": len(getattr(ocm.behavior, "affected_services", ())),
+                "affected_endpoints_count": len(getattr(ocm.behavior, "affected_endpoints", ())),
+                "affected_databases_count": len(getattr(ocm.behavior, "affected_databases", ())),
+                "affected_events_count": len(getattr(ocm.behavior, "affected_events", ())),
+            }
 
         # Optional models - just mark as present/defined
         if ocm.has_dependency_model():
@@ -159,6 +172,9 @@ class GitHubRenderer:
 
         if ocm.has_metrics_model():
             data["metrics"] = True
+
+        # Operational counts
+        data["operational"] = self._get_operational_counts(ocm)
 
         return data
 
@@ -322,7 +338,66 @@ class GitHubRenderer:
         if artifact.has_metrics_model():
             data["metrics"] = True
 
+        # Operational counts
+        data["operational"] = self._get_operational_counts(artifact)
+
         return data
+
+    def _get_operational_counts(self, model: Any) -> dict[str, int]:
+        """Compute operational counts for the template."""
+        api_count = 0
+        if hasattr(model, "has_api_model") and model.has_api_model() and getattr(model, "api", None) is not None:
+            api = model.api
+            api_count = (
+                len(getattr(api, "rest", ()))
+                + len(getattr(api, "graphql", ()))
+                + len(getattr(api, "rpc", ()))
+                + len(getattr(api, "cli", ()))
+                + len(getattr(api, "cron", ()))
+                + len(getattr(api, "workers", ()))
+            )
+
+        data_count = 0
+        if hasattr(model, "has_data_model") and model.has_data_model() and getattr(model, "data", None) is not None:
+            data_m = model.data
+            data_count = (
+                len(getattr(data_m, "models", ()))
+                + len(getattr(data_m, "tables", ()))
+                + len(getattr(data_m, "reads", ()))
+                + len(getattr(data_m, "writes", ()))
+                + len(getattr(data_m, "transactions", ()))
+                + len(getattr(data_m, "caches", ()))
+                + len(getattr(data_m, "external_storage", ()))
+            )
+
+        event_count = 0
+        if hasattr(model, "has_event_model") and model.has_event_model() and getattr(model, "event", None) is not None:
+            event = model.event
+            event_count = (
+                len(getattr(event, "published_events", ()))
+                + len(getattr(event, "consumed_events", ()))
+                + len(getattr(event, "queues", ()))
+                + len(getattr(event, "workers", ()))
+                + len(getattr(event, "async_chains", ()))
+                + len(getattr(event, "event_graph", ()))
+            )
+
+        dependency_count = 0
+        if hasattr(model, "has_dependency_model") and model.has_dependency_model() and getattr(model, "dependency", None) is not None:
+            dep = model.dependency
+            dependency_count = (
+                len(getattr(dep, "callers", ()))
+                + len(getattr(dep, "dependents", ()))
+                + len(getattr(dep, "shared_modules", ()))
+                + len(getattr(dep, "cross_service_references", ()))
+            )
+
+        return {
+            "api_count": api_count,
+            "data_count": data_count,
+            "event_count": event_count,
+            "dependency_count": dependency_count,
+        }
 
     def _render_entry_point(self, ep: Any) -> dict[str, Any]:
         """Render an entry point for template."""
@@ -390,11 +465,21 @@ class GitHubRenderer:
             f"- **Modified:** {len(ocm.change.modified_symbols)} symbols",
             f"- **Imports changed:** {len(ocm.change.changed_imports)}",
             f"- **Endpoints changed:** {len(ocm.change.changed_endpoints)}",
-            "",
-            "## Behavior",
-            f"- **Behaviors:** {len(ocm.behavior.behaviors)}",
-            f"- **Execution graphs:** {len(ocm.behavior.execution_graphs)}",
         ]
+
+        if hasattr(ocm.behavior, "behaviors"):
+            lines.extend([
+                "## Behavior",
+                f"- **Behaviors:** {len(ocm.behavior.behaviors)}",
+                f"- **Execution graphs:** {len(ocm.behavior.execution_graphs)}",
+            ])
+        else:
+            lines.extend([
+                "## Behavior (Impact Surface)",
+                f"- **Affected Symbols:** {len(getattr(ocm.behavior, 'affected_symbols', ()))},",
+                f"- **Affected Services:** {len(getattr(ocm.behavior, 'affected_services', ()))},",
+                f"- **Affected Endpoints:** {len(getattr(ocm.behavior, 'affected_endpoints', ()))},",
+            ])
 
         if ocm.has_dependency_model():
             lines.extend(["", "## Dependency Surface", "Dependency changes detected."])

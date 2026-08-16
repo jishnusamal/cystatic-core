@@ -606,3 +606,59 @@ class TestEngineeringDiscoveryCompiler:
         units = edm.get_execution_units_for_behavior("behavior://test")
         # Units are projected from chains, not prefixed with behavior id
         assert isinstance(units, tuple)
+
+    def test_impact_surface_rendering(
+        self, sample_repository_model, sample_change_model
+    ):
+        """Test that EngineeringDiscoveryModel and renderers support ImpactSurface."""
+        from engine.behavior.model.impact_surface import ImpactSurface
+        from integrations.github.renderers.github_renderer import GitHubRenderer
+        from integrations.github.renderers.json_renderer import JSONRenderer
+
+        impact_surface = ImpactSurface(
+            affected_symbols=frozenset(["sym1", "sym2"]),
+            affected_services=frozenset(["service1"]),
+        )
+
+        model = EngineeringDiscoveryModel(
+            repository=sample_repository_model,
+            change=sample_change_model,
+            behavior=impact_surface,
+        )
+
+        # 1. Test get_behaviors returns empty
+        assert model.get_behaviors() == ()
+
+        # 2. Test json rendering
+        json_renderer = JSONRenderer()
+        json_data = json_renderer.render(model)
+        assert json_data["behavior"]["behaviors_count"] == 0
+        assert json_data["behavior"]["affected_symbols_count"] == 2
+        assert json_data["behavior"]["affected_services_count"] == 1
+
+        # 3. Test github rendering (requires mock/dummy templates directory or setup)
+        # GitHubRenderer loads templates from templates/ relative to cwd
+        github_renderer = GitHubRenderer(template_dir="templates")
+        context = {
+            "executive_summary": "Test summary",
+            "review_priority": "High",
+            "biggest_surprise": "None",
+            "execution_summary": "Test execution",
+            "operational_summary": "Test operational",
+            "surprising_discoveries": [],
+            "validation": {"summary": "Test validation"},
+            "evidence": ["Ev1"],
+        }
+        github_markdown = github_renderer.render_artifact(model, context)
+        assert "# Factor Engineering Discovery Report" in github_markdown
+        assert "API Endpoints" in github_markdown
+
+        # 4. Test github render_simple
+        ocm = OperationalChangeModel(
+            repository=sample_repository_model,
+            change=sample_change_model,
+            behavior=impact_surface,
+        )
+        simple_markdown = github_renderer.render_simple(ocm)
+        assert "Behavior (Impact Surface)" in simple_markdown
+

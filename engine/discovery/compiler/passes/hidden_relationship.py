@@ -43,6 +43,9 @@ class HiddenRelationshipPass(DiscoveryCompilerPass):
             return context
         behavior_model = operational_model.behavior
 
+        if not hasattr(behavior_model, "behaviors"):
+            return context
+
         # Find symbols that appear in multiple behaviors but not in shared_executions
         # This indicates a hidden relationship
         behavior_symbol_map: dict[str, set[str]] = {}

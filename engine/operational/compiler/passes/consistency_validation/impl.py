@@ -183,6 +183,9 @@ class ConsistencyValidationPass(OperationalCompilerPass):
         """Check that every behavior references valid symbols."""
         errors: list[str] = []
 
+        if not hasattr(model.behavior, "behaviors"):
+            return errors
+
         for behavior in model.behavior.behaviors:
             # Root symbol must exist
             if behavior.root_symbol_id not in known_symbol_ids:
@@ -229,6 +232,9 @@ class ConsistencyValidationPass(OperationalCompilerPass):
     ) -> list[str]:
         """Check that every execution graph references known nodes."""
         errors: list[str] = []
+
+        if not hasattr(model.behavior, "execution_graphs"):
+            return errors
 
         for graph in model.behavior.execution_graphs:
             # Check all nodes
