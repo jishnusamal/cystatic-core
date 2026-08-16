@@ -52,6 +52,7 @@ class BehaviorCompiler:
         repository_delta: RepositoryDelta | RepositoryModel | None = None,
         repository_model: Any = None,
         repository_query: Any = None,
+        capabilities: Any = None,
     ) -> BehaviorModel:
         """
         Compile changes into a Behavior Model.
@@ -60,6 +61,8 @@ class BehaviorCompiler:
             change_model: ChangeModel
             repository_delta: RepositoryDelta containing both base and head models, or RepositoryModel (deprecated)
             repository_model: RepositoryModel (deprecated, use repository_delta)
+            repository_query: Query interface
+            capabilities: Language capabilities metadata (passed dynamically to preserve language boundary)
 
         Returns:
             BehaviorModel containing affected behaviors and execution graphs
@@ -99,9 +102,38 @@ class BehaviorCompiler:
 
         impact_surface = None
         if repository_query is not None:
-            impact_surface = impact_engine.calculate_impact(
-                changed_ids, repository_query
-            )
+            if capabilities is not None and not getattr(capabilities, "calls", True):
+                # Bypassing call graph traversal when calls capability is False
+                from engine.behavior.model.impact_surface import ImpactSurface
+                affected_symbols = set(changed_ids)
+                affected_endpoints = set()
+                affected_databases = set()
+                affected_events = set()
+
+                all_entry_points = repository_query.get_entry_points() if getattr(capabilities, "entrypoints", True) else ()
+                entry_point_map = {str(ep.handler_id): ep for ep in all_entry_points}
+                for current_id in changed_ids:
+                    if current_id in entry_point_map:
+                        affected_endpoints.add(entry_point_map[current_id])
+                    if getattr(capabilities, "persistence", True):
+                        dbs = repository_query.get_database_relationships(current_id)
+                        for db in dbs:
+                            affected_databases.add(db)
+                    if getattr(capabilities, "events", True):
+                        events = repository_query.get_published_events(current_id)
+                        for ev in events:
+                            affected_events.add(ev)
+
+                impact_surface = ImpactSurface(
+                    affected_symbols=frozenset(affected_symbols),
+                    affected_endpoints=frozenset(affected_endpoints),
+                    affected_databases=frozenset(affected_databases),
+                    affected_events=frozenset(affected_events),
+                )
+            else:
+                impact_surface = impact_engine.calculate_impact(
+                    changed_ids, repository_query, capabilities
+                )
 
         # Initialize pass context with models
         context = BehaviorPassContext(

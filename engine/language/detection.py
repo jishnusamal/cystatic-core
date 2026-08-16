@@ -6,57 +6,109 @@ Returns the appropriate language adapter for compilation.
 
 from __future__ import annotations
 
+import os
+from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 from core.errors import LanguageDetectionFailed, LanguageNotSupported
+from engine.language.base import FileContext, LanguageSpec
+from engine.language.registry import LanguageRegistry
+from engine.language.builtins import create_default_language_registry
 
 if TYPE_CHECKING:
     from engine.language.base import BaseLanguageAdapter
 
 
-# Language detection rules - ordered by priority
-LANGUAGE_RULES = [
-    ("python", {".py"}),
-    ("java", {".java"}),
-    ("go", {".go"}),
-    ("typescript", {".ts", ".tsx"}),
-    ("javascript", {".js", ".jsx"}),
-]
+class LanguageDetector:
+    """Determines which language a collection of repository files contains.
+
+    Maintains separation of concerns by operating only on LanguageSpec metadata.
+    """
+
+    def __init__(self, registry: LanguageRegistry) -> None:
+        """Initialize detector with a language registry."""
+        self._registry = registry
+
+    def detect(self, files: Iterable[FileContext]) -> LanguageSpec:
+        """Detect the primary language from file contexts.
+
+        Args:
+            files: Iterable of FileContext objects.
+
+        Returns:
+            The detected LanguageSpec.
+
+        Raises:
+            LanguageDetectionFailed: If files list is empty or language cannot be detected.
+        """
+        votes: dict[LanguageSpec, int] = {}
+        has_files = False
+
+        for file in files:
+            has_files = True
+            matched_specs: set[LanguageSpec] = set()
+
+            # 1. Match by language ID if present
+            if file.language:
+                try:
+                    plugin = self._registry.get(file.language)
+                    matched_specs.add(plugin.spec)
+                except LanguageNotSupported:
+                    pass
+
+            # 2. Match by exact filename
+            filename = os.path.basename(file.path)
+            plugin_by_file = self._registry.find_by_filename(filename)
+            if plugin_by_file:
+                matched_specs.add(plugin_by_file.spec)
+
+            # 3. Match by extension (case-insensitive)
+            _, ext = os.path.splitext(file.path)
+            plugin_by_ext = self._registry.find_by_extension(ext)
+            if plugin_by_ext:
+                matched_specs.add(plugin_by_ext.spec)
+
+            # Accumulate votes
+            for spec in matched_specs:
+                votes[spec] = votes.get(spec, 0) + 1
+
+        if not has_files:
+            raise LanguageDetectionFailed("No files provided for language detection")
+
+        if not votes:
+            raise LanguageDetectionFailed(
+                "Could not detect any registered language plugin for the provided files"
+            )
+
+        # Find the maximum vote count
+        max_votes = max(votes.values())
+        candidates = [spec for spec, v in votes.items() if v == max_votes]
+
+        if len(candidates) == 1:
+            return candidates[0]
+
+        # In case of a tie, resolve using the registration/priority order in registry
+        for spec in self._registry.specs():
+            if spec in candidates:
+                return spec
+
+        return candidates[0]
 
 
 class LanguageAdapterFactory:
-    """
-    Factory for creating language adapters based on repository content.
+    """Factory for creating language adapters based on repository content.
 
     Detects the primary language of a repository and returns the appropriate
     adapter for compilation.
     """
 
-    def __init__(self) -> None:
-        """Initialize the factory with adapter registry."""
-        self._adapters: dict[str, type[BaseLanguageAdapter]] = {}
-        self._register_default_adapters()
-
-    def _register_default_adapters(self) -> None:
-        """Register built-in language adapters."""
-        # Import adapters here to avoid circular imports
-        try:
-            from engine.language.python.adapter import PythonLanguageAdapter
-
-            self._adapters["python"] = PythonLanguageAdapter
-        except ImportError:
-            pass
-
-        try:
-            from engine.language.java.adapter import JavaLanguageAdapter
-
-            self._adapters["java"] = JavaLanguageAdapter
-        except ImportError:
-            pass
+    def __init__(self, registry: LanguageRegistry | None = None) -> None:
+        """Initialize the factory with a language registry."""
+        self._registry = registry or get_default_registry()
+        self._detector = LanguageDetector(self._registry)
 
     def detect_language(self, files: dict[str, str]) -> str:
-        """
-        Detect the primary language of a repository from its files.
+        """Detect the primary language of a repository from its files.
 
         Args:
             files: Dictionary mapping file paths to file contents
@@ -70,35 +122,15 @@ class LanguageAdapterFactory:
         if not files:
             raise LanguageDetectionFailed("No files provided for language detection")
 
-        # Count file extensions
-        extension_counts: dict[str, int] = {}
-        for file_path in files:
-            ext = self._get_extension(file_path)
-            if ext:
-                extension_counts[ext] = extension_counts.get(ext, 0) + 1
-
-        if not extension_counts:
-            raise LanguageDetectionFailed("No recognizable file extensions found")
-
-        # Match against language rules
-        for language, extensions in LANGUAGE_RULES:
-            for ext in extensions:
-                if ext in extension_counts:
-                    return language
-
-        # If no match, return the most common extension's language
-        most_common_ext = max(extension_counts.items(), key=lambda x: x[1])[0]
-        for language, extensions in LANGUAGE_RULES:
-            if most_common_ext in extensions:
-                return language
-
-        raise LanguageDetectionFailed(
-            f"Could not detect language from extensions: {list(extension_counts.keys())}"
-        )
+        file_contexts = [
+            FileContext(path=path, source=content, ast=None, language="")
+            for path, content in files.items()
+        ]
+        spec = self._detector.detect(file_contexts)
+        return spec.id
 
     def create_adapter(self, language: str) -> BaseLanguageAdapter:
-        """
-        Create a language adapter for the specified language.
+        """Create a language adapter for the specified language.
 
         Args:
             language: Language name (e.g., "python", "java")
@@ -109,22 +141,12 @@ class LanguageAdapterFactory:
         Raises:
             LanguageNotSupported: If the language is not supported
         """
-        adapter_class = self._adapters.get(language)
-        if adapter_class is None:
-            supported = list(self._adapters.keys())
-            raise LanguageNotSupported(
-                f"Language '{language}' is not supported. "
-                f"Supported languages: {supported}",
-                details={"language": language, "supported": supported},
-            )
-
-        return adapter_class()
+        return self._registry.create_adapter(language)
 
     def detect_and_create(
         self, files: dict[str, str]
     ) -> tuple[str, BaseLanguageAdapter]:
-        """
-        Detect language and create adapter in one step.
+        """Detect language and create adapter in one step.
 
         Args:
             files: Dictionary mapping file paths to file contents
@@ -141,17 +163,15 @@ class LanguageAdapterFactory:
         return language, adapter
 
     def get_supported_languages(self) -> list[str]:
-        """
-        Get list of supported languages.
+        """Get list of supported languages.
 
         Returns:
             List of supported language names
         """
-        return list(self._adapters.keys())
+        return [spec.id for spec in self._registry.specs()]
 
     def is_language_supported(self, language: str) -> bool:
-        """
-        Check if a language is supported.
+        """Check if a language is supported.
 
         Args:
             language: Language name to check
@@ -159,37 +179,33 @@ class LanguageAdapterFactory:
         Returns:
             True if supported, False otherwise
         """
-        return language in self._adapters
-
-    @staticmethod
-    def _get_extension(file_path: str) -> str | None:
-        """
-        Get the file extension from a file path.
-
-        Args:
-            file_path: Path to the file
-
-        Returns:
-            File extension (e.g., ".py") or None
-        """
-        import os
-
-        _, ext = os.path.splitext(file_path)
-        return ext.lower() if ext else None
+        try:
+            self._registry.get(language)
+            return True
+        except LanguageNotSupported:
+            return False
 
 
-# Global factory instance
+# Global default registry and factory instances
+_registry: LanguageRegistry | None = None
 _factory: LanguageAdapterFactory | None = None
 
 
+def get_default_registry() -> LanguageRegistry:
+    """Get the global default language registry."""
+    global _registry
+    if _registry is None:
+        _registry = create_default_language_registry()
+    return _registry
+
+
 def get_language_factory() -> LanguageAdapterFactory:
-    """
-    Get the global language adapter factory.
+    """Get the global language adapter factory.
 
     Returns:
         LanguageAdapterFactory instance
     """
     global _factory
     if _factory is None:
-        _factory = LanguageAdapterFactory()
+        _factory = LanguageAdapterFactory(get_default_registry())
     return _factory

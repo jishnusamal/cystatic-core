@@ -25,7 +25,9 @@ from core.runtime import PREVENT_LEGACY_ARCHITECTURE
 from engine.behavior.compiler import BehaviorCompiler
 from engine.change.compiler import ChangeCompiler
 from engine.change.model.repository_comparison import RepositoryComparison
-from engine.language.detection import LanguageAdapterFactory, get_language_factory
+from engine.language.detection import LanguageDetector
+from engine.language.base import FileContext
+from engine.language.registry import LanguageRegistry
 from engine.llm_context.compiler import LLMContextCompiler
 from engine.operational.compiler import (
     EngineeringDiscoveryCompiler,
@@ -86,7 +88,7 @@ class Pipeline:
     def __init__(
         self,
         repository_store: RepositoryStore | None = None,
-        language_factory: LanguageAdapterFactory | None = None,
+        language_registry: LanguageRegistry | None = None,
         repository_provider: RepositoryProvider | None = None,
         output_provider: OutputProvider | None = None,
     ) -> None:
@@ -95,14 +97,15 @@ class Pipeline:
 
         Args:
             repository_store: Storage backend for repository facts
-            language_factory: Factory for creating language adapters
+            language_registry: Language registry instance
             repository_provider: Provider for fetching repository data
             output_provider: Provider for publishing results
         """
         self.repository_store = repository_store or SQLiteRepositoryStore(
             "repository_store.db"
         )
-        self.language_factory = language_factory or get_language_factory()
+        from engine.language.builtins import create_default_language_registry
+        self.language_registry = language_registry or create_default_language_registry()
         self.repository_provider = repository_provider
         self.output_provider = output_provider
 
@@ -231,7 +234,11 @@ class Pipeline:
             change_start = time.perf_counter()
             with timer.timed("Change Compilation"):
                 print("[pipeline] Step 3: Change facts compilation")
-                await self._compile_change(context)
+                spec = self.language_registry.get(context.language).spec
+                if spec.capabilities.symbols:
+                    await self._compile_change(context)
+                else:
+                    print("[pipeline] Step 3: symbols capability is False, skipping change compilation.")
                 print("[pipeline] Step 3 done")
                 timer.print_progress()
             change_time = time.perf_counter() - change_start
@@ -242,7 +249,11 @@ class Pipeline:
             behavior_start = time.perf_counter()
             with timer.timed("Behavior Compilation"):
                 print("[pipeline] Step 4: Behavior model compilation")
-                await self._compile_behavior(context)
+                spec = self.language_registry.get(context.language).spec
+                if spec.capabilities.calls and context.change_model is not None:
+                    await self._compile_behavior(context)
+                else:
+                    print("[pipeline] Step 4: calls capability is False or change_model is None, skipping behavior compilation.")
                 print("[pipeline] Step 4 done")
                 timer.print_progress()
             behavior_time = time.perf_counter() - behavior_start
@@ -253,7 +264,10 @@ class Pipeline:
             operational_start = time.perf_counter()
             with timer.timed("Operational Compilation"):
                 print("[pipeline] Step 5: Operational model compilation")
-                await self._compile_operational(context)
+                if context.change_model is not None and context.behavior_model is not None:
+                    await self._compile_operational(context)
+                else:
+                    print("[pipeline] Step 5: missing change_model or behavior_model, skipping operational compilation.")
                 print("[pipeline] Step 5 done")
                 timer.print_progress()
             operational_time = time.perf_counter() - operational_start
@@ -264,7 +278,10 @@ class Pipeline:
             discovery_start = time.perf_counter()
             with timer.timed("Engineering Discovery Compilation"):
                 print("[pipeline] Step 6: Engineering discovery model compilation")
-                await self._compile_discovery(context)
+                if context.ocm is not None:
+                    await self._compile_discovery(context)
+                else:
+                    print("[pipeline] Step 6: ocm is None, skipping engineering discovery compilation.")
                 print("[pipeline] Step 6 done")
                 timer.print_progress()
             discovery_time = time.perf_counter() - discovery_start
@@ -275,7 +292,10 @@ class Pipeline:
             discovery_ir_start = time.perf_counter()
             with timer.timed("Discovery IR Compilation"):
                 print("[pipeline] Step 7: Discovery IR compilation")
-                await self._compile_discovery_ir(context)
+                if context.edm is not None:
+                    await self._compile_discovery_ir(context)
+                else:
+                    print("[pipeline] Step 7: edm is None, skipping discovery IR compilation.")
                 print("[pipeline] Step 7 done")
                 timer.print_progress()
             discovery_ir_time = time.perf_counter() - discovery_ir_start
@@ -424,14 +444,21 @@ class Pipeline:
         # Detect language
         if context.language is None:
             print(f"[pipeline] Detecting language from {len(snapshot.files)} files...")
-            language = self.language_factory.detect_language(snapshot.files)
+            detector = LanguageDetector(self.language_registry)
+            file_contexts = [
+                FileContext(path=path, source=content, ast=None, language="")
+                for path, content in snapshot.files.items()
+            ]
+            spec = detector.detect(file_contexts)
+            language = spec.id
             context.language = language
             context.adapter = language
             print(f"[pipeline] Detected language: {language}")
         else:
             language = context.language
 
-        adapter = self.language_factory.create_adapter(language)
+        plugin = self.language_registry.get(language)
+        adapter = plugin.create_adapter()
 
         base_compile_start = time.perf_counter()
         repository_input = {
@@ -549,7 +576,8 @@ class Pipeline:
         metrics: dict[str, Any] = {}
         incremental_start = time.perf_counter()
 
-        adapter = self.language_factory.create_adapter(language)
+        plugin = self.language_registry.get(language)
+        adapter = plugin.create_adapter()
         repository_input = {
             "files": changed_files_dict,
             "changed_only": True,
@@ -689,12 +717,19 @@ class Pipeline:
 
                 if snapshot is not None:
                     if context.language is None:
-                        language = self.language_factory.detect_language(snapshot.files)
+                        detector = LanguageDetector(self.language_registry)
+                        file_contexts = [
+                            FileContext(path=path, source=content, ast=None, language="")
+                            for path, content in snapshot.files.items()
+                        ]
+                        spec = detector.detect(file_contexts)
+                        language = spec.id
                         context.language = language
                         context.adapter = language
                     else:
                         language = context.language
-                    adapter = self.language_factory.create_adapter(language)
+                    plugin = self.language_registry.get(language)
+                    adapter = plugin.create_adapter()
 
                     if self.repository_store is not None and isinstance(
                         self.repository_store, SQLiteRepositoryStore
@@ -763,7 +798,30 @@ class Pipeline:
                     )
 
             context.base_query = base_query
-            language = context.language or "python"
+            language = context.language
+            if language is None and base_query is not None:
+                if hasattr(base_query, "conn"):
+                    try:
+                        cur = base_query.conn.cursor()
+                        repo_id, version_id = base_query._get_context()
+                        cur.execute(
+                            "SELECT language FROM files WHERE repository_id = ? AND version_id = ? LIMIT 1",
+                            (repo_id, version_id),
+                        )
+                        row = cur.fetchone()
+                        if row:
+                            language = row["language"]
+                    except Exception:
+                        pass
+                elif hasattr(base_query, "_facts"):
+                    try:
+                        files = base_query._facts.files
+                        if files:
+                            language = files[0].language
+                    except Exception:
+                        pass
+
+            language = language or "python"
             context.language = language
             context.adapter = language
 
@@ -795,7 +853,8 @@ class Pipeline:
                 changed_files_dict = dict(results)
 
             # 3. Index ONLY changed files
-            adapter = self.language_factory.create_adapter(language)
+            plugin = self.language_registry.get(language)
+            adapter = plugin.create_adapter()
             head_sink = InMemoryFactSink()
             head_indexer = RepositoryIndexer(head_sink)
 
@@ -1140,10 +1199,12 @@ class Pipeline:
                 if context.repository_delta
                 else None
             )
+            spec = self.language_registry.get(context.language).spec
             context.impact_surface = self._behavior_compiler.compile(
                 change_model=change_input,
                 repository_query=query_input,
                 repository_delta=context.repository_delta,
+                capabilities=spec.capabilities,
             )
             context.behavior_model = context.impact_surface
             context.mark_behavior_compiled()
@@ -1186,11 +1247,13 @@ class Pipeline:
                 if context.repository_delta
                 else None
             )
+            spec = self.language_registry.get(context.language).spec
             context.ocm = self._operational_compiler.compile(
                 repository_delta=context.repository_delta,
                 change_model=change_input,
                 behavior_model=context.behavior_model,
                 repository_query=query_input,
+                capabilities=spec.capabilities,
             )
             context.mark_operational_compiled()
             # Diagnostics
@@ -1981,7 +2044,8 @@ class Pipeline:
             )
             context.base_repository_snapshot = snapshot
 
-        adapter = self.language_factory.create_adapter(language)
+        plugin = self.language_registry.get(language)
+        adapter = plugin.create_adapter()
 
         # Build base facts
         from engine.repository.indexing import InMemoryFactSink, RepositoryIndexer

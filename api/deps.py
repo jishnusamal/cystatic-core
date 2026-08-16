@@ -41,7 +41,12 @@ def get_pipeline() -> Any:
     repository_provider = registry.get_repository_provider("github")
     output_provider = registry.get_output_provider("github")
 
+    from engine.language.builtins import create_default_language_registry
+
+    language_registry = create_default_language_registry()
+
     return Pipeline(
+        language_registry=language_registry,
         repository_provider=repository_provider,
         output_provider=output_provider,
     )

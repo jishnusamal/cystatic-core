@@ -2,6 +2,7 @@
 
 from typing import Any
 
+
 from engine.change.model import (
     ChangedSymbol,
     ChangeFacts,
