@@ -1943,3 +1943,145 @@ class TestWave2CompilerOptimizations:
 
         # Verify execution chain limit: execution chain length = 1. Only step1 should be in the execution chain for ep1 (since step2 was dropped due to limit)
         assert len(result.eg.nodes) == 1
+
+
+class TestSymbolDBIDResolution:
+    """Tests that symbol database IDs are resolved to full qualified dotted names during serialization."""
+
+    def test_get_symbols_fallback_and_overrides(self):
+        """Test get_symbols behavior on RepositoryQuery subclasses."""
+        from unittest.mock import MagicMock
+        from engine.repository.query import InMemoryRepository
+        from engine.repository.facts import RepositoryFacts, Symbol, SymbolId, FileId, SymbolKind
+        from engine.repository.overlay import RepositoryOverlay, RepositoryView
+
+        # Mock symbols
+        sym1 = Symbol(id=SymbolId(101), name="FuncA", file_id=FileId(1), kind=SymbolKind.FUNCTION, language="python", start_line=1, end_line=5)
+        sym2 = Symbol(id=SymbolId(102), name="FuncB", file_id=FileId(1), kind=SymbolKind.FUNCTION, language="python", start_line=6, end_line=10)
+
+        # 1. InMemoryRepository
+        facts = RepositoryFacts(
+            files=(), symbols=(sym1, sym2), calls=(), references=(), imports=(),
+            type_relationships=(), endpoints=(), database_relationships=(),
+            event_publications=(), event_subscriptions=(), test_relationships=()
+        )
+        in_mem_repo = InMemoryRepository(facts)
+        res = in_mem_repo.get_symbols([SymbolId(101), SymbolId(102), SymbolId(999)])
+        assert len(res) == 2
+        assert res[0].name == "FuncA"
+        assert res[1].name == "FuncB"
+
+        # 2. RepositoryView
+        overlay = RepositoryOverlay(
+            added_symbols={SymbolId(103): Symbol(id=SymbolId(103), name="FuncC", file_id=FileId(1), kind=SymbolKind.FUNCTION, language="python", start_line=11, end_line=15)},
+            removed_symbols={SymbolId(102)},
+            added_files={},
+            removed_files=set(),
+            modified_files=set()
+        )
+        repo_view = RepositoryView(in_mem_repo, overlay)
+        res_view = repo_view.get_symbols([SymbolId(101), SymbolId(102), SymbolId(103)])
+        # 101 comes from base, 102 is removed, 103 is added
+        assert len(res_view) == 2
+        names = {s.name for s in res_view}
+        assert "FuncA" in names
+        assert "FuncC" in names
+
+    def test_serialize_llm_context_resolves_db_ids(self):
+        """Test that serialize_llm_context replaces digit strings with dotted symbol names."""
+        from unittest.mock import MagicMock
+        from engine.pipeline.pipeline import Pipeline, PipelineContext
+        from engine.llm_context.compiler import LLMContextCompiler
+        from engine.repository.facts import Symbol, SymbolId, FileId, SymbolKind, File
+        from engine.review_context.model import ReviewContext, ChangeContext, FileChange, Change, SymbolRef
+
+        # Mock DB
+        db = MagicMock()
+
+        # We have symbol 270682 and parent/method 270683
+        sym1 = Symbol(
+            id=SymbolId(270682),
+            name="AccessControlSettings",
+            file_id=FileId(10),
+            kind=SymbolKind.CLASS,
+            language="python",
+            start_line=1,
+            end_line=20
+        )
+        sym2 = Symbol(
+            id=SymbolId(270683),
+            name="get",
+            file_id=FileId(10),
+            kind=SymbolKind.METHOD,
+            language="python",
+            start_line=5,
+            end_line=10,
+            parent_symbol_id=SymbolId(270682)
+        )
+
+        # Mock get_symbols to return requested symbols
+        def mock_get_symbols(ids):
+            res = []
+            for sid in ids:
+                if int(sid) == 270682:
+                    res.append(sym1)
+                elif int(sid) == 270683:
+                    res.append(sym2)
+            return tuple(res)
+
+        db.get_symbols.side_effect = mock_get_symbols
+
+        # Mock get_file
+        db.get_file.return_value = File(id=FileId(10), path="ee/api/rbac/access_control_settings.py", language="python")
+
+        # Compile a mock ReviewContext that contains DB IDs in the symbols list
+        change = Change(
+            symbol=SymbolRef(
+                id="270682",  # DB ID as string
+                name="270682", # Use DB ID as name so it enters st
+                kind="class",
+                location="ee/api/rbac/access_control_settings.py:1-20"
+            ),
+            change_type="modified"
+        )
+        file_change = FileChange(
+            path="ee/api/rbac/access_control_settings.py",
+            language="python",
+            change_type="modified",
+            changes=(change,)
+        )
+        rc = ReviewContext(
+            change=ChangeContext(
+                files=(file_change,)
+            )
+        )
+
+        compiler = LLMContextCompiler()
+        llm_ctx = compiler.compile(rc)
+
+        # Verify that "270682" is in st
+        assert "270682" in llm_ctx.st.entries
+
+        # Set up PipelineContext
+        pipeline = Pipeline()
+        context = PipelineContext(run_context=None, repository="test/repo")
+        context.llm_context = llm_ctx
+        context.repository_view = db
+
+        # Serialize
+        serialized = pipeline.serialize_llm_context(context)
+
+        # Verify the invariant
+        assert serialized is not None
+        assert "270682" not in serialized["st"]
+        assert "ee.api.rbac.access_control_settings.AccessControlSettings" in serialized["st"]
+
+        # Ensure index references are updated and match the new st index
+        expected_name = "ee.api.rbac.access_control_settings.AccessControlSettings"
+        new_index = serialized["st"].index(expected_name)
+
+        # The symbol entry in serialized["sym"] should reference new_index
+        # sym structure: [file_id, name_idx, kind_id]
+        symbol_entry = serialized["sym"][0]
+        assert symbol_entry[1] == new_index
+

@@ -1788,22 +1788,105 @@ class Pipeline:
 
         try:
             llm_ctx = context.llm_context
-            strings = llm_ctx.st.entries
+            strings = list(llm_ctx.st.entries)
 
-            def resolve(idx: int) -> str:
-                return strings[idx] if idx < len(strings) else ""
+            # Resolve DB-backed symbol IDs to full names using RepositoryQuery
+            db = context.repository_view or context.base_query
+            if db is not None:
+                from engine.repository.facts import SymbolId, FileId
 
-            # Serialize string table
+                # Identify pure numeric strings as candidate symbol IDs
+                candidate_ids = []
+                candidate_indices = []
+                for idx, s in enumerate(strings):
+                    if s and s.isdigit():
+                        candidate_ids.append(SymbolId(int(s)))
+                        candidate_indices.append(idx)
+
+                if candidate_ids:
+                    # Batch fetch symbols
+                    symbols = db.get_symbols(candidate_ids)
+
+                    # Recursively resolve parents in batch
+                    all_resolved = {sym.id: sym for sym in symbols}
+                    curr_symbols = list(symbols)
+                    while True:
+                        parent_ids_to_fetch = []
+                        for sym in curr_symbols:
+                            if sym.parent_symbol_id is not None and sym.parent_symbol_id not in all_resolved:
+                                parent_ids_to_fetch.append(sym.parent_symbol_id)
+                        if not parent_ids_to_fetch:
+                            break
+                        parents = db.get_symbols(parent_ids_to_fetch)
+                        for p in parents:
+                            all_resolved[p.id] = p
+                        curr_symbols = parents
+
+                    # Batch fetch all required files to get paths
+                    file_ids = {sym.file_id for sym in all_resolved.values() if sym.file_id is not None}
+                    file_map = {}
+                    for fid in file_ids:
+                        file_obj = db.get_file(fid)
+                        if file_obj:
+                            file_map[fid] = file_obj.path
+
+                    # Resolve full qualified names
+                    symbol_names = {}
+                    for sym in symbols:
+                        chain = []
+                        curr = sym
+                        while curr is not None:
+                            chain.append(curr.name)
+                            if curr.parent_symbol_id is not None:
+                                curr = all_resolved.get(curr.parent_symbol_id)
+                            else:
+                                curr = None
+                        chain.reverse()
+
+                        file_path = file_map.get(sym.file_id, "")
+                        if file_path:
+                            file_path = file_path.replace('\\', '/')
+                            for ext in ['.py', '.java', '.ts', '.tsx', '.js', '.jsx']:
+                                if file_path.endswith(ext):
+                                    file_path = file_path[:-len(ext)]
+                                    break
+                            module_parts = [p for p in file_path.split('/') if p]
+                            module_name = ".".join(module_parts)
+                        else:
+                            module_name = ""
+
+                        if module_name:
+                            full_name = f"{module_name}.{'.'.join(chain)}"
+                        else:
+                            full_name = ".".join(chain)
+
+                        symbol_names[sym.id] = full_name
+
+                    # Replace DB IDs in strings list
+                    for idx, s in zip(candidate_indices, candidate_ids):
+                        if s in symbol_names:
+                            strings[idx] = symbol_names[s]
+
+            # Deduplicate the resolved strings and build the remapping table
+            new_st_entries = []
+            new_st_map = {}
+            old_to_new_idx = {}
+            for old_idx, s in enumerate(strings):
+                if s not in new_st_map:
+                    new_idx = len(new_st_entries)
+                    new_st_entries.append(s)
+                    new_st_map[s] = new_idx
+                old_to_new_idx[old_idx] = new_st_map[s]
+
+            # Remap everything referencing st
             result: dict[str, Any] = {
-                "st": list(strings),
+                "st": new_st_entries,
             }
 
-            # Serialize lookup tables — keep as compact lists of ints
-            result["f"] = [list(e) for e in llm_ctx.f]
-            result["sym"] = [list(s) for s in llm_ctx.sym]
-            result["ep"] = [list(e) for e in llm_ctx.ep]
+            result["f"] = [[old_to_new_idx.get(path_idx, 0), ct_id] for path_idx, ct_id in llm_ctx.f]
+            result["sym"] = [[file_id, old_to_new_idx.get(name_idx, 0), kind_id] for file_id, name_idx, kind_id in llm_ctx.sym]
+            result["ep"] = [[method_id, old_to_new_idx.get(path_idx, 0)] for method_id, path_idx in llm_ctx.ep]
 
-            # Serialize change section
             cls_id, scope_id, file_count, symbol_count, behavior_count = llm_ctx.cs
             result["cs"] = [cls_id, scope_id, file_count, symbol_count, behavior_count]
 
@@ -1813,9 +1896,16 @@ class Pipeline:
                 changed_sym_idxs = list(file_entry[1])
                 result["cf"].append([file_idx, changed_sym_idxs])
 
-            # Serialize execution section
             result["eg"] = {
-                "n": [list(node) for node in llm_ctx.eg.nodes],
+                "n": [
+                    [
+                        sym_idx,
+                        depth,
+                        old_to_new_idx.get(svc_idx, 0),
+                        old_to_new_idx.get(mod_idx, 0)
+                    ]
+                    for sym_idx, depth, svc_idx, mod_idx in llm_ctx.eg.nodes
+                ],
                 "e": [list(edge) for edge in llm_ctx.eg.edges],
             }
 
@@ -1826,12 +1916,11 @@ class Pipeline:
                     [
                         endpoint_idx,
                         list(chain_node_idxs),
-                        terminal_idx,
+                        old_to_new_idx.get(terminal_idx, 0),
                         max_depth,
                     ]
                 )
 
-            # Serialize discoveries
             result["disc"] = []
             for d in llm_ctx.disc:
                 kind_id, facts = d
@@ -1840,6 +1929,8 @@ class Pipeline:
             return result
         except Exception as exc:
             print(f"[pipeline] LLMContext serialization failed: {exc}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def calculate_llm_context_tokens(
