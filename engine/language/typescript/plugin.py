@@ -11,12 +11,12 @@ class TypeScriptPlugin:
 
     spec = LanguageSpec(
         id="typescript",
-        extensions=frozenset({".ts", ".tsx"}),
+        extensions=frozenset({".ts", ".tsx", ".mts", ".cts"}),
         capabilities=LanguageCapabilities(
-            symbols=False,
-            imports=False,
-            calls=False,
-            types=False,
+            symbols=True,
+            imports=True,
+            calls=True,
+            types=True,
             entrypoints=False,
             events=False,
             persistence=False,

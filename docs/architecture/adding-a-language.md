@@ -1,33 +1,16 @@
-# Adding Support for a Programming Language
+# Language Extension Developer Guide: Adding Support for a Programming Language
 
-This developer guide describes the Language Extension Architecture of the repository and explains how to add support for a new programming language.
-
----
-
-## Quick Start: Add a Language
-
-To quickly add support for a new language, follow this high-level workflow:
-
-1. **Create the Package**: Create `engine/language/<language>/`.
-2. **Define the Plugin**: Implement the `LanguagePlugin` protocol in `<language>/plugin.py`.
-3. **Specify Metadata**: Declare `LanguageSpec` with the stable language ID, file extensions, and special filenames.
-4. **Declare Capabilities**: Configure `LanguageCapabilities` (e.g. `symbols=True`, `persistence=False`) depending on what analysis passes are available.
-5. **Implement the Adapter**: Subclass `BaseLanguageAdapter` in `<language>/adapter.py`.
-6. **Integrate the Parser**: Implement or call a parser satisfying the `BaseParser` interface.
-7. **Write Indexing Passes**: Implement `BaseIndexPass` subclasses to extract structural facts.
-8. **Construct the Index**: Run passes via `IndexCompiler` to produce a `FileIndex` and aggregate into a `RepositoryIndex`.
-9. **Implement Single-File Indexing**: Define `_index_single_file` on your adapter to support incremental parsing.
-10. **Register the Plugin**: Register the plugin instance inside `engine/language/builtins.py`.
-11. **Write Tests**: Add detection, plugin protocol, adapter contract, full compilation, and incremental patching tests in the `tests/` directory.
-12. **Validate**: Run the full test suite to verify the new language compiles and degrades gracefully.
+This guide explains the Language Extension Architecture of the repository and provides a step-by-step developer guide on exactly how to add support for a new programming language (e.g., Rust, Go, Kotlin) to the static analysis pipeline.
 
 ---
 
-## 1. Architectural Diagram & Boundary
+## 1. Architecture & Pipeline Flow
 
 The compiler pipeline enforces a strict **one-way architectural boundary** between language-specific frontends and language-independent downstream compilers. 
 
-### Pipeline Flow
+### Core Analysis Compilation Flow
+
+The following diagram illustrates how raw files are processed, detected, parsed, indexed, and compiled into resolved semantic models:
 
 ```mermaid
 flowchart TB
@@ -39,15 +22,13 @@ flowchart TB
     Spec["LanguageSpec"]
     Adapter["BaseLanguageAdapter"]
     Parser["Language Parser"]
-    Extract["Language-specific Extractors / Passes"]
+    Extract["Language-Specific visitors / passes / extractors"]
     Index["RepositoryIndex"]
 
     Semantic["SemanticCompiler"]
     Model["RepositoryModel"]
-    Patch["GraphPatcher"]
-    Incremental["compile_incremental()"]
 
-    Analysis["Language-independent Analysis"]
+    Analysis["Language-Independent Analysis"]
     Change["ChangeCompiler"]
     Behavior["BehaviorCompiler"]
     Operational["OperationalCompiler"]
@@ -65,13 +46,8 @@ flowchart TB
     Parser --> Extract
     Extract --> Index
 
-    Adapter --> Incremental
-    Incremental --> Index
-    Index --> Patch
-
     Index --> Semantic
     Semantic --> Model
-    Patch --> Model
 
     Model --> Analysis
 
@@ -83,34 +59,69 @@ flowchart TB
     Analysis --> LLM
 ```
 
-### The Language Boundary
+### Incremental Compilation Flow
 
-```text
-Language-Specific (Frontend)
-══════════════════════════════════════════════════════════════════
-  Parser (AST / Line representation)
-  Extractors / Visitors / Passes
-  Adapter
-══════════════════════════════════════════════════════════════════
-  RepositoryIndex (Structural Facts)
-══════════════════════════════════════════════════════════════════
-Language-Independent (Backend)
-══════════════════════════════════════════════════════════════════
-  SemanticCompiler
-  RepositoryModel
-  GraphPatcher
-  Analysis Compilers (Change, Behavior, Operational, etc.)
+When pull requests or commits modify files in a repository, the pipeline uses **incremental compilation** to patch the graph rather than re-compiling the entire repository from scratch:
+
+```mermaid
+flowchart TD
+    Adapter["BaseLanguageAdapter.compile_incremental()"]
+    Diff["Identify Changed Files"]
+    IndexSingle["_index_single_file()"]
+    FileIdx["FileIndex"]
+    FileContrib["FileContribution"]
+    Patcher["GraphPatcher"]
+    Graph["RepositoryGraph"]
+
+    Adapter --> Diff
+    Diff --> IndexSingle
+    IndexSingle --> FileIdx
+    FileIdx --> FileContrib
+    FileContrib --> Patcher
+    Patcher --> Graph
 ```
-
-> [!IMPORTANT]
-> **Boundary Rule**: Language-specific AST classes (such as Python's `ast.AST` or a Tree-sitter `Node`) must **never** escape the language adapter boundary. They must not appear inside the `RepositoryIndex`, `RepositoryModel`, or any downstream compiler.
-
-* **Allowed**: `Python AST` $\rightarrow$ `Python Adapter` $\rightarrow$ `RepositoryIndex`.
-* **Forbidden**: `ChangeCompiler` directly inspecting a `Python AST` node, or `BehaviorCompiler` checking a Tree-sitter node type.
 
 ---
 
-## 2. The Plugin Layer
+## 2. Directory Structure
+
+Language-specific frontends reside in the [`engine/language/`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/) directory.
+
+### Directory Layout
+
+```text
+engine/language/
+├── __init__.py           # Package initialization
+├── base/                 # Base classes and interfaces defining contracts
+│   ├── __init__.py
+│   ├── adapter.py        # BaseLanguageAdapter abstract class
+│   ├── capabilities.py   # LanguageCapabilities dataclass
+│   ├── file_context.py   # FileContext container class
+│   ├── index_compiler.py # IndexCompiler orchestration
+│   ├── parser.py         # BaseParser interface
+│   ├── passes/           # BaseIndexPass class
+│   ├── plugin.py         # LanguagePlugin protocol
+│   ├── spec.py           # LanguageSpec dataclass
+│   └── visitors/         # BaseVisitor class
+├── detection.py          # LanguageDetector & LanguageAdapterFactory
+├── registry.py           # LanguageRegistry management
+├── builtins.py           # Registration of built-in plugins
+├── python/               # Reference Python frontend implementation
+├── java/                 # Reference Java frontend implementation (regex-based)
+└── typescript/           # Reference TypeScript frontend implementation (tree-sitter-based)
+```
+
+### Subdirectory Roles
+
+Each concrete language frontend (like `python/` or `typescript/`) is divided into several subdirectories:
+* **`parser/`**: Houses the syntax parser wrapping language-specific AST engines (e.g., standard `ast` module or `tree-sitter`).
+* **`visitors/`**: Handles the AST traversal. If the language uses a single-pass visitor, it walks the AST once and dispatches to indexing passes.
+* **`extractors/`**: Legacy structural extractor helper modules (maintained for structural parity).
+* **`passes/`**: Contains the individual indexing passes that emit facts from the syntax tree (e.g., symbols, imports, call expressions, type inheritance).
+
+---
+
+## 3. The Plugin System
 
 The plugin layer handles registration, discovery, metadata, and capabilities. A language plugin is intentionally thin.
 
@@ -127,13 +138,8 @@ class LanguagePlugin(Protocol):
         ...
 ```
 
-**Responsibilities**:
-* Identify the language using `LanguageSpec`.
-* Define capability flags via `LanguageCapabilities`.
-* Instantiate the adapter via `create_adapter()`.
-
-**Restrictions**:
-* Must **not** parse files, extract symbols, compile, or implement incremental logic.
+* **Plugin Responsibilities**: Expose the [`LanguageSpec`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/base/spec.py) (metadata and capability declarations) and act as a factory for instantiating the language adapter.
+* **Plugin Constraints**: Plugins must **never** parse source files, execute passes, build indexes, or perform compilation. They are strictly metadata descriptors and factory boundaries.
 
 ### LanguageSpec
 
@@ -148,12 +154,11 @@ class LanguageSpec:
     capabilities: LanguageCapabilities = field(default_factory=LanguageCapabilities)
 ```
 
-* `id`: The unique, stable string identifier of the language (e.g. `"python"`, `"java"`).
-* `extensions`: Frozenset of file extensions matching this language (e.g. `frozenset({".py"})`).
-* `filenames`: Frozenset of special filenames used for detection (e.g. `frozenset({"Dockerfile"})`).
-* `capabilities`: Declares which features are supported by the frontend.
+* `id`: Stable string identifier (e.g. `"python"`, `"typescript"`).
+* `extensions`: Frozenset of matching file extensions (e.g., `frozenset({".ts", ".tsx", ".mts", ".cts"})`).
+* `filenames`: Frozenset of special filenames (e.g., `frozenset({"Dockerfile"})`).
 
-### LanguageCapabilities & Graceful Degradation
+### Capabilities & Graceful Degradation
 
 Defined in [`engine/language/base/capabilities.py`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/base/capabilities.py):
 
@@ -170,217 +175,42 @@ class LanguageCapabilities:
     tests: bool = False
 ```
 
-#### Supported vs Unsupported Analysis
+#### Unsupported Capability vs. Supported with Zero Findings
+* **Unsupported (`capability=False`)**: The language frontend does not implement the extraction pass for this domain (e.g., `persistence=False` for TypeScript). Downstream compilation passes will skip this phase entirely, ensuring the system degrades gracefully without raising errors.
+* **Supported with Zero Findings (`capability=True`)**: The frontend implements the extraction pass, but running it on the repository returned zero facts (e.g., a codebase with no class declarations). This is a normal compiled state.
 
-The capability model enforces a distinction between:
-* **Unsupported (`capability=False`)**: The language adapter does not implement analysis for this domain. Downstream pipeline stages skip this analysis pass entirely, preventing compilation crashes and ensuring graceful degradation.
-* **Supported but no findings (`capability=True`)**: The analysis is supported, but running it returned zero facts. This indicates a valid compilation state where the repository simply does not contain these elements.
+> [!IMPORTANT]
+> Downstream code must check capability flags instead of hardcoding language name checks:
+> ```python
+> # CORRECT
+> if spec.capabilities.types:
+>     compile_type_hierarchies()
+> 
+> # INCORRECT
+> if language == "python" or language == "typescript":
+>     compile_type_hierarchies()
+> ```
 
-Downstream logic queries these flags rather than checking the language name:
-
-```python
-# GOOD: Capability check
-if spec.capabilities.persistence:
-    run_persistence_analysis()
-
-# BAD: Language check
-if language == "python":
-    run_persistence_analysis()
-```
-
----
-
-## 3. The Adapter Layer
-
-The adapter is the main worker of the language frontend.
-
-### BaseLanguageAdapter
-
-Defined in [`engine/language/base/adapter.py`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/base/adapter.py), it exposes the following core contract:
-
-```python
-class BaseLanguageAdapter(ABC):
-    @abstractmethod
-    def get_language(self) -> str:
-        """Return the stable language identifier."""
-        ...
-
-    @abstractmethod
-    def compile(self, repository_input: dict[str, Any]) -> RepositoryModel:
-        """Compile a repository snapshot into a RepositoryModel."""
-        ...
-
-    @abstractmethod
-    def get_compiler_passes(self) -> list[str]:
-        """Return names of compiler passes in execution order."""
-        ...
-
-    @abstractmethod
-    def _index_single_file(self, file_path: str, content: str, language: str) -> Any:
-        """Parse and run indexing passes on a single source file."""
-        ...
-
-    def compile_graph(self, repository_input: dict[str, Any]) -> RepositoryGraph:
-        """Compile a repository into a patchable RepositoryGraph."""
-        ...
-
-    def compile_incremental(self, base_graph: RepositoryGraph, repository_input: dict[str, Any]) -> RepositoryGraph:
-        """Compile changed files and patch the base RepositoryGraph."""
-        ...
-```
-
-### Relationship Flow
-
-```text
-Plugin (creates) ──> Adapter ──> Parser (syntax) ──> Extractors/Passes (facts)
-```
-
----
-
-## 4. Parser Choices and Extraction Architecture
-
-The parser selection and traversal strategy is a localized frontend implementation detail.
-
-### Parser Abstraction
-
-All parsers subclass `BaseParser` (defined in [`engine/language/base/parser.py`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/base/parser.py)), implementing:
-* `parse(content, file_path) -> Any`: Converts source to parsed output.
-* `supports_file(file_path) -> bool`: Checks extension compatibility.
-
-### Traverse & Extract Strategies
-
-The indexing step takes a parsed tree and passes it through one or more indexing passes implementing `BaseIndexPass` (defined in [`engine/language/base/passes/__init__.py`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/base/passes/__init__.py)):
-
-#### Strategy A: Composite Visitor (AST-Based)
-For languages with complex AST structures (like Python), traversing the tree multiple times is costly. Instead, a single traversal is made using a composite visitor (`BaseVisitor` subclass) that dispatches node events to all registered passes simultaneously.
-* **Orchestration**: `IndexCompiler.compile_with_visitor(file_contexts, language, visitor)`
-
-#### Strategy B: Sequential Runs (Line/Regex-Based)
-For lightweight frontends or those without a structured AST, passes can run sequentially, each inspecting the parsed structure.
-* **Orchestration**: `IndexCompiler.compile(file_contexts, language)`
-
----
-
-## 5. RepositoryIndex: The Handoff Boundary
-
-The indexing passes collect raw facts into a mutable dictionary which is compiled into a `RepositoryIndex` containing:
-
-* **`SymbolEntry`**: Declarations of classes, methods, functions, variables.
-* **`ImportEntry`**: Import statements containing imported namespaces, module names, and line numbers.
-* **`RawReference`**: Unresolved references (e.g. variable reads, function calls).
-* **`EntrypointEntry`**: Discovered app entrypoints.
-* **`TypeRelationshipEntry`**: Class inheritance and subtyping relationships.
-* **`PersistenceModelEntry`**, `EventEntry`, `TestEntry`, etc.
-
-Every extracted entry must be a standard, language-agnostic dataclass defined in [`engine/repository/model/repository_index.py`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/repository/model/repository_index.py).
-
----
-
-## 6. Semantic and Incremental Compilation
-
-### Semantic Compilation
-
-Once the adapter creates the `RepositoryIndex`, it invokes `SemanticCompiler.compile(index, language)`:
-
-```text
-RepositoryIndex ──> SemanticCompiler ──> RepositoryModel
-```
-
-The language adapter **must not** implement reference resolution or call graph building. The `SemanticCompiler` resolves references, builds call/reference graphs, maps visibilities, and assigns canonical symbol IDs (e.g., `python://path/to/file.py::func_name`).
-
-### Incremental Compilation
-
-Incremental compilation is handled transparently by the base class method `BaseLanguageAdapter.compile_incremental()`. 
-
-To support incremental compilation:
-1. The adapter determines which files are added, modified, or deleted.
-2. For each added/modified file, the adapter invokes its internal `_index_single_file(path, content, language)` to produce a standalone `FileIndex`.
-3. The adapter translates `FileIndex` into a `FileContribution`.
-4. The adapter invokes the language-agnostic `GraphPatcher` (`engine.language.base.graph_patcher.GraphPatcher`) to patch the `RepositoryGraph` in-place.
-
-```text
-compile_incremental()
-  ↓
-Identify changed files
-  ↓
-_index_single_file()
-  ↓
-FileIndex ──> FileContribution
-  ↓
-GraphPatcher ──> RepositoryGraph (Patched)
-```
-
-> [!WARNING]
-> A new language plugin must **not** override `compile_incremental` or implement its own graph patcher.
-
----
-
-## 7. Registration and Detection
-
-### Registry Configuration
-
-Plugins must be registered in the default language registry function inside [`engine/language/builtins.py`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/builtins.py):
-
-```python
-def create_default_language_registry() -> LanguageRegistry:
-    registry = LanguageRegistry()
-    registry.register(PythonPlugin())
-    registry.register(TypeScriptPlugin())
-    registry.register(JavaPlugin())
-    return registry
-```
-
-### Detection Flow
-
-When compile requests arrive, `LanguageDetector` determines the language by inspecting the files:
-
-```text
-Files ──> LanguageDetector ──> LanguageRegistry ──> Plugin ──> Adapter
-```
-
-The detector runs a voting algorithm on input files using metadata from `LanguageSpec`:
-1. Checks for matching `LanguageSpec.id` attribute.
-2. Checks for matching `LanguageSpec.filenames` (e.g., `Dockerfile`).
-3. Checks for matching `LanguageSpec.extensions` (e.g., `.py`, `.java`).
-4. Selects the language spec with the highest vote count (resolving ties using registration order).
-
----
-
-## 8. Built-in Language Matrix
-
-| Language | Parser | Adapter | Plugin | Capabilities | Incremental | Support Status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Python** | Built-in `ast` module | `PythonLanguageAdapter` | `PythonPlugin` | All `True` | Supported (delegates to `_index_single_file`) | Fully Supported |
-| **Java** | `JavaParser` (Regex line-splitter) | `JavaLanguageAdapter` | `JavaPlugin` | All `True` | Supported (delegates to `_index_single_file`) | Fully Supported |
-| **TypeScript** | None (Stub parser) | `TypeScriptLanguageAdapter` | `TypeScriptPlugin` | All `False` | Unsupported (Raises `LanguageNotSupported`) | Incomplete / Stub |
-
----
-
-## 9. New Language Skeleton Templates
-
-Developers can copy and rename these skeletons to bootstrap a new language extension.
-
-### 1. Plugin Template (`engine/language/<language>/plugin.py`)
+### Minimal Plugin Example
 
 ```python
 from engine.language.base.adapter import BaseLanguageAdapter
 from engine.language.base.capabilities import LanguageCapabilities
 from engine.language.base.spec import LanguageSpec
-from .adapter import NewLanguageAdapter
+from .adapter import NewLanguageLanguageAdapter
 
 
 class NewLanguagePlugin:
-    """Plugin definition for the NewLanguage extension."""
+    """Concrete plugin implementation for NewLanguage."""
 
     spec = LanguageSpec(
         id="newlanguage",
         extensions=frozenset({".nl"}),
-        filenames=frozenset({"NLConfig"}),
         capabilities=LanguageCapabilities(
             symbols=True,
             imports=True,
             calls=True,
-            types=False,
+            types=True,
             entrypoints=False,
             events=False,
             persistence=False,
@@ -389,149 +219,236 @@ class NewLanguagePlugin:
     )
 
     def create_adapter(self) -> BaseLanguageAdapter:
-        """Create a NewLanguageAdapter instance."""
-        return NewLanguageAdapter()
+        """Create a NewLanguageLanguageAdapter instance."""
+        return NewLanguageLanguageAdapter()
 ```
 
-### 2. Adapter Template (`engine/language/<language>/adapter.py`)
+---
+
+## 4. Adapter Implementation
+
+The adapter is the orchestrator of the language-specific compiler passes. All concrete adapters must subclass [`BaseLanguageAdapter`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/base/adapter.py) and replicate the reference implementation architecture found in Python's [`adapter.py`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/python/adapter.py).
+
+### Core Adapter API
+
+A concrete adapter must implement the following methods and properties:
 
 ```python
-from typing import Any
-from engine.language.base import BaseLanguageAdapter
-from engine.language.base.file_context import FileContext
-from engine.language.base.index_compiler import IndexCompiler
-from engine.language.base.semantic_compiler import SemanticCompiler
-from engine.repository.model import RepositoryModel
-from engine.repository.model.repository_index import FileIndex, RepositoryIndex
-
-
-class NewLanguageAdapter(BaseLanguageAdapter):
-    """Language adapter for NewLanguage repositories."""
-
-    def __init__(self) -> None:
-        # Define the custom indexing passes
-        self._passes = [
-            # E.g. NewLanguageSymbolPass(), NewLanguageImportPass()
-        ]
-        self._index_compiler = IndexCompiler(self._passes)
-        self._semantic_compiler = SemanticCompiler()
-
+class BaseLanguageAdapter(ABC):
+    @abstractmethod
     def get_language(self) -> str:
-        return "newlanguage"
+        """Return the stable language string (e.g. 'python', 'typescript')."""
+        ...
 
+    @abstractmethod
     def get_compiler_passes(self) -> list[str]:
-        return ["symbol_collection", "reference_resolution", "call_graph"]
+        """Return pass names in execution order for backward compatibility."""
+        ...
 
+    @abstractmethod
     def compile(self, repository_input: dict[str, Any]) -> RepositoryModel:
-        files = repository_input.get("files", {})
-        language = repository_input.get("language", self.get_language())
-        index = self._build_index(files, language)
-        return self._semantic_compiler.compile(index, language)
+        """Compile a repository snapshot into a RepositoryModel.
+        
+        Args:
+            repository_input: Snapshot dict containing 'files' mapping paths to content.
+        """
+        ...
 
+    @abstractmethod
     def build_index(self, repository_input: dict[str, Any]) -> RepositoryIndex:
-        files = repository_input.get("files", {})
-        language = repository_input.get("language", self.get_language())
-        return self._build_index(files, language)
+        """Build the RepositoryIndex containing structural facts only."""
+        ...
 
+    @abstractmethod
     def _build_index(self, files: dict[str, str], language: str) -> RepositoryIndex:
-        target_files = [f for f in files if f.endswith(".nl")]
+        """Internal worker to parse files and compile the RepositoryIndex."""
+        ...
 
-        def generate_contexts():
-            for file_path in target_files:
-                content = files.get(file_path, "")
-                # Parse content here (e.g. AST or lines)
-                parsed_tree = content.split("\n") 
-                yield FileContext(
-                    path=file_path,
-                    source=content,
-                    ast=parsed_tree,
-                    language=language,
-                )
-
-        return self._index_compiler.compile(generate_contexts(), language)
-
+    @abstractmethod
     def _index_single_file(self, file_path: str, content: str, language: str) -> FileIndex:
-        """Parse and run indexing passes on a single source file to support incremental compilation."""
-        if not file_path.endswith(".nl"):
-            return FileIndex(path=file_path, language=language)
-
-        parsed_tree = content.split("\n")
-        context = FileContext(
-            path=file_path,
-            source=content,
-            ast=parsed_tree,
-            language=language,
-        )
-        repo_index = self._index_compiler.compile([context], language)
-        return repo_index.files[0]
+        """Parse and run indexing passes on a single source file (for incremental compiles)."""
+        ...
 ```
 
 ---
 
-## 10. Architectural Anti-Patterns ("Do Not Do This")
+## 5. Parser Implementation
 
-To avoid coupling and architectural regressions:
+Parsers must implement the [`BaseParser`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/base/parser.py) interface.
 
-### 1. Do Not Add Language Branches Downstream
-Downstream components must remain language-independent.
-* **Incorrect**:
-  ```python
-  if language == "python":
-      # process python classes
-  elif language == "java":
-      # process java classes
-  ```
-* **Correct**: Extract normalized type declarations in the adapter, populate `TypeRelationshipEntry` in the index, and let the downstream code inspect the index.
+### Parser Interface
 
-### 2. Do Not Expose Parser Types in the Index or Model
-Keep parser nodes fully encapsulated inside the frontend package.
-* **Incorrect**:
-  ```python
-  @dataclass
-  class SymbolEntry:
-      node: ast.AST  # leaks Python AST
-  ```
-* **Correct**: Extract only native Python/JSON-serializable data types (strings, integers, dicts).
+```python
+class BaseParser(ABC):
+    @abstractmethod
+    def parse(self, content: str, file_path: str) -> Any:
+        """Parse source content into a language-native syntax tree (e.g., Tree-sitter Tree)."""
+        ...
 
-### 3. Do Not Make Plugins Fat
-A plugin is a metadata descriptor and factory, not a compiler.
-* **Incorrect**:
-  ```python
-  class PythonPlugin:
-      def parse(self, content): ...
-      def compile(self, repo): ...
-  ```
-* **Correct**: Delegate all parsing, indexing, and compiling responsibility to the adapter.
+    @abstractmethod
+    def supports_file(self, file_path: str) -> bool:
+        """Check if this parser supports the given file path."""
+        ...
+```
 
-### 4. Do Not Bypass the Registry
-Do not import and instantiate concrete adapters from core or pipeline code.
-* **Incorrect**:
-  ```python
-  from engine.language.python.adapter import PythonLanguageAdapter
-  adapter = PythonLanguageAdapter()
-  ```
-* **Correct**:
-  ```python
-  plugin = registry.get("python")
-  adapter = plugin.create_adapter()
-  ```
+### Encapsulation Rules
 
-### 5. Do Not Duplicate Incremental Compilation Logic
-Do not write custom file-diffing or in-place patching logic within the concrete adapter.
-* **Incorrect**: Overriding `compile_incremental` to implement custom patchers.
-* **Correct**: Inherit the base implementation of `compile_incremental` and implement the file-scoped `_index_single_file` function.
+> [!WARNING]
+> Language-specific AST and parser nodes (such as Python `ast.AST` or Tree-sitter `Node`) **must remain fully encapsulated** within the language adapter module. They must never escape into [`RepositoryIndex`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/repository/model/repository_index.py), [`RepositoryModel`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/repository/model/repository_model.py), or downstream compilers.
+
+```text
+TypeScript Node (Tree-sitter)
+         ↓
+TypeScript Adapter / Passes (Extracts properties)
+         ↓
+  SymbolEntry (Normalized string/ints)
+         ↓
+  RepositoryIndex (Language-independent Boundary)
+```
 
 ---
 
-## 11. Current Architectural Gaps
+## 6. Indexing Passes & Extractors
 
-An analysis of the current `engine/language` implementation reveals the following architectural gaps:
+Indexing passes translate the syntax tree into language-independent structural facts. 
 
-1. **Concrete Adapter Exports in Package `__init__.py`**:
-   The package [`engine/language/__init__.py`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/__init__.py) imports and exposes `PythonLanguageAdapter` and `JavaLanguageAdapter` directly. This compromises registry-based isolation and could encourage developers to import concrete classes instead of querying them via the registry.
-2. **Java Parser Implementation**:
-   The `JavaParser` is currently a placeholder regex-based line splitter that splits source code by lines (`content.split("\n")`) instead of building a structured abstract syntax tree or using Tree-sitter. This limits the precision of the Java indexing passes.
-3. **TypeScript Implementation**:
-   TypeScript is currently a stub adapter. `TypeScriptLanguageAdapter` raises `LanguageNotSupported` on all compiling/indexing actions, and all its capability flags are hardcoded to `False`. Proper TypeScript support has not yet been implemented.
-4. **Duplicate Compile/Build Index API**:
-   Some adapters define both `compile()` and `build_index()` as public APIs, while `BaseLanguageAdapter` defines `compile()` but leaves `_build_index` private. Resolving this discrepancy and standardizing the build index API would clean up adapter boundaries.
+### Mandatory vs. Stubbed Passes
+
+To maintain structural parity with Python, every new language frontend should include all 9 indexing passes:
+1. **`symbols`**: Class, function, method definitions (Mandatory if `symbols=True`).
+2. **`imports`**: Imports of module namespaces and aliases (Mandatory if `imports=True`).
+3. **`calls`**: Direct call expressions (Mandatory if `calls=True`).
+4. **`types`**: Class inheritance relations (Mandatory if `types=True`).
+5. **`entrypoints`**: HTTP API endpoints (Supported/Stubbed).
+6. **`persistence`**: Database schemas / ORMs (Supported/Stubbed).
+7. **`events`**: Event emitters/listeners (Supported/Stubbed).
+8. **`tests`**: Test suite definitions (Supported/Stubbed).
+9. **`configuration`**: Project configurations (Supported/Stubbed).
+
+If a capability is set to `False` in the plugin configuration, the corresponding pass must be implemented as a simple no-op stub:
+
+```python
+class TypeScriptPersistenceIndexPass(BaseIndexPass):
+    """Stub pass for TypeScript persistence as it is unsupported."""
+
+    def process(self, context: FileContext, builder: dict[str, Any]) -> None:
+        pass
+```
+
+### Fact Normalization
+
+Indexing passes must output standardized, language-agnostic entries defined in [`engine/repository/model/repository_index.py`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/repository/model/repository_index.py):
+* `SymbolEntry`: Kind (`"class"`, `"function"`, `"method"`), line bounds, visibility.
+* `ImportEntry`: Module path, names imported, import type (`"import"` or `"from_import"`).
+* `CallEntry`: Callee name, receiver name, caller method name, line number.
+* `TypeRelationshipEntry`: Source class, target base class, relation type (`"extends"`).
+
+---
+
+## 7. RepositoryIndex: The Handoff Boundary
+
+A clear division of labor exists between the frontend (language adapter) and backend (semantic compiler):
+
+| Responsibility | Component | Layer |
+| :--- | :--- | :--- |
+| **Parsing** | `BaseParser` subclass | Frontend (Language-specific) |
+| **AST Traversal** | `BaseVisitor` subclass | Frontend (Language-specific) |
+| **Syntax Extraction** | `BaseIndexPass` subclasses | Frontend (Language-specific) |
+| **Normalization** | Creating `RepositoryIndex` | Frontend (Language-specific) |
+| **Semantic Resolution** | Reference matching, Call Graph matching | Backend (Language-independent) |
+| **Graph Construction** | Building `RepositoryGraph` / `RepositoryModel` | Backend (Language-independent) |
+| **Incremental Patching** | `GraphPatcher` execution | Backend (Language-independent) |
+| **Downstream Analyses** | Change/Behavior/Operational Compilers | Backend (Language-independent) |
+
+---
+
+## 8. Incremental Compilation Integration
+
+To support in-place patching of pull requests:
+* Concrete adapters **must not** implement custom graph-patching or file-diff logic.
+* Adapters must inherit the base implementation of `compile_incremental` defined in [`BaseLanguageAdapter`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/base/adapter.py#L123-L275).
+* Developers must implement a correct `_index_single_file(file_path, content, language)` method. When invoked with a changed file, this method must parse it, run visitor passes, and return a single [`FileIndex`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/repository/model/repository_index.py) containing only the facts for that file.
+
+---
+
+## 9. Detection & Registration
+
+### 1. Spec Specification
+Set the ID and register extensions in `LanguageSpec` (e.g., `extensions=frozenset({".ts", ".tsx"})`).
+
+### 2. Builtins Registry
+Add your plugin to the default registry inside [`engine/language/builtins.py`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/builtins.py):
+
+```python
+def create_default_language_registry() -> LanguageRegistry:
+    registry = LanguageRegistry()
+    registry.register(PythonPlugin())
+    registry.register(TypeScriptPlugin())  # Registered here
+    registry.register(JavaPlugin())
+    return registry
+```
+
+### 3. Detector Voting Algorithm
+The [`LanguageDetector`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/detection.py) runs dynamically on repository file trees:
+* It looks up extensions matching registered plugins in `LanguageRegistry`.
+* It accumulates votes for each language based on file extension matching.
+* The plugin with the highest vote count is selected as the primary repository language.
+
+> [!WARNING]
+> Do not add language-specific hardcoded branching in the detector:
+> ```python
+> # FORBIDDEN
+> if file_path.endswith(".ts"):
+>     return TypeScriptLanguageAdapter()
+> ```
+
+---
+
+## 10. Test Layers
+
+Every language frontend must be validated using the following test layers (refer to [`tests/test_typescript_adapter.py`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/tests/test_typescript_adapter.py) for concrete examples):
+
+1. **Plugin Tests**: Verify capabilities and extensions spec (e.g., `test_plugin_capabilities`).
+2. **Adapter Contract Tests**: Verify methods exist and adapter initializes correctly.
+3. **Symbol Collection Tests**: Verify function, class, and method symbol generation.
+4. **Import Collection Tests**: Verify named, namespace, and default imports extraction.
+5. **Call Collection Tests**: Verify function and method calls and receiver extraction.
+6. **Type Relationship Tests**: Verify class inheritance (`extends` mapping).
+7. **Full Compilation Tests**: Verify adapter's `compile()` method creates a semantic `RepositoryModel`.
+8. **Incremental Compilation Tests**: Verify that changed files patch the graph successfully.
+9. **Pipeline Integration Tests**: Run the full pipeline overlay using `Pipeline.run(request)`.
+
+---
+
+## 11. Anti-Patterns to Avoid
+
+* ❌ **Fat Plugins**: Writing parsing or symbol-extracting logic in the plugin instead of the adapter.
+* ❌ **Direct Adapter Imports**: Directly importing and constructing adapters outside the registry (e.g., `from engine.language.python.adapter import PythonLanguageAdapter`). Use `registry.create_adapter(language)` instead.
+* ❌ **Downstream Branches**: Adding `if language == "newlanguage"` checks in operational, change, or review context compilers.
+* ❌ **AST Leaks**: Returning raw Tree-sitter `Node` or AST structures in the `RepositoryIndex` or `RepositoryModel`.
+* ❌ **Semantic Duplication**: Writing call-graph matching or reference resolution inside your adapter passes. Let `SemanticCompiler` handle this.
+* ❌ **Patcher Duplication**: Overriding `compile_incremental` or writing a custom graph patcher.
+
+---
+
+## 12. Implementation Checklist
+
+Use this checklist to verify your language frontend implementation:
+
+- [ ] Inspect the reference Python implementation ([`engine/language/python/`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/python/)).
+- [ ] Create package directory: `engine/language/<language>/`.
+- [ ] Implement the syntax parser in `<language>/parser/` implementing [`BaseParser`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/base/parser.py).
+- [ ] Implement composite visitor in `<language>/visitors/` implementing [`BaseVisitor`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/base/visitors/__init__.py) if traversing tree-sitter or AST structures.
+- [ ] Create the 9 indexing passes in `<language>/passes/` subclassing [`BaseIndexPass`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/base/passes/__init__.py). Stub any unsupported capabilities.
+- [ ] Create the 9 extractor skeleton directories under `<language>/extractors/` for structure parity.
+- [ ] Implement the adapter in `<language>/adapter.py` subclassing [`BaseLanguageAdapter`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/base/adapter.py) with the standard core methods:
+    * `get_language()`
+    * `get_compiler_passes()`
+    * `compile()`
+    * `build_index()`
+    * `_build_index()`
+    * `_index_single_file()`
+- [ ] Implement the plugin in `<language>/plugin.py` configuring spec, extensions, and capabilities.
+- [ ] Register the plugin in [`engine/language/builtins.py`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/builtins.py).
+- [ ] Add unit and integration tests in `tests/`.
+- [ ] Verify using `pytest`.

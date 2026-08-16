@@ -61,7 +61,7 @@ def test_typescript_plugin_spec():
     plugin = TypeScriptPlugin()
 
     assert plugin.spec.id == "typescript"
-    assert plugin.spec.extensions == frozenset({".ts", ".tsx"})
+    assert plugin.spec.extensions == frozenset({".ts", ".tsx", ".mts", ".cts"})
     assert isinstance(plugin.spec, LanguageSpec)
 
 
@@ -126,12 +126,12 @@ def test_java_plugin_capabilities():
 
 
 def test_typescript_plugin_capabilities():
-    """Verify TypeScriptPlugin advertises unsupported/empty capabilities."""
+    """Verify TypeScriptPlugin advertises supported capabilities."""
     plugin = TypeScriptPlugin()
-    assert plugin.spec.capabilities.symbols is False
-    assert plugin.spec.capabilities.imports is False
-    assert plugin.spec.capabilities.calls is False
-    assert plugin.spec.capabilities.types is False
+    assert plugin.spec.capabilities.symbols is True
+    assert plugin.spec.capabilities.imports is True
+    assert plugin.spec.capabilities.calls is True
+    assert plugin.spec.capabilities.types is True
     assert plugin.spec.capabilities.entrypoints is False
     assert plugin.spec.capabilities.events is False
     assert plugin.spec.capabilities.persistence is False
@@ -154,6 +154,6 @@ def test_builtin_language_capabilities():
     assert java.capabilities.symbols is True
     assert java.capabilities.calls is True
 
-    assert typescript.capabilities.symbols is False
-    assert typescript.capabilities.calls is False
+    assert typescript.capabilities.symbols is True
+    assert typescript.capabilities.calls is True
 

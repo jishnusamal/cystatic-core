@@ -96,7 +96,7 @@ async def test_python_pipeline_integration():
 
 @pytest.mark.asyncio
 async def test_typescript_pipeline_integration():
-    """Verify that a TypeScript repository is detected but creation fails as unsupported."""
+    """Verify that a TypeScript repository is successfully compiled through the pipeline."""
     store = SQLiteRepositoryStore(":memory:")
     registry = create_default_language_registry()
 
@@ -156,11 +156,17 @@ async def test_typescript_pipeline_integration():
         trigger=AnalysisTrigger.MANUAL,
     )
 
-    # Running pipeline should raise LanguageNotSupported when creating TypeScript adapter
-    with pytest.raises(LanguageNotSupported) as exc_info:
-        await pipeline.run(request)
+    # Run pipeline
+    context = await pipeline.run(request)
 
-    assert "typescript" in str(exc_info.value).lower()
+    # Verify invariants
+    assert context.error is None
+    assert context.language == "typescript"
+    assert context.base_query is not None
+    assert context.repository_view is not None
+    assert context.change_facts is not None
+    assert context.impact_surface is not None
+    assert context.ocm is not None
 
 
 @pytest.mark.asyncio
