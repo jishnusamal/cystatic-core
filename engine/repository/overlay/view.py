@@ -19,7 +19,7 @@ from engine.repository.facts import (
 from engine.repository.model.repository_model import EntryPoint, EntryPointKind
 from engine.repository.overlay.overlay import RepositoryOverlay
 from engine.repository.query import QueryResult, RepositoryQuery
-from core.config import get_settings
+from core.config import get_compiler_settings
 
 
 class RepositoryView(RepositoryQuery):
@@ -107,8 +107,8 @@ class RepositoryView(RepositoryQuery):
 
     def _resolve_if_needed(self, result, requirement) -> bool:
         # Respect the global lazy‑resolution feature flag
-        from core.config import get_settings
-        if not get_settings().ENABLE_LAZY_REPOSITORY_RESOLUTION:
+        from core.config import get_compiler_settings
+        if not get_compiler_settings().ENABLE_LAZY_REPOSITORY_RESOLUTION:
             return False
         if requirement in self._resolved_requirements:
             return False
