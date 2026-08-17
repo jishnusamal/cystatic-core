@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     APP_VERSION: str = "0.1.0"
     MEMORY_PROFILING: bool = False
 
-    ADMIN_EMAIL: str
+    ADMIN_EMAIL: str = "admin@example.com"
 
     # ------------------------------------------------------------------
     # API Keys
@@ -57,8 +57,8 @@ class Settings(BaseSettings):
     # Database
     # ------------------------------------------------------------------
 
-    DATABASE_URL: str
-    DATABASE_URL_DIRECT: str
+    DATABASE_URL: str = "sqlite:///test.db"
+    DATABASE_URL_DIRECT: str = "sqlite:///test.db"
 
     # ------------------------------------------------------------------
     # GitHub
@@ -66,12 +66,12 @@ class Settings(BaseSettings):
 
     GITHUB_ACCESS_TOKEN: str | None = None
 
-    GITHUB_APP_CLIENT_ID: str
-    GITHUB_CLIENT_SECRET: str
+    GITHUB_APP_CLIENT_ID: str = "dummy_client_id"
+    GITHUB_CLIENT_SECRET: str = "dummy_client_secret"
 
-    GITHUB_PRIVATE_KEY: str
+    GITHUB_PRIVATE_KEY: str = "dummy_private_key"
 
-    GITHUB_APP_WEBHOOK_SECRET: str
+    GITHUB_APP_WEBHOOK_SECRET: str = "dummy_webhook_secret"
 
     REPOSITORY_ACQUISITION_MODE: str = "zip"
     GITHUB_MAX_CONCURRENT_BLOB_REQUESTS: int = 10
@@ -80,8 +80,8 @@ class Settings(BaseSettings):
     # Redis
     # ------------------------------------------------------------------
 
-    UPSTASH_REDIS_REST_URL: str
-    UPSTASH_REDIS_REST_TOKEN: str
+    UPSTASH_REDIS_REST_URL: str = "http://localhost:6379"
+    UPSTASH_REDIS_REST_TOKEN: str = "dummy_token"
 
     # ------------------------------------------------------------------
     # Observability
@@ -124,6 +124,9 @@ class CompilerSettings(BaseSettings):
     LLM_CONTEXT_MAX_SYMBOLS_PER_FILE: int = 50
     LLM_CONTEXT_MAX_REFERENCES_PER_NODE: int = 8
     LLM_CONTEXT_MAX_DISCOVERY_EVIDENCE: int = 8
+
+    ENABLE_LAZY_REPOSITORY_RESOLUTION: bool = False
+
 
 
 @lru_cache(maxsize=1)

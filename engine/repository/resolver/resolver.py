@@ -7,7 +7,7 @@ from engine.repository.materialization.request import MaterializationRequest
 from integrations.base import RepositoryProvider
 from .requirements import ResolutionRequirement, SymbolResolutionRequirement
 from .frontier import ResolutionFrontier
-from .planner import RequirementPlanner
+from .planner import RequirementPlanner, DefaultRequirementPlanner
 
 class RepositoryResolver:
     """
@@ -24,7 +24,7 @@ class RepositoryResolver:
         self.store = store
         self.source = source
         self.materializer = materializer
-        self.planner = RequirementPlanner(store, source)
+        self.planner = DefaultRequirementPlanner(store, source)
 
     async def resolve(
         self,
@@ -57,19 +57,19 @@ class RepositoryResolver:
                 to_terminal=True,
             )
 
-            # Planner returns candidate paths for all requirements
-            candidate_paths = await self.planner.plan(
+            # Planner returns MaterializationRequest objects for all requirements
+            candidate_requests = await self.planner.plan(
                 repository_id, commit_sha, current_reqs
             )
-
-            # Determine which paths still need materialization
-            missing_paths = {
-                p for p in candidate_paths
-                if not self.store.is_materialized(repository_id, commit_sha, p)
-            }
+            # Aggregate all paths that still need materialization
+            missing_paths = set()
+            for req in candidate_requests:
+                for p in req.paths:
+                    if not self.store.is_materialized(repository_id, commit_sha, p):
+                        missing_paths.add(p)
 
             pipeline_logger.log_pipeline(
-                f"[Resolver][Round {round_num}] {len(candidate_paths)} candidate paths, {len(missing_paths)} missing",
+                f"[Resolver][Round {round_num}] {len(candidate_requests)} candidate requests, {len(missing_paths)} missing",
                 to_terminal=True,
             )
 

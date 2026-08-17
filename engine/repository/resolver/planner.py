@@ -14,7 +14,7 @@ from .requirements import (
     EventResolutionRequirement,
     AllEntryPointsRequirement,
 )
-from .materialization.request import MaterializationRequest
+from engine.repository.materialization.request import MaterializationRequest
 
 # ---------------------------------------------------------------------------
 # Planner contract (protocol)
@@ -159,7 +159,7 @@ class DefaultRequirementPlanner:
         def_path = self._get_path_from_symbol_id(repository_id, commit_sha, req.symbol_id)
         if def_path and not self.store.is_materialized(repository_id, commit_sha, def_path):
             paths.add(def_path)
-        if req.query_type in ("callers", "references_to", "type_dependents", "tests"):
+        if req.query_type in ("callers", "references_to", "type_dependents", "tests", "callees"):
             symbol_obj = self.store.get_symbol(req.symbol_id)
             if not symbol_obj:
                 return

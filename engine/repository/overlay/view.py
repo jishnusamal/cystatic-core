@@ -19,6 +19,7 @@ from engine.repository.facts import (
 from engine.repository.model.repository_model import EntryPoint, EntryPointKind
 from engine.repository.overlay.overlay import RepositoryOverlay
 from engine.repository.query import QueryResult, RepositoryQuery
+from core.config import get_settings
 
 
 class RepositoryView(RepositoryQuery):
@@ -105,6 +106,10 @@ class RepositoryView(RepositoryQuery):
             self._added_tests[t.target_symbol_id].append(t)
 
     def _resolve_if_needed(self, result, requirement) -> bool:
+        # Respect the global lazy‑resolution feature flag
+        from core.config import get_settings
+        if not get_settings().ENABLE_LAZY_REPOSITORY_RESOLUTION:
+            return False
         if requirement in self._resolved_requirements:
             return False
         if not result.complete and self.resolver and self.repository_id and self.commit_sha:
