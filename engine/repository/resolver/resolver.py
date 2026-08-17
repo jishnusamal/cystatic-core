@@ -8,6 +8,7 @@ from integrations.base import RepositoryProvider
 from .requirements import ResolutionRequirement, SymbolResolutionRequirement
 from .frontier import ResolutionFrontier
 from .planner import RequirementPlanner, DefaultRequirementPlanner
+from typing import Any
 
 class RepositoryResolver:
     """
@@ -20,11 +21,18 @@ class RepositoryResolver:
         store: RepositoryStore,
         source: RepositoryProvider,
         materializer: RepositoryMaterializer,
+        planner: RequirementPlanner | None = None,
+        tree_metadata: Any = None,
+        base_commit: str | None = None,
+        budget: Any = None,
     ) -> None:
         self.store = store
         self.source = source
         self.materializer = materializer
-        self.planner = DefaultRequirementPlanner(store, source)
+        self.planner = planner or DefaultRequirementPlanner(store, source)
+        self.tree_metadata = tree_metadata
+        self.base_commit = base_commit
+        self.budget = budget
 
     async def resolve(
         self,

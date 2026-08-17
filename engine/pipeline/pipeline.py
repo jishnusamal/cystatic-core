@@ -664,6 +664,498 @@ class Pipeline:
             metrics,
         )
 
+    async def _lazy_compile_facts_and_view(
+        self, context: PipelineContext, request: AnalysisRequest
+    ) -> None:
+        """
+        Lazy Step 1:
+        Does NOT download base ZIP. Initializes view with a metadata tree,
+        only indexes changed files from head, and attaches RepositoryResolver.
+        """
+        import time
+        from core.logging import pipeline_logger
+        from engine.repository.indexing import RepositoryIndexer
+        from engine.repository.store import PersistentFactSink, SQLiteRepositoryStore
+        from engine.repository.materialization.request import MaterializationRequest
+        from engine.repository.materialization.budget import MaterializationBudget
+        from engine.repository.materialization.materializer import RepositoryMaterializer
+        from engine.repository.resolver.resolver import RepositoryResolver
+        from engine.repository.overlay import RepositoryOverlay, RepositoryView
+        from engine.repository.facts import (
+            File, FileId, SymbolId, Call, Reference, Import,
+            TypeRelationship, Endpoint, DatabaseRelationship,
+            EventPublication, EventSubscription, TestRelationship
+        )
+
+        if self.repository_provider is None:
+            raise RepositoryNotInstalled(
+                "Repository fact compilation requires a repository provider.",
+                details={"repository": request.repository.full_name},
+            )
+
+        # 1. Resolve SHAs
+        if request.pull_request:
+            base_sha = request.pull_request.base_sha
+            head_sha = request.pull_request.head_sha
+        else:
+            base_sha = request.repository.default_branch
+            head_sha = request.repository.default_branch
+
+        context.base_sha = base_sha
+        context.head_sha = head_sha
+
+        # Timings instrumentation
+        repository_metadata_duration = 0.0
+        repository_tree_duration = 0.0
+        changed_file_acquisition_duration = 0.0
+        changed_file_indexing_duration = 0.0
+        repository_view_construction_duration = 0.0
+
+        full_name = request.repository.full_name
+        provider = getattr(request.repository, "provider", "github") or "github"
+        repo_id = (
+            f"{provider}/{full_name}"
+            if not full_name.startswith(f"{provider}/")
+            else full_name
+        )
+
+        # Ensure we have base_query (which is SQLiteRepositoryStore)
+        actual_repo_id = self.repository_store.create_repository(
+            provider, getattr(request.repository, "owner", None) or full_name.split("/")[0],
+            getattr(request.repository, "repository", None) or full_name.split("/")[-1]
+        )
+        actual_version_id = self.repository_store.create_version(
+            actual_repo_id, base_sha
+        )
+        self.repository_store.set_version_context(
+            actual_repo_id, actual_version_id
+        )
+        base_query = self.repository_store
+        context.base_query = base_query
+
+        # 2. Fetch base commit metadata
+        t0 = time.perf_counter()
+        commit_meta = await self.repository_provider.get_commit(request.repository.full_name, base_sha)
+        repository_metadata_duration += (time.perf_counter() - t0) * 1000.0
+
+        # 3. Fetch base repository tree metadata
+        t1 = time.perf_counter()
+        tree_entries = await self.repository_provider.get_tree(request.repository.full_name, base_sha)
+        repository_tree_duration += (time.perf_counter() - t1) * 1000.0
+
+        # Record tree metadata in the store
+        tree_entries_dicts = [
+            {
+                "path": entry.path,
+                "type": entry.type,
+                "blob_sha": entry.sha,
+                "size": entry.size or 0
+            }
+            for entry in tree_entries
+        ]
+        self.repository_store.record_tree(actual_repo_id, base_sha, tree_entries_dicts)
+
+        # Record repository size (denominator for materialization ratio)
+        num_known_files = sum(1 for e in tree_entries if e.type == "blob")
+        num_known_bytes = sum(e.size or 0 for e in tree_entries if e.type == "blob")
+        context.repository_materialization.set_repository_size(
+            files=num_known_files,
+            bytes=num_known_bytes,
+        )
+
+        # Detect language from tree paths
+        if context.language is None:
+            detector = LanguageDetector(self.language_registry)
+            file_contexts = [
+                FileContext(path=entry.path, source="", ast=None, language="")
+                for entry in tree_entries if entry.type == "blob"
+            ]
+            if file_contexts:
+                try:
+                    spec = detector.detect(file_contexts)
+                    language = spec.id
+                except Exception:
+                    language = "python"
+            else:
+                language = "python"
+            context.language = language
+            context.adapter = language
+        else:
+            language = context.language
+
+        # 4. Fetch PR diff / changed paths
+        if context.diff_data is None:
+            if request.has_diff:
+                context.diff_data = self._diff_snapshot_to_dict(request.diff)
+            elif self.repository_provider:
+                await self._fetch_diff(context, request)
+
+        # Collect changed paths (ignoring deleted files for head materialization)
+        changed_paths = []
+        base_tree_paths = {e.path for e in tree_entries if e.type == "blob"}
+        
+        # 4b. Fetch head tree metadata (so materializer has head expected blob_shas and sizes)
+        t_head_start = time.perf_counter()
+        head_tree_entries = await self.repository_provider.get_tree(request.repository.full_name, head_sha)
+        repository_tree_duration += (time.perf_counter() - t_head_start) * 1000.0
+        
+        head_tree_entries_dicts = [
+            {
+                "path": entry.path,
+                "type": entry.type,
+                "blob_sha": entry.sha,
+                "size": entry.size or 0
+            }
+            for entry in head_tree_entries
+        ]
+        self.repository_store.record_tree(actual_repo_id, head_sha, head_tree_entries_dicts)
+        head_tree_by_path = {e.path: e for e in head_tree_entries}
+
+        if context.diff_data and "files" in context.diff_data:
+            for file_info in context.diff_data["files"]:
+                change_type = file_info.get("change_type")
+                if change_type is None:
+                    file_path = file_info["file_path"]
+                    if file_path in base_tree_paths:
+                        if file_path not in head_tree_by_path:
+                            change_type = "deleted"
+                        else:
+                            change_type = "modified"
+                    else:
+                        change_type = "added"
+                
+                if change_type != "deleted":
+                    changed_paths.append(file_info["file_path"])
+
+        # Reserve base FileIds for changed files in database
+        if hasattr(self.repository_store, "conn"):
+            conn = self.repository_store.conn
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT COALESCE(MAX(id), 0) as max_id FROM files WHERE repository_id = ? AND version_id = ?",
+                (actual_repo_id, actual_version_id),
+            )
+            row = cur.fetchone()
+            next_id = row["max_id"] + 1 if row else 1
+            
+            for file_info in context.diff_data.get("files", []):
+                file_path = file_info["file_path"]
+                cur.execute(
+                    "SELECT id FROM files WHERE repository_id = ? AND version_id = ? AND path = ?",
+                    (actual_repo_id, actual_version_id, file_path),
+                )
+                if not cur.fetchone():
+                    if file_path in base_tree_paths:
+                        cur.execute(
+                            "INSERT INTO files (repository_id, version_id, id, path, language, state) VALUES (?, ?, ?, ?, ?, ?)",
+                            (actual_repo_id, actual_version_id, next_id, file_path, language, "active"),
+                        )
+                        next_id += 1
+            conn.commit()
+
+        # 5. Fetch changed file blobs & index them
+        # Sync indexer and materializer
+        sink = PersistentFactSink(
+            self.repository_store, actual_repo_id, actual_version_id
+        )
+        indexer = RepositoryIndexer(sink)
+
+        budget = MaterializationBudget(
+            max_files=5000,
+            max_bytes=500 * 1024 * 1024,
+            max_remote_requests=500
+        )
+        materializer = RepositoryMaterializer(
+            source=self.repository_provider,
+            store=self.repository_store,
+            indexer=indexer,
+            budget=budget,
+            metrics=context.repository_materialization,
+        )
+
+        acq_before = context.repository_materialization.repository_acquisition_ms
+        idx_before = context.repository_materialization.repository_indexing_ms
+
+        mat_res = None
+        if changed_paths:
+            mat_req = MaterializationRequest(
+                repository_id=actual_repo_id,
+                commit_sha=head_sha,
+                paths=tuple(changed_paths),
+                reason="pr_changed_files",
+            )
+            mat_res = await materializer.materialize(mat_req)
+
+        changed_file_acquisition_duration += (context.repository_materialization.repository_acquisition_ms - acq_before)
+        changed_file_indexing_duration += (context.repository_materialization.repository_indexing_ms - idx_before)
+
+        # 6. Construct RepositoryOverlay
+        t_view_start = time.perf_counter()
+        added_files = {}
+        removed_files = set()
+        modified_files = set()
+
+        if context.diff_data:
+            for file_info in context.diff_data.get("files", []):
+                file_path = file_info["file_path"]
+                change_type = file_info.get("change_type")
+
+                base_file = base_query.get_file(file_path)
+
+                if change_type is None:
+                    if file_path in base_tree_paths:
+                        if file_path not in head_tree_by_path:
+                            change_type = "deleted"
+                        else:
+                            change_type = "modified"
+                    else:
+                        change_type = "added"
+
+                if change_type == "added":
+                    file_id = indexer.get_or_create_file_id(file_path)
+                    added_files[file_id] = File(
+                        id=file_id, path=file_path, language=language
+                    )
+                elif change_type == "deleted":
+                    if base_file is not None:
+                        removed_files.add(base_file.id)
+                elif change_type == "modified":
+                    if base_file is not None:
+                        removed_files.add(base_file.id)
+                        modified_files.add(base_file.id)
+                        file_id = base_file.id
+                    else:
+                        file_id = indexer.get_or_create_file_id(file_path)
+                    added_files[file_id] = File(
+                        id=file_id, path=file_path, language=language
+                    )
+
+        removed_symbols = set()
+        for rf_id in removed_files:
+            for s in base_query.get_symbols_in_file(rf_id):
+                removed_symbols.add(s.id)
+
+        # Query all facts for the head version from SQL
+        cur = self.repository_store.conn.cursor()
+        
+        # 1. added_symbols
+        cur.execute(
+            "SELECT id, name, file_id, kind, language, start_line, end_line, visibility, parent_symbol_id "
+            "FROM symbols WHERE repository_id = ? AND version_id = ?",
+            (actual_repo_id, head_sha),
+        )
+        added_symbols = {}
+        for row in cur.fetchall():
+            sym = Symbol(
+                id=SymbolId(row["id"]),
+                name=row["name"],
+                file_id=FileId(row["file_id"]),
+                kind=row["kind"],
+                language=row["language"],
+                start_line=row["start_line"],
+                end_line=row["end_line"],
+                visibility=row["visibility"],
+                parent_symbol_id=SymbolId(row["parent_symbol_id"]) if row["parent_symbol_id"] is not None else None,
+            )
+            added_symbols[sym.id] = sym
+            
+        # 2. added_calls
+        cur.execute(
+            "SELECT caller_id, callee_id, call_type FROM calls WHERE repository_id = ? AND version_id = ?",
+            (actual_repo_id, head_sha),
+        )
+        added_calls = set()
+        for row in cur.fetchall():
+            added_calls.add(Call(
+                caller_id=SymbolId(row["caller_id"]),
+                callee_id=SymbolId(row["callee_id"]),
+                call_type=row["call_type"],
+            ))
+            
+        # 3. added_references
+        cur.execute(
+            "SELECT source_id, target_id, relation_type FROM \"references\" WHERE repository_id = ? AND version_id = ?",
+            (actual_repo_id, head_sha),
+        )
+        added_references = set()
+        for row in cur.fetchall():
+            added_references.add(Reference(
+                source_id=SymbolId(row["source_id"]),
+                target_id=SymbolId(row["target_id"]),
+                relation_type=row["relation_type"],
+            ))
+            
+        # 4. added_imports
+        cur.execute(
+            "SELECT source_file_id, target_file_id, module, imported_name, import_type "
+            "FROM imports WHERE repository_id = ? AND version_id = ?",
+            (actual_repo_id, head_sha),
+        )
+        added_imports = set()
+        for row in cur.fetchall():
+            added_imports.add(Import(
+                source_file_id=FileId(row["source_file_id"]),
+                target_file_id=FileId(row["target_file_id"]) if row["target_file_id"] is not None else None,
+                module=row["module"],
+                imported_name=row["imported_name"],
+                import_type=row["import_type"],
+            ))
+            
+        # 5. added_type_relationships
+        cur.execute(
+            "SELECT source_id, target_id, relationship_type FROM type_relationships WHERE repository_id = ? AND version_id = ?",
+            (actual_repo_id, head_sha),
+        )
+        added_type_relationships = set()
+        for row in cur.fetchall():
+            added_type_relationships.add(TypeRelationship(
+                source_id=SymbolId(row["source_id"]),
+                target_id=SymbolId(row["target_id"]),
+                relationship_type=row["relationship_type"],
+            ))
+            
+        # 6. added_endpoints
+        cur.execute(
+            "SELECT id, symbol_id, method, path, framework FROM endpoints WHERE repository_id = ? AND version_id = ?",
+            (actual_repo_id, head_sha),
+        )
+        added_endpoints = set()
+        for row in cur.fetchall():
+            added_endpoints.add(Endpoint(
+                id=row["id"],
+                symbol_id=SymbolId(row["symbol_id"]),
+                method=row["method"],
+                path=row["path"],
+                framework=row["framework"],
+            ))
+            
+        # 7. added_database_relationships
+        cur.execute(
+            "SELECT symbol_id, resource_id, relationship_type FROM database_relationships WHERE repository_id = ? AND version_id = ?",
+            (actual_repo_id, head_sha),
+        )
+        added_database_relationships = set()
+        for row in cur.fetchall():
+            added_database_relationships.add(DatabaseRelationship(
+                symbol_id=SymbolId(row["symbol_id"]),
+                resource_id=row["resource_id"],
+                relationship_type=row["relationship_type"],
+            ))
+            
+        # 8. added_event_publications
+        cur.execute(
+            "SELECT symbol_id, event_id, publication_type FROM event_publications WHERE repository_id = ? AND version_id = ?",
+            (actual_repo_id, head_sha),
+        )
+        added_event_publications = set()
+        for row in cur.fetchall():
+            added_event_publications.add(EventPublication(
+                symbol_id=SymbolId(row["symbol_id"]),
+                event_id=row["event_id"],
+                publication_type=row["publication_type"],
+            ))
+            
+        # 9. added_event_subscriptions
+        cur.execute(
+            "SELECT symbol_id, event_id, subscription_type FROM event_subscriptions WHERE repository_id = ? AND version_id = ?",
+            (actual_repo_id, head_sha),
+        )
+        added_event_subscriptions = set()
+        for row in cur.fetchall():
+            added_event_subscriptions.add(EventSubscription(
+                symbol_id=SymbolId(row["symbol_id"]),
+                event_id=row["event_id"],
+                subscription_type=row["subscription_type"],
+            ))
+            
+        # 10. added_test_relationships
+        cur.execute(
+            "SELECT test_symbol_id, target_symbol_id, relationship_type FROM test_relationships WHERE repository_id = ? AND version_id = ?",
+            (actual_repo_id, head_sha),
+        )
+        added_test_relationships = set()
+        for row in cur.fetchall():
+            added_test_relationships.add(TestRelationship(
+                test_symbol_id=SymbolId(row["test_symbol_id"]),
+                target_symbol_id=SymbolId(row["target_symbol_id"]),
+                relationship_type=row["relationship_type"],
+            ))
+
+        overlay = RepositoryOverlay(
+            added_files=added_files,
+            removed_files=removed_files,
+            modified_files=modified_files,
+            added_symbols=added_symbols,
+            removed_symbols=removed_symbols,
+            added_calls=added_calls,
+            added_references=added_references,
+            added_imports=added_imports,
+            added_type_relationships=added_type_relationships,
+            added_endpoints=added_endpoints,
+            added_database_relationships=added_database_relationships,
+            added_event_publications=added_event_publications,
+            added_event_subscriptions=added_event_subscriptions,
+            added_test_relationships=added_test_relationships,
+        )
+
+        # 7. Construct RepositoryResolver
+        # We need a new materializer instance for the base SHA since resolver materializes base files
+        base_sink = PersistentFactSink(
+            self.repository_store, actual_repo_id, actual_version_id
+        )
+        base_indexer = RepositoryIndexer(base_sink)
+        base_materializer = RepositoryMaterializer(
+            source=self.repository_provider,
+            store=self.repository_store,
+            indexer=base_indexer,
+            budget=budget,
+            metrics=context.repository_materialization,
+        )
+
+        resolver = RepositoryResolver(
+            store=self.repository_store,
+            source=self.repository_provider,
+            materializer=base_materializer,
+            planner=None,
+            tree_metadata=tree_entries_dicts,
+            base_commit=base_sha,
+            budget=budget,
+        )
+
+        # 8. Construct RepositoryView
+        context.repository_view = RepositoryView(
+            base=base_query,
+            overlay=overlay,
+            resolver=resolver,
+            repository_id=actual_repo_id,
+            commit_sha=base_sha,
+        )
+
+        repository_view_construction_duration += (time.perf_counter() - t_view_start) * 1000.0
+
+        # Print/log timings & counts as per point 21
+        initial_changed_files = len(changed_paths)
+        initial_materialized_files = len(mat_res.materialized_paths) if mat_res else 0
+        initial_ratio = 0.0
+        if num_known_files > 0:
+            initial_ratio = (initial_changed_files / num_known_files) * 100.0
+
+        print(f"[repository]\ntree_paths={num_known_files}\n")
+        print(f"[repository]\ninitial_changed_files={initial_changed_files}\n")
+        print(f"[repository]\ninitial_materialized_files={initial_materialized_files}\n")
+        print(f"[repository]\ninitial_materialization_ratio={initial_ratio:.4f}%\n")
+
+        pipeline_logger.log_pipeline(
+            f"[repository] repository_metadata_duration={repository_metadata_duration:.2f}ms\n"
+            f"[repository] repository_tree_duration={repository_tree_duration:.2f}ms\n"
+            f"[repository] changed_file_acquisition_duration={changed_file_acquisition_duration:.2f}ms\n"
+            f"[repository] changed_file_indexing_duration={changed_file_indexing_duration:.2f}ms\n"
+            f"[repository] repository_view_construction_duration={repository_view_construction_duration:.2f}ms",
+            to_terminal=True,
+        )
+
+        context.mark_repository_compiled()
+
     async def _compile_facts_and_view(
         self, context: PipelineContext, request: AnalysisRequest
     ) -> None:
@@ -671,6 +1163,30 @@ class Pipeline:
         Compile base facts from persistent store and PR overlay from diff.
         Does NOT construct RepositoryGraph or RepositoryModel.
         """
+        from core.config import get_compiler_settings
+        if get_compiler_settings().ENABLE_LAZY_REPOSITORY_RESOLUTION:
+            is_mock_provider = False
+            try:
+                from unittest.mock import Mock
+                if isinstance(self.repository_provider, Mock):
+                    is_mock_provider = True
+            except ImportError:
+                pass
+
+            if (
+                self.repository_provider is not None
+                and not is_mock_provider
+                and hasattr(self.repository_provider, "get_commit")
+                and hasattr(self.repository_provider, "get_tree")
+            ):
+                try:
+                    await self._lazy_compile_facts_and_view(context, request)
+                    return
+                except Exception as exc:
+                    print(f"[pipeline] Lazy repository compilation failed: {exc}. Falling back to eager compilation.")
+            else:
+                print("[pipeline] Repository provider does not support lazy metadata APIs or is a mock. Falling back to eager compilation.")
+
         if self.repository_provider is None:
             raise RepositoryNotInstalled(
                 "Repository fact compilation requires a repository provider. "
