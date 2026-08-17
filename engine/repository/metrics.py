@@ -52,6 +52,37 @@ class RepositoryMaterializationMetrics:
     budget_exceeded_reason: str | None = None
     """Which specific limit was exceeded (None if resolution completed normally)."""
 
+    # ------------------------------------------------------------------
+    # Phase 12 — Full-index fallback observability
+    #
+    # These fields are populated by RepositoryView after FullIndexFallback
+    # completes.  They are typed as primitives so downstream code that reads
+    # metrics snapshots does not need to import fallback types directly.
+    # ------------------------------------------------------------------
+
+    resolution_mode: str = "LAZY"
+    """Execution mode: 'LAZY', 'FULL', or 'LAZY_TO_FULL'."""
+
+    fallback_triggered: bool = False
+    """True when the lazy→full fallback was invoked for this request."""
+
+    fallback_reason: str | None = None
+    """Which budget limit triggered the fallback (None when no fallback occurred)."""
+
+    # Lazy resource usage at the moment of fallback
+    lazy_files_before_fallback: int = 0
+    lazy_bytes_before_fallback: int = 0
+    lazy_remote_requests_before_fallback: int = 0
+    lazy_depth_before_fallback: int = 0
+    lazy_unresolved_symbols_before_fallback: int = 0
+
+    # Full-index results
+    full_repository_files: int = 0
+    full_repository_bytes: int = 0
+    full_acquisition_duration_s: float = 0.0
+    full_indexing_duration_s: float = 0.0
+    fallback_duration_s: float = 0.0
+
     def set_repository_size(
         self,
         *,
@@ -89,6 +120,27 @@ class RepositoryMaterializationMetrics:
         usage = getattr(outcome, "usage", None)
         if usage is not None and hasattr(usage, "snapshot"):
             self.resolution_usage = usage.snapshot()
+
+    def record_fallback_result(self, fallback_result: Any) -> None:
+        """Populate Phase 12 fallback fields from a :class:`FallbackResult`.
+
+        Accepts ``Any`` to avoid a circular import with the materialization
+        package.  All fields are extracted via duck-typing.
+        """
+        if fallback_result is None:
+            return
+        self.fallback_triggered = bool(getattr(fallback_result, "success", False)) or True
+        self.fallback_reason = getattr(fallback_result, "fallback_reason", None)
+        self.lazy_files_before_fallback = getattr(fallback_result, "lazy_files_before", 0)
+        self.lazy_bytes_before_fallback = getattr(fallback_result, "lazy_bytes_before", 0)
+        self.lazy_remote_requests_before_fallback = getattr(fallback_result, "lazy_remote_requests_before", 0)
+        self.lazy_depth_before_fallback = getattr(fallback_result, "lazy_depth_before", 0)
+        self.lazy_unresolved_symbols_before_fallback = getattr(fallback_result, "lazy_unresolved_symbols_before", 0)
+        self.full_repository_files = getattr(fallback_result, "full_repository_files", 0)
+        self.full_repository_bytes = getattr(fallback_result, "full_repository_bytes", 0)
+        self.full_acquisition_duration_s = getattr(fallback_result, "full_acquisition_duration_s", 0.0)
+        self.full_indexing_duration_s = getattr(fallback_result, "full_indexing_duration_s", 0.0)
+        self.fallback_duration_s = getattr(fallback_result, "fallback_duration_s", 0.0)
 
     @property
     def materialized_files(self) -> int:
@@ -147,5 +199,19 @@ class RepositoryMaterializationMetrics:
             "resolution_usage": self.resolution_usage,
             "budget_exceeded": self.budget_exceeded,
             "budget_exceeded_reason": self.budget_exceeded_reason,
+            # Phase 12 fallback observability
+            "resolution_mode": self.resolution_mode,
+            "fallback_triggered": self.fallback_triggered,
+            "fallback_reason": self.fallback_reason,
+            "lazy_files_before_fallback": self.lazy_files_before_fallback,
+            "lazy_bytes_before_fallback": self.lazy_bytes_before_fallback,
+            "lazy_remote_requests_before_fallback": self.lazy_remote_requests_before_fallback,
+            "lazy_depth_before_fallback": self.lazy_depth_before_fallback,
+            "lazy_unresolved_symbols_before_fallback": self.lazy_unresolved_symbols_before_fallback,
+            "full_repository_files": self.full_repository_files,
+            "full_repository_bytes": self.full_repository_bytes,
+            "full_acquisition_duration_s": round(self.full_acquisition_duration_s, 3),
+            "full_indexing_duration_s": round(self.full_indexing_duration_s, 3),
+            "fallback_duration_s": round(self.fallback_duration_s, 3),
         }
         return snap

@@ -1,5 +1,5 @@
 name: STAGING
 variables:
   - name: API_URL
-    value: https://factor-core-pr-10.onrender.com
+    value: https://factor-core-pr-13.onrender.com
     description: ""

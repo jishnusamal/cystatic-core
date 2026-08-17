@@ -12,9 +12,9 @@ http:
   body:
     type: json
     data: |-
-      // {
-      //     "pr_url": "https://github.com/PostHog/posthog/pull/72474"
-      // }
+      {
+          "pr_url": "https://github.com/PostHog/posthog/pull/72474"
+      }
       // {
       //    "pr_url": "https://github.com/PostHog/posthog/pull/72893"
       // }
@@ -25,9 +25,9 @@ http:
       //     "repo": "usefactorapp/cystatic-demo-python-app",
       //     "pr_number": 3
       // }
-      {
-          "pr_url": "https://github.com/getsentry/sentry/pull/122120"
-      }
+      // {
+      //     "pr_url": "https://github.com/getsentry/sentry/pull/122120"
+      // }
 
 settings:
   encodeUrl: true

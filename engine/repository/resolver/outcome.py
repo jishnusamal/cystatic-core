@@ -74,14 +74,26 @@ class ResolutionOutcome:
     # Observability
     # ------------------------------------------------------------------
 
+    @property
+    def fallback_required(self) -> bool:
+        """True when this outcome signals that full indexing is preferred.
+
+        Semantic alias for ``budget_exceeded``.  Phase 12 consumers should
+        prefer this name; Phase 11 code that reads ``budget_exceeded``
+        continues to work without modification.
+        """
+        return self.budget_exceeded
+
     def metrics_snapshot(self) -> dict:
         """Return a machine-readable summary suitable for structured logging."""
         snap: dict = {
             "complete": self.complete,
             "budget_exceeded": self.budget_exceeded,
+            "fallback_required": self.fallback_required,
             "budget_exceeded_reason": self.reason.value if self.reason else None,
             "rounds": self.rounds,
         }
         if self.usage is not None:
             snap["resolution_usage"] = self.usage.snapshot()
         return snap
+

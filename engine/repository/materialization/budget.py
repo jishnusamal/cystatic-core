@@ -168,3 +168,31 @@ class MaterializationBudgetExceeded(Exception):
     """
 
     pass
+
+
+# ---------------------------------------------------------------------------
+# Phase 12 — Resolution configuration
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ResolutionConfig:
+    """Top-level, per-request configuration for the repository resolution layer.
+
+    Bundles the immutable :class:`ResolutionBudget` with the Phase 12
+    ``enable_full_index_fallback`` flag so callers can toggle fallback
+    behaviour without touching resolver internals.
+
+    Example — disable fallback for a focused request::
+
+        config = ResolutionConfig(
+            budget=ResolutionBudget(max_files=200),
+            enable_full_index_fallback=False,
+        )
+
+    The default is to **enable** fallback whenever a ``FullIndexFallback``
+    instance is wired into ``RepositoryView``.
+    """
+
+    budget: ResolutionBudget = field(default_factory=ResolutionBudget)
+    enable_full_index_fallback: bool = True

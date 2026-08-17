@@ -4,8 +4,10 @@ from .budget import (
     MaterializationBudget,
     MaterializationBudgetExceeded,
     ResolutionBudget,
+    ResolutionConfig,
     ResolutionUsage,
 )
+from .full_index import FallbackResult, FullIndexFallback
 from .materializer import MaterializationResult, RepositoryMaterializer, normalize_path
 from .request import MaterializationRequest
 
@@ -23,4 +25,9 @@ __all__ = [
     "MaterializationRequest",
     "RepositoryMaterializer",
     "normalize_path",
+    # Phase 12 fallback
+    "ResolutionConfig",
+    "FullIndexFallback",
+    "FallbackResult",
 ]
+

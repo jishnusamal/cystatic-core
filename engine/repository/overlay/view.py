@@ -34,7 +34,9 @@ class RepositoryView(RepositoryQuery):
         self,
         base: RepositoryQuery,
         overlay: RepositoryOverlay,
-        resolver = None,
+        resolver=None,
+        fallback=None,
+        config=None,
         repository_id: str | None = None,
         commit_sha: str | None = None,
         symbol_fqn_map: dict[SymbolId, str] | None = None,
@@ -42,6 +44,8 @@ class RepositoryView(RepositoryQuery):
         self.base = base
         self.overlay = overlay
         self.resolver = resolver
+        self.fallback = fallback   # FullIndexFallback | None  (Phase 12)
+        self.config = config       # ResolutionConfig | None   (Phase 12)
         self.symbol_fqn_map = symbol_fqn_map
         self.repository_id = repository_id or getattr(base, "repository_id", None)
         
@@ -53,6 +57,9 @@ class RepositoryView(RepositoryQuery):
 
         self._resolved_requirements = set()
         self._last_resolution_outcome = None  # Phase 11: last ResolutionOutcome for observability
+        # Phase 12: resolution mode and last fallback result for observability
+        self._resolution_mode: str = "LAZY"   # "LAZY" | "FULL" | "LAZY_TO_FULL"
+        self._last_fallback_result = None
 
         # Pre-index added facts by query lookup key
         self._added_calls_from: dict[SymbolId, list[Call]] = defaultdict(list)
@@ -115,14 +122,66 @@ class RepositoryView(RepositoryQuery):
             return False
         if requirement in self._resolved_requirements:
             return False
+
+        # Phase 12: if the store is already fully indexed, skip resolver re-entry
+        if self._is_store_complete():
+            return False
+
         if not result.complete and self.resolver and self.repository_id and self.commit_sha:
             self._resolved_requirements.add(requirement)
             outcome = self.resolver.resolve_sync(self.repository_id, self.commit_sha, [requirement])
             # Store the last outcome for observability / Phase 12 fallback signal.
             # Compilers never access this attribute directly.
             self._last_resolution_outcome = outcome
+
+            # Phase 12: budget exceeded → trigger full-index fallback if configured
+            if outcome.fallback_required and self._should_fallback():
+                self._trigger_full_index_fallback(outcome)
+
             return True
         return False
+
+    def _is_store_complete(self) -> bool:
+        """True when the base store reports that full indexing is complete.
+
+        Once complete, :meth:`_resolve_if_needed` bypasses the resolver so
+        that a fully-indexed repository never re-enters lazy resolution.
+        This prevents the infinite fallback loop described in Phase 12 §20.
+        """
+        if hasattr(self.base, "_is_indexing_complete"):
+            return self.base._is_indexing_complete()
+        return False
+
+    def _should_fallback(self) -> bool:
+        """True when a :class:`FullIndexFallback` is available and enabled.
+
+        If no *fallback* was provided at construction time, the method returns
+        ``False`` and lazy resolution simply stops at the budget boundary
+        (Phase 11 behaviour).
+        """
+        if self.fallback is None:
+            return False
+        if self.config is not None:
+            return bool(getattr(self.config, "enable_full_index_fallback", True))
+        return True  # default: enabled whenever a fallback instance is wired in
+
+    def _trigger_full_index_fallback(self, outcome) -> None:
+        """Invoke the full-index fallback.  Internal; never called by compilers.
+
+        Updates :attr:`_resolution_mode` and :attr:`_last_fallback_result` for
+        observability.  The fallback populates ``store.set_indexed_complete``
+        so future calls to :meth:`_is_store_complete` return ``True``.
+        """
+        self._resolution_mode = "LAZY_TO_FULL"
+        fallback_result = self.fallback.run(
+            repository_id=self.repository_id,
+            commit_sha=self.commit_sha,
+            lazy_usage_snapshot=getattr(outcome, "usage", None),
+            lazy_reason=getattr(outcome, "reason", None),
+        )
+        self._last_fallback_result = fallback_result
+        if fallback_result.success:
+            self._resolution_mode = "FULL"
 
     def _get_unresolved_symbol_id(self, symbol_name: str) -> SymbolId | None:
         if self.resolver and hasattr(self.resolver, "materializer") and hasattr(self.resolver.materializer, "indexer"):
