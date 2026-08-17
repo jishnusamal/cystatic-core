@@ -8,6 +8,8 @@ from .requirements import (
 )
 from .frontier import ResolutionFrontier
 from .planner import RequirementPlanner
+from .context import ResolutionContext
+from .outcome import ResolutionOutcome
 
 __all__ = [
     "RepositoryResolver",
@@ -18,4 +20,7 @@ __all__ = [
     "AllEntryPointsRequirement",
     "ResolutionFrontier",
     "RequirementPlanner",
+    # Phase 11
+    "ResolutionContext",
+    "ResolutionOutcome",
 ]

@@ -52,6 +52,7 @@ class RepositoryView(RepositoryQuery):
             self.commit_sha = version_id.split("@")[-1]
 
         self._resolved_requirements = set()
+        self._last_resolution_outcome = None  # Phase 11: last ResolutionOutcome for observability
 
         # Pre-index added facts by query lookup key
         self._added_calls_from: dict[SymbolId, list[Call]] = defaultdict(list)
@@ -116,7 +117,10 @@ class RepositoryView(RepositoryQuery):
             return False
         if not result.complete and self.resolver and self.repository_id and self.commit_sha:
             self._resolved_requirements.add(requirement)
-            self.resolver.resolve_sync(self.repository_id, self.commit_sha, [requirement])
+            outcome = self.resolver.resolve_sync(self.repository_id, self.commit_sha, [requirement])
+            # Store the last outcome for observability / Phase 12 fallback signal.
+            # Compilers never access this attribute directly.
+            self._last_resolution_outcome = outcome
             return True
         return False
 

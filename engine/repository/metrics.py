@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -30,6 +31,27 @@ class RepositoryMaterializationMetrics:
     duration: float = 0.0
     reason: str = ""
 
+    # ------------------------------------------------------------------
+    # Phase 11 — Resolution budget observability
+    #
+    # These fields are populated by the resolver after each resolution
+    # operation.  They are deliberately typed as ``Any`` / ``dict`` so that
+    # downstream code that reads metrics snapshots does not need to import
+    # budget types directly.
+    # ------------------------------------------------------------------
+
+    resolution_budget: dict[str, Any] | None = None
+    """Configured budget limits for this request (set by RepositoryResolver)."""
+
+    resolution_usage: dict[str, Any] | None = None
+    """Actual resource consumption recorded at resolution completion."""
+
+    budget_exceeded: bool = False
+    """True when a budget limit caused lazy resolution to stop early."""
+
+    budget_exceeded_reason: str | None = None
+    """Which specific limit was exceeded (None if resolution completed normally)."""
+
     def set_repository_size(
         self,
         *,
@@ -51,6 +73,22 @@ class RepositoryMaterializationMetrics:
 
         self._materialized_paths.add(path)
         self.materialized_bytes += size
+
+    def record_resolution_outcome(self, outcome: Any) -> None:
+        """Populate budget observability fields from a ResolutionOutcome.
+
+        Accepts ``Any`` to avoid a circular import with the resolver package.
+        The caller (RepositoryResolver or RepositoryView) passes the outcome
+        object; this method extracts what it needs via duck-typing.
+        """
+        if outcome is None:
+            return
+        self.budget_exceeded = bool(getattr(outcome, "budget_exceeded", False))
+        reason = getattr(outcome, "reason", None)
+        self.budget_exceeded_reason = reason.value if reason is not None else None
+        usage = getattr(outcome, "usage", None)
+        if usage is not None and hasattr(usage, "snapshot"):
+            self.resolution_usage = usage.snapshot()
 
     @property
     def materialized_files(self) -> int:
@@ -78,8 +116,8 @@ class RepositoryMaterializationMetrics:
     def materialization_bytes_percent(self) -> float:
         return self.materialization_bytes_ratio * 100
 
-    def snapshot(self) -> dict[str, int | float | str]:
-        return {
+    def snapshot(self) -> dict[str, int | float | str | bool | dict | None]:
+        snap: dict[str, Any] = {
             "repository_acquisition_ms": round(self.repository_acquisition_ms, 3),
             "repository_indexing_ms": round(self.repository_indexing_ms, 3),
             "repository_files": self.repository_files,
@@ -104,4 +142,10 @@ class RepositoryMaterializationMetrics:
             "remote_requests": self.remote_requests,
             "duration": round(self.duration, 3),
             "reason": self.reason,
+            # Phase 11 budget observability
+            "resolution_budget": self.resolution_budget,
+            "resolution_usage": self.resolution_usage,
+            "budget_exceeded": self.budget_exceeded,
+            "budget_exceeded_reason": self.budget_exceeded_reason,
         }
+        return snap

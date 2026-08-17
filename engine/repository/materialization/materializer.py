@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import gc
-import math
 import os
 import time
 from dataclasses import dataclass
@@ -140,24 +139,11 @@ class RepositoryMaterializer:
 
             self.metrics.already_materialized_files = len(already_materialized)
 
-            # 4. Enforce budget before fetching
-            num_files = len(to_materialize)
-            num_bytes = sum(size for _, _, size in to_materialize)
+            # 4. Budget is enforced pre-materialization by RepositoryResolver.
+            #    The materializer receives only batches that have already passed
+            #    the ResolutionContext.can_materialize() check.  We keep the
+            #    batch_size variable for internal batching below.
             batch_size = self.materialization_batch_size
-            num_remote_requests = math.ceil(num_files / batch_size) if num_files > 0 else 0
-
-            if num_files > self.budget.max_files:
-                raise MaterializationBudgetExceeded(
-                    f"File budget exceeded: requested {num_files} files, max allowed is {self.budget.max_files}"
-                )
-            if num_bytes > self.budget.max_bytes:
-                raise MaterializationBudgetExceeded(
-                    f"Byte budget exceeded: requested {num_bytes} bytes, max allowed is {self.budget.max_bytes}"
-                )
-            if num_remote_requests > self.budget.max_remote_requests:
-                raise MaterializationBudgetExceeded(
-                    f"Remote request budget exceeded: requested {num_remote_requests} requests, max allowed is {self.budget.max_remote_requests}"
-                )
 
             # Initialize / update coverage metrics
             coverage = self.store.get_materialization_coverage(
