@@ -1,6 +1,6 @@
 import datetime
 import sqlite3
-from typing import Any
+from typing import Any, Sequence
 
 from engine.repository.model.repository_model import EntryPoint, EntryPointKind
 from engine.repository.query.types import (
@@ -35,7 +35,13 @@ from engine.repository.query.types import (
 
 from .errors import RepositoryNotFoundError, VersionNotFoundError
 from .schema import CREATE_INDEXES_SQL, CREATE_TABLES_SQL
-from .store import RepositoryStore
+from .store import (
+    MaterializationCoverage,
+    MaterializationRecord,
+    MaterializationStats,
+    RepositoryStore,
+)
+from engine.repository.query.types import QueryResult
 
 
 class SQLiteRepositoryStore(RepositoryStore):
@@ -59,6 +65,25 @@ class SQLiteRepositoryStore(RepositoryStore):
         with self.conn:
             self.conn.executescript(CREATE_TABLES_SQL)
             self.conn.executescript(CREATE_INDEXES_SQL)
+
+        # Migration logic
+        try:
+            cur = self.conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM files")
+            has_files = cur.fetchone()[0] > 0
+            cur.execute("SELECT COUNT(*) FROM repository_materialization")
+            has_materialization = cur.fetchone()[0] > 0
+            if has_files and not has_materialization:
+                # Backpopulate repository_materialization from files
+                with self.conn:
+                    self.conn.execute(
+                        "INSERT OR IGNORE INTO repository_materialization (repository_id, commit_sha, path, blob_sha, indexed_status, indexed_at) "
+                        "SELECT f.repository_id, COALESCE(NULLIF(SUBSTR(f.version_id, INSTR(f.version_id, '@') + 1), ''), 'unknown'), f.path, '', 'indexed', ? "
+                        "FROM files f",
+                        (datetime.datetime.now(datetime.UTC).isoformat(),)
+                    )
+        except Exception:
+            pass
 
         self.repository_id: str | None = None
         self.version_id: str | None = None
@@ -265,6 +290,249 @@ class SQLiteRepositoryStore(RepositoryStore):
 
         return None, None
 
+    def _is_indexing_complete(self) -> bool:
+        repo_id, version_id = self._get_context()
+        commit_sha = version_id.split("@")[-1]
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT indexed_complete FROM repository_metadata WHERE repository_id = ? AND commit_sha = ?",
+            (repo_id, commit_sha),
+        )
+        row = cur.fetchone()
+        return bool(row and row["indexed_complete"])
+
+    def _is_file_indexed(self, file_id: FileId) -> bool:
+        repo_id, _ = self._get_context()
+        resolved_version, file_id_int = self._get_active_file_version(file_id)
+        if not resolved_version or file_id_int is None:
+            return False
+            
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT path FROM files WHERE repository_id = ? AND version_id = ? AND id = ?",
+            (repo_id, resolved_version, file_id_int),
+        )
+        row = cur.fetchone()
+        if not row:
+            return False
+        path = row["path"]
+        commit_sha = resolved_version.split("@")[-1]
+        
+        cur.execute(
+            "SELECT indexed_status FROM repository_materialization "
+            "WHERE repository_id = ? AND commit_sha = ? AND path = ?",
+            (repo_id, commit_sha, path),
+        )
+        mrow = cur.fetchone()
+        return bool(mrow and mrow["indexed_status"] == "indexed")
+
+    def _is_symbol_file_indexed(self, symbol_id: SymbolId) -> bool:
+        repo_id, _ = self._get_context()
+        resolved_version, file_id_int = self._get_symbol_resolved_version(symbol_id)
+        if not resolved_version or file_id_int is None:
+            return False
+        
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT path FROM files WHERE repository_id = ? AND version_id = ? AND id = ?",
+            (repo_id, resolved_version, file_id_int),
+        )
+        row = cur.fetchone()
+        if not row:
+            return False
+        path = row["path"]
+        commit_sha = resolved_version.split("@")[-1]
+        
+        cur.execute(
+            "SELECT indexed_status FROM repository_materialization "
+            "WHERE repository_id = ? AND commit_sha = ? AND path = ?",
+            (repo_id, commit_sha, path),
+        )
+        mrow = cur.fetchone()
+        return bool(mrow and mrow["indexed_status"] == "indexed")
+
+    def is_materialized(
+        self,
+        repository_id: str,
+        commit_sha: str,
+        path: str,
+    ) -> bool:
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT indexed_status FROM repository_materialization "
+            "WHERE repository_id = ? AND commit_sha = ? AND path = ?",
+            (repository_id, commit_sha, path),
+        )
+        row = cur.fetchone()
+        return bool(row and row["indexed_status"] == "indexed")
+
+    def get_materialization(
+        self,
+        repository_id: str,
+        commit_sha: str,
+        path: str,
+    ) -> MaterializationRecord | None:
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT repository_id, commit_sha, path, blob_sha, indexed_status, indexed_at "
+            "FROM repository_materialization "
+            "WHERE repository_id = ? AND commit_sha = ? AND path = ?",
+            (repository_id, commit_sha, path),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return MaterializationRecord(
+            repository_id=row["repository_id"],
+            commit_sha=row["commit_sha"],
+            path=row["path"],
+            blob_sha=row["blob_sha"],
+            indexed_status=row["indexed_status"],
+            indexed_at=row["indexed_at"],
+        )
+
+    def get_materialized_paths(
+        self,
+        repository_id: str,
+        commit_sha: str,
+    ) -> list[str]:
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT path FROM repository_materialization "
+            "WHERE repository_id = ? AND commit_sha = ? AND indexed_status = 'indexed'",
+            (repository_id, commit_sha),
+        )
+        return [row["path"] for row in cur.fetchall()]
+
+    def get_materialization_stats(
+        self,
+        repository_id: str,
+        commit_sha: str,
+    ) -> MaterializationStats:
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT "
+            "  COUNT(*) as total, "
+            "  SUM(CASE WHEN indexed_status = 'indexed' THEN 1 ELSE 0 END) as indexed, "
+            "  SUM(CASE WHEN indexed_status = 'failed' THEN 1 ELSE 0 END) as failed, "
+            "  SUM(CASE WHEN indexed_status = 'pending' THEN 1 ELSE 0 END) as pending "
+            "FROM repository_materialization "
+            "WHERE repository_id = ? AND commit_sha = ?",
+            (repository_id, commit_sha),
+        )
+        row = cur.fetchone()
+        return MaterializationStats(
+            repository_id=repository_id,
+            commit_sha=commit_sha,
+            total_files=row["total"] or 0,
+            indexed_files=row["indexed"] or 0,
+            failed_files=row["failed"] or 0,
+            pending_files=row["pending"] or 0,
+        )
+
+    def get_materialization_coverage(
+        self,
+        repository_id: str,
+        commit_sha: str,
+    ) -> MaterializationCoverage:
+        cur = self.conn.cursor()
+        
+        cur.execute(
+            "SELECT COUNT(*), SUM(size) FROM repository_tree "
+            "WHERE repository_id = ? AND commit_sha = ?",
+            (repository_id, commit_sha),
+        )
+        t_row = cur.fetchone()
+        known_files = t_row[0] or 0
+        known_bytes = t_row[1] or 0
+        
+        cur.execute(
+            "SELECT COUNT(m.path), SUM(t.size) "
+            "FROM repository_materialization m "
+            "LEFT JOIN repository_tree t ON m.repository_id = t.repository_id "
+            "  AND m.commit_sha = t.commit_sha AND m.path = t.path "
+            "WHERE m.repository_id = ? AND m.commit_sha = ? AND m.indexed_status = 'indexed'",
+            (repository_id, commit_sha),
+        )
+        m_row = cur.fetchone()
+        materialized_files = m_row[0] or 0
+        materialized_bytes = m_row[1] or 0
+        
+        return MaterializationCoverage(
+            known_files=known_files,
+            materialized_files=materialized_files,
+            known_bytes=known_bytes,
+            materialized_bytes=materialized_bytes,
+        )
+
+    def record_tree(
+        self,
+        repository_id: str,
+        commit_sha: str,
+        entries: Sequence[dict[str, Any]],
+    ) -> None:
+        with self.conn:
+            self.conn.execute(
+                "DELETE FROM repository_tree WHERE repository_id = ? AND commit_sha = ?",
+                (repository_id, commit_sha),
+            )
+            self.conn.executemany(
+                "INSERT INTO repository_tree (repository_id, commit_sha, path, type, blob_sha, size) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        repository_id,
+                        commit_sha,
+                        e["path"],
+                        e.get("type", "file"),
+                        e.get("blob_sha"),
+                        e.get("size", 0),
+                    )
+                    for e in entries
+                ],
+            )
+            self.conn.execute(
+                "INSERT INTO repository_metadata (repository_id, commit_sha, tree_complete, indexed_complete) "
+                "VALUES (?, ?, 1, 0) "
+                "ON CONFLICT(repository_id, commit_sha) DO UPDATE SET tree_complete = 1",
+                (repository_id, commit_sha),
+            )
+
+    def record_materialization(
+        self,
+        repository_id: str,
+        commit_sha: str,
+        path: str,
+        blob_sha: str,
+        indexed_status: str,
+    ) -> None:
+        indexed_at = datetime.datetime.now(datetime.UTC).isoformat()
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO repository_materialization (repository_id, commit_sha, path, blob_sha, indexed_status, indexed_at) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(repository_id, commit_sha, path) DO UPDATE SET "
+                "  blob_sha = excluded.blob_sha, "
+                "  indexed_status = excluded.indexed_status, "
+                "  indexed_at = excluded.indexed_at",
+                (repository_id, commit_sha, path, blob_sha, indexed_status, indexed_at),
+            )
+
+    def set_indexed_complete(
+        self,
+        repository_id: str,
+        commit_sha: str,
+        indexed_complete: bool = True,
+    ) -> None:
+        val = 1 if indexed_complete else 0
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO repository_metadata (repository_id, commit_sha, tree_complete, indexed_complete) "
+                "VALUES (?, ?, 0, ?) "
+                "ON CONFLICT(repository_id, commit_sha) DO UPDATE SET indexed_complete = excluded.indexed_complete",
+                (repository_id, commit_sha, val),
+            )
+
     def get_symbol(self, symbol_id: SymbolId) -> Symbol | None:
         repo_id, _ = self._get_context()
         resolved_version, _ = self._get_symbol_resolved_version(symbol_id)
@@ -292,9 +560,9 @@ class SQLiteRepositoryStore(RepositoryStore):
             else None,
         )
 
-    def get_symbols(self, symbol_ids: list[SymbolId]) -> tuple[Symbol, ...]:
+    def get_symbols(self, symbol_ids: list[SymbolId]) -> QueryResult[Symbol]:
         if not symbol_ids:
-            return ()
+            return QueryResult((), complete=True)
         repo_id, version_id = self._get_context()
         cur = self.conn.cursor()
 
@@ -366,7 +634,8 @@ class SQLiteRepositoryStore(RepositoryStore):
         }
 
         if not final_resolved:
-            return ()
+            is_complete = self._is_indexing_complete()
+            return QueryResult((), complete=is_complete)
 
         results = []
         from collections import defaultdict
@@ -396,7 +665,18 @@ class SQLiteRepositoryStore(RepositoryStore):
                         else None,
                     )
                 )
-        return tuple(results)
+
+        is_complete = self._is_indexing_complete()
+        if not is_complete:
+            all_found_indexed = len(final_resolved) == len(symbol_ids)
+            for sid in final_resolved:
+                if not self._is_symbol_file_indexed(sid):
+                    all_found_indexed = False
+                    break
+            if all_found_indexed:
+                is_complete = True
+
+        return QueryResult(tuple(results), complete=is_complete)
 
     def get_file(self, file_id: FileId) -> File | None:
         repo_id, _ = self._get_context()
@@ -413,7 +693,7 @@ class SQLiteRepositoryStore(RepositoryStore):
             return None
         return File(id=FileId(row["id"]), path=row["path"], language=row["language"])
 
-    def get_callers(self, symbol_id: SymbolId) -> tuple[Call, ...]:
+    def get_callers(self, symbol_id: SymbolId) -> QueryResult[Call]:
         repo_id, version_id = self._get_context()
         cur = self.conn.cursor()
 
@@ -450,21 +730,21 @@ class SQLiteRepositoryStore(RepositoryStore):
                 )
                 for row in cur.fetchall()
             ]
-            return tuple(v_calls + p_calls)
+            return QueryResult(tuple(v_calls + p_calls), complete=self._is_indexing_complete())
 
-        return tuple(v_calls)
+        return QueryResult(tuple(v_calls), complete=self._is_indexing_complete())
 
-    def get_callees(self, symbol_id: SymbolId) -> tuple[Call, ...]:
+    def get_callees(self, symbol_id: SymbolId) -> QueryResult[Call]:
         repo_id, _ = self._get_context()
         resolved_version, _ = self._get_symbol_resolved_version(symbol_id)
         if not resolved_version:
-            return ()
+            return QueryResult((), complete=self._is_indexing_complete())
         cur = self.conn.cursor()
         cur.execute(
             "SELECT caller_id, callee_id, call_type FROM calls WHERE repository_id = ? AND version_id = ? AND caller_id = ?",
             (repo_id, resolved_version, int(symbol_id)),
         )
-        return tuple(
+        facts = tuple(
             Call(
                 caller_id=SymbolId(row["caller_id"]),
                 callee_id=SymbolId(row["callee_id"]),
@@ -472,18 +752,19 @@ class SQLiteRepositoryStore(RepositoryStore):
             )
             for row in cur.fetchall()
         )
+        return QueryResult(facts, complete=self._is_symbol_file_indexed(symbol_id))
 
-    def get_references_from(self, symbol_id: SymbolId) -> tuple[Reference, ...]:
+    def get_references_from(self, symbol_id: SymbolId) -> QueryResult[Reference]:
         repo_id, _ = self._get_context()
         resolved_version, _ = self._get_symbol_resolved_version(symbol_id)
         if not resolved_version:
-            return ()
+            return QueryResult((), complete=self._is_indexing_complete())
         cur = self.conn.cursor()
         cur.execute(
             'SELECT source_id, target_id, relation_type FROM "references" WHERE repository_id = ? AND version_id = ? AND source_id = ?',
             (repo_id, resolved_version, int(symbol_id)),
         )
-        return tuple(
+        facts = tuple(
             Reference(
                 source_id=SymbolId(row["source_id"]),
                 target_id=SymbolId(row["target_id"]),
@@ -491,8 +772,9 @@ class SQLiteRepositoryStore(RepositoryStore):
             )
             for row in cur.fetchall()
         )
+        return QueryResult(facts, complete=self._is_symbol_file_indexed(symbol_id))
 
-    def get_references_to(self, symbol_id: SymbolId) -> tuple[Reference, ...]:
+    def get_references_to(self, symbol_id: SymbolId) -> QueryResult[Reference]:
         repo_id, version_id = self._get_context()
         cur = self.conn.cursor()
 
@@ -529,21 +811,21 @@ class SQLiteRepositoryStore(RepositoryStore):
                 )
                 for row in cur.fetchall()
             ]
-            return tuple(v_refs + p_refs)
+            return QueryResult(tuple(v_refs + p_refs), complete=self._is_indexing_complete())
 
-        return tuple(v_refs)
+        return QueryResult(tuple(v_refs), complete=self._is_indexing_complete())
 
-    def get_imports(self, file_id: FileId) -> tuple[Import, ...]:
+    def get_imports(self, file_id: FileId) -> QueryResult[Import]:
         repo_id, _ = self._get_context()
         resolved_version, file_id_int = self._get_active_file_version(file_id)
         if not resolved_version or file_id_int is None:
-            return ()
+            return QueryResult((), complete=self._is_indexing_complete())
         cur = self.conn.cursor()
         cur.execute(
             "SELECT source_file_id, target_file_id, module, imported_name, import_type FROM imports WHERE repository_id = ? AND version_id = ? AND source_file_id = ?",
             (repo_id, resolved_version, file_id_int),
         )
-        return tuple(
+        facts = tuple(
             Import(
                 source_file_id=FileId(row["source_file_id"]),
                 target_file_id=FileId(row["target_file_id"])
@@ -555,15 +837,16 @@ class SQLiteRepositoryStore(RepositoryStore):
             )
             for row in cur.fetchall()
         )
+        return QueryResult(facts, complete=self._is_file_indexed(file_id))
 
-    def get_importers(self, file_id: FileId) -> tuple[Import, ...]:
+    def get_importers(self, file_id: FileId) -> QueryResult[Import]:
         repo_id, version_id = self._get_context()
         try:
             file_id_int = int(file_id)
         except ValueError:
             f = self.get_file(file_id)
             if not f:
-                return ()
+                return QueryResult((), complete=self._is_indexing_complete())
             file_id_int = int(f.id)
 
         cur = self.conn.cursor()
@@ -610,23 +893,23 @@ class SQLiteRepositoryStore(RepositoryStore):
                 )
                 for row in cur.fetchall()
             ]
-            return tuple(v_imports + p_imports)
+            return QueryResult(tuple(v_imports + p_imports), complete=self._is_indexing_complete())
 
-        return tuple(v_imports)
+        return QueryResult(tuple(v_imports), complete=self._is_indexing_complete())
 
     def get_type_relationships(
         self, symbol_id: SymbolId
-    ) -> tuple[TypeRelationship, ...]:
+    ) -> QueryResult[TypeRelationship]:
         repo_id, _ = self._get_context()
         resolved_version, _ = self._get_symbol_resolved_version(symbol_id)
         if not resolved_version:
-            return ()
+            return QueryResult((), complete=self._is_indexing_complete())
         cur = self.conn.cursor()
         cur.execute(
             "SELECT source_id, target_id, relationship_type FROM type_relationships WHERE repository_id = ? AND version_id = ? AND source_id = ?",
             (repo_id, resolved_version, int(symbol_id)),
         )
-        return tuple(
+        facts = tuple(
             TypeRelationship(
                 source_id=SymbolId(row["source_id"]),
                 target_id=SymbolId(row["target_id"]),
@@ -634,8 +917,9 @@ class SQLiteRepositoryStore(RepositoryStore):
             )
             for row in cur.fetchall()
         )
+        return QueryResult(facts, complete=self._is_symbol_file_indexed(symbol_id))
 
-    def get_type_dependents(self, symbol_id: SymbolId) -> tuple[TypeRelationship, ...]:
+    def get_type_dependents(self, symbol_id: SymbolId) -> QueryResult[TypeRelationship]:
         repo_id, version_id = self._get_context()
         cur = self.conn.cursor()
 
@@ -672,21 +956,21 @@ class SQLiteRepositoryStore(RepositoryStore):
                 )
                 for row in cur.fetchall()
             ]
-            return tuple(v_rels + p_rels)
+            return QueryResult(tuple(v_rels + p_rels), complete=self._is_indexing_complete())
 
-        return tuple(v_rels)
+        return QueryResult(tuple(v_rels), complete=self._is_indexing_complete())
 
-    def get_endpoints(self, symbol_id: SymbolId) -> tuple[Endpoint, ...]:
+    def get_endpoints(self, symbol_id: SymbolId) -> QueryResult[Endpoint]:
         repo_id, _ = self._get_context()
         resolved_version, _ = self._get_symbol_resolved_version(symbol_id)
         if not resolved_version:
-            return ()
+            return QueryResult((), complete=self._is_indexing_complete())
         cur = self.conn.cursor()
         cur.execute(
             "SELECT id, symbol_id, method, path, framework FROM endpoints WHERE repository_id = ? AND version_id = ? AND symbol_id = ?",
             (repo_id, resolved_version, int(symbol_id)),
         )
-        return tuple(
+        facts = tuple(
             Endpoint(
                 id=EndpointId(row["id"]),
                 symbol_id=SymbolId(row["symbol_id"]),
@@ -696,20 +980,21 @@ class SQLiteRepositoryStore(RepositoryStore):
             )
             for row in cur.fetchall()
         )
+        return QueryResult(facts, complete=self._is_symbol_file_indexed(symbol_id))
 
     def get_database_relationships(
         self, symbol_id: SymbolId
-    ) -> tuple[DatabaseRelationship, ...]:
+    ) -> QueryResult[DatabaseRelationship]:
         repo_id, _ = self._get_context()
         resolved_version, _ = self._get_symbol_resolved_version(symbol_id)
         if not resolved_version:
-            return ()
+            return QueryResult((), complete=self._is_indexing_complete())
         cur = self.conn.cursor()
         cur.execute(
             "SELECT symbol_id, resource_id, relationship_type FROM database_relationships WHERE repository_id = ? AND version_id = ? AND symbol_id = ?",
             (repo_id, resolved_version, int(symbol_id)),
         )
-        return tuple(
+        facts = tuple(
             DatabaseRelationship(
                 symbol_id=SymbolId(row["symbol_id"]),
                 resource_id=ResourceId(row["resource_id"]),
@@ -717,18 +1002,19 @@ class SQLiteRepositoryStore(RepositoryStore):
             )
             for row in cur.fetchall()
         )
+        return QueryResult(facts, complete=self._is_symbol_file_indexed(symbol_id))
 
-    def get_published_events(self, symbol_id: SymbolId) -> tuple[EventPublication, ...]:
+    def get_published_events(self, symbol_id: SymbolId) -> QueryResult[EventPublication]:
         repo_id, _ = self._get_context()
         resolved_version, _ = self._get_symbol_resolved_version(symbol_id)
         if not resolved_version:
-            return ()
+            return QueryResult((), complete=self._is_indexing_complete())
         cur = self.conn.cursor()
         cur.execute(
             "SELECT symbol_id, event_id, publication_type FROM event_publications WHERE repository_id = ? AND version_id = ? AND symbol_id = ?",
             (repo_id, resolved_version, int(symbol_id)),
         )
-        return tuple(
+        facts = tuple(
             EventPublication(
                 symbol_id=SymbolId(row["symbol_id"]),
                 event_id=EventId(row["event_id"]),
@@ -736,8 +1022,9 @@ class SQLiteRepositoryStore(RepositoryStore):
             )
             for row in cur.fetchall()
         )
+        return QueryResult(facts, complete=self._is_symbol_file_indexed(symbol_id))
 
-    def get_event_consumers(self, event_id: EventId) -> tuple[EventSubscription, ...]:
+    def get_event_consumers(self, event_id: EventId) -> QueryResult[EventSubscription]:
         repo_id, version_id = self._get_context()
         cur = self.conn.cursor()
 
@@ -774,11 +1061,11 @@ class SQLiteRepositoryStore(RepositoryStore):
                 )
                 for row in cur.fetchall()
             ]
-            return tuple(v_subs + p_subs)
+            return QueryResult(tuple(v_subs + p_subs), complete=self._is_indexing_complete())
 
-        return tuple(v_subs)
+        return QueryResult(tuple(v_subs), complete=self._is_indexing_complete())
 
-    def get_tests(self, symbol_id: SymbolId) -> tuple[TestRelationship, ...]:
+    def get_tests(self, symbol_id: SymbolId) -> QueryResult[TestRelationship]:
         repo_id, version_id = self._get_context()
         cur = self.conn.cursor()
 
@@ -815,11 +1102,11 @@ class SQLiteRepositoryStore(RepositoryStore):
                 )
                 for row in cur.fetchall()
             ]
-            return tuple(v_tests + p_tests)
+            return QueryResult(tuple(v_tests + p_tests), complete=self._is_indexing_complete())
 
-        return tuple(v_tests)
+        return QueryResult(tuple(v_tests), complete=self._is_indexing_complete())
 
-    def get_entry_points(self) -> tuple[EntryPoint, ...]:
+    def get_entry_points(self) -> QueryResult[EntryPoint]:
         repo_id, version_id = self._get_context()
         cur = self.conn.cursor()
         entry_points = []
@@ -865,13 +1152,13 @@ class SQLiteRepositoryStore(RepositoryStore):
                 )
             )
 
-        return tuple(entry_points)
+        return QueryResult(tuple(entry_points), complete=self._is_indexing_complete())
 
-    def get_symbols_in_file(self, file_id: FileId) -> tuple[Symbol, ...]:
+    def get_symbols_in_file(self, file_id: FileId) -> QueryResult[Symbol]:
         repo_id, _ = self._get_context()
         resolved_version, file_id_int = self._get_active_file_version(file_id)
         if not resolved_version or file_id_int is None:
-            return ()
+            return QueryResult((), complete=self._is_indexing_complete())
 
         cur = self.conn.cursor()
         cur.execute(
@@ -895,7 +1182,7 @@ class SQLiteRepositoryStore(RepositoryStore):
             )
             for row in cur.fetchall()
         ]
-        return tuple(symbols)
+        return QueryResult(tuple(symbols), complete=self._is_file_indexed(file_id))
 
     def close(self) -> None:
         self.conn.close()

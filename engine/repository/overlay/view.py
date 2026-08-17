@@ -18,7 +18,7 @@ from engine.repository.facts import (
 )
 from engine.repository.model.repository_model import EntryPoint, EntryPointKind
 from engine.repository.overlay.overlay import RepositoryOverlay
-from engine.repository.query import RepositoryQuery
+from engine.repository.query import QueryResult, RepositoryQuery
 
 
 class RepositoryView(RepositoryQuery):
@@ -117,7 +117,19 @@ class RepositoryView(RepositoryQuery):
             return base_symbol
         return None
 
-    def get_symbols(self, symbol_ids: list[SymbolId]) -> tuple[Symbol, ...]:
+    def _is_symbol_changed(self, symbol_id: SymbolId) -> bool:
+        if symbol_id in self.overlay.added_symbols or symbol_id in self.overlay.removed_symbols:
+            return True
+        base_sym = self.base.get_symbol(symbol_id)
+        if base_sym is not None:
+            if (
+                base_sym.file_id in self.overlay.modified_files
+                or base_sym.file_id in self.overlay.removed_files
+            ):
+                return True
+        return False
+
+    def get_symbols(self, symbol_ids: list[SymbolId]) -> QueryResult[Symbol]:
         added_syms = []
         base_sym_ids = []
         for sid in symbol_ids:
@@ -128,9 +140,9 @@ class RepositoryView(RepositoryQuery):
             else:
                 base_sym_ids.append(sid)
 
-        base_syms = self.base.get_symbols(base_sym_ids)
+        base_res = self.base.get_symbols(base_sym_ids)
         filtered_base_syms = []
-        for sym in base_syms:
+        for sym in base_res.facts:
             if (
                 sym.file_id in self.overlay.removed_files
                 or sym.file_id in self.overlay.modified_files
@@ -138,7 +150,7 @@ class RepositoryView(RepositoryQuery):
                 continue
             filtered_base_syms.append(sym)
 
-        return tuple(added_syms) + tuple(filtered_base_syms)
+        return QueryResult(tuple(added_syms) + tuple(filtered_base_syms), complete=base_res.complete)
 
     def get_file(self, file_id: FileId) -> File | None:
         if file_id in self.overlay.added_files:
@@ -159,72 +171,74 @@ class RepositoryView(RepositoryQuery):
             return base_file
         return None
 
-    def get_callers(self, symbol_id: SymbolId) -> tuple[Call, ...]:
-        base_callers = self.base.get_callers(symbol_id)
+    def get_callers(self, symbol_id: SymbolId) -> QueryResult[Call]:
+        base_res = self.base.get_callers(symbol_id)
         v_callers = [
             c
-            for c in base_callers
+            for c in base_res.facts
             if not self._should_skip_base_for_symbol(c.caller_id)
             and self.get_symbol(c.caller_id) is not None
             and c not in self.overlay.removed_calls
         ]
-        return tuple(v_callers + self._added_calls_to.get(symbol_id, []))
+        return QueryResult(tuple(v_callers + self._added_calls_to.get(symbol_id, [])), complete=base_res.complete)
 
-    def get_callees(self, symbol_id: SymbolId) -> tuple[Call, ...]:
+    def get_callees(self, symbol_id: SymbolId) -> QueryResult[Call]:
         if (
             self._should_skip_base_for_symbol(symbol_id)
             or self.get_symbol(symbol_id) is None
         ):
-            return tuple(self._added_calls_from.get(symbol_id, []))
-        base_callees = self.base.get_callees(symbol_id)
+            return QueryResult(tuple(self._added_calls_from.get(symbol_id, [])), complete=True)
+        base_res = self.base.get_callees(symbol_id)
         v_callees = [
             c
-            for c in base_callees
+            for c in base_res.facts
             if not self._should_skip_base_for_symbol(c.callee_id)
             and self.get_symbol(c.callee_id) is not None
             and c not in self.overlay.removed_calls
         ]
-        return tuple(v_callees + self._added_calls_from.get(symbol_id, []))
+        complete = True if self._is_symbol_changed(symbol_id) else base_res.complete
+        return QueryResult(tuple(v_callees + self._added_calls_from.get(symbol_id, [])), complete=complete)
 
-    def get_references_from(self, symbol_id: SymbolId) -> tuple[Reference, ...]:
+    def get_references_from(self, symbol_id: SymbolId) -> QueryResult[Reference]:
         if (
             self._should_skip_base_for_symbol(symbol_id)
             or self.get_symbol(symbol_id) is None
         ):
-            return tuple(self._added_refs_from.get(symbol_id, []))
-        base_refs = self.base.get_references_from(symbol_id)
+            return QueryResult(tuple(self._added_refs_from.get(symbol_id, [])), complete=True)
+        base_res = self.base.get_references_from(symbol_id)
         v_refs = [
             r
-            for r in base_refs
+            for r in base_res.facts
             if not self._should_skip_base_for_symbol(r.target_id)
             and self.get_symbol(r.target_id) is not None
             and r not in self.overlay.removed_references
         ]
-        return tuple(v_refs + self._added_refs_from.get(symbol_id, []))
+        complete = True if self._is_symbol_changed(symbol_id) else base_res.complete
+        return QueryResult(tuple(v_refs + self._added_refs_from.get(symbol_id, [])), complete=complete)
 
-    def get_references_to(self, symbol_id: SymbolId) -> tuple[Reference, ...]:
-        base_refs = self.base.get_references_to(symbol_id)
+    def get_references_to(self, symbol_id: SymbolId) -> QueryResult[Reference]:
+        base_res = self.base.get_references_to(symbol_id)
         v_refs = [
             r
-            for r in base_refs
+            for r in base_res.facts
             if not self._should_skip_base_for_symbol(r.source_id)
             and self.get_symbol(r.source_id) is not None
             and r not in self.overlay.removed_references
         ]
-        return tuple(v_refs + self._added_refs_to.get(symbol_id, []))
+        return QueryResult(tuple(v_refs + self._added_refs_to.get(symbol_id, [])), complete=base_res.complete)
 
-    def get_imports(self, file_id: FileId) -> tuple[Import, ...]:
+    def get_imports(self, file_id: FileId) -> QueryResult[Import]:
         if (
             file_id in self.overlay.modified_files
             or file_id in self.overlay.removed_files
             or self.get_file(file_id) is None
         ):
-            return tuple(self._added_imports_from.get(file_id, []))
+            return QueryResult(tuple(self._added_imports_from.get(file_id, [])), complete=True)
 
-        base_imports = self.base.get_imports(file_id)
+        base_res = self.base.get_imports(file_id)
         v_imports = [
             i
-            for i in base_imports
+            for i in base_res.facts
             if (
                 i.target_file_id is None
                 or (
@@ -234,119 +248,124 @@ class RepositoryView(RepositoryQuery):
             )
             and i not in self.overlay.removed_imports
         ]
-        return tuple(v_imports + self._added_imports_from.get(file_id, []))
+        complete = True if (file_id in self.overlay.added_files or file_id in self.overlay.modified_files) else base_res.complete
+        return QueryResult(tuple(v_imports + self._added_imports_from.get(file_id, [])), complete=complete)
 
-    def get_importers(self, file_id: FileId) -> tuple[Import, ...]:
+    def get_importers(self, file_id: FileId) -> QueryResult[Import]:
         if file_id in self.overlay.removed_files or self.get_file(file_id) is None:
-            return ()
-        base_importers = self.base.get_importers(file_id)
+            return QueryResult((), complete=True)
+        base_res = self.base.get_importers(file_id)
         v_importers = [
             i
-            for i in base_importers
+            for i in base_res.facts
             if i.source_file_id not in self.overlay.modified_files
             and i.source_file_id not in self.overlay.removed_files
             and self.get_file(i.source_file_id) is not None
             and i not in self.overlay.removed_imports
         ]
-        return tuple(v_importers + self._added_imports_to.get(file_id, []))
+        return QueryResult(tuple(v_importers + self._added_imports_to.get(file_id, [])), complete=base_res.complete)
 
     def get_type_relationships(
         self, symbol_id: SymbolId
-    ) -> tuple[TypeRelationship, ...]:
+    ) -> QueryResult[TypeRelationship]:
         if (
             self._should_skip_base_for_symbol(symbol_id)
             or self.get_symbol(symbol_id) is None
         ):
-            return tuple(self._added_type_from.get(symbol_id, []))
-        base_type_rels = self.base.get_type_relationships(symbol_id)
+            return QueryResult(tuple(self._added_type_from.get(symbol_id, [])), complete=True)
+        base_res = self.base.get_type_relationships(symbol_id)
         v_rels = [
             tr
-            for tr in base_type_rels
+            for tr in base_res.facts
             if not self._should_skip_base_for_symbol(tr.target_id)
             and self.get_symbol(tr.target_id) is not None
             and tr not in self.overlay.removed_type_relationships
         ]
-        return tuple(v_rels + self._added_type_from.get(symbol_id, []))
+        complete = True if self._is_symbol_changed(symbol_id) else base_res.complete
+        return QueryResult(tuple(v_rels + self._added_type_from.get(symbol_id, [])), complete=complete)
 
-    def get_type_dependents(self, symbol_id: SymbolId) -> tuple[TypeRelationship, ...]:
-        base_type_rels = self.base.get_type_dependents(symbol_id)
+    def get_type_dependents(self, symbol_id: SymbolId) -> QueryResult[TypeRelationship]:
+        base_res = self.base.get_type_dependents(symbol_id)
         v_rels = [
             tr
-            for tr in base_type_rels
+            for tr in base_res.facts
             if not self._should_skip_base_for_symbol(tr.source_id)
             and self.get_symbol(tr.source_id) is not None
             and tr not in self.overlay.removed_type_relationships
         ]
-        return tuple(v_rels + self._added_type_to.get(symbol_id, []))
+        return QueryResult(tuple(v_rels + self._added_type_to.get(symbol_id, [])), complete=base_res.complete)
 
-    def get_endpoints(self, symbol_id: SymbolId) -> tuple[Endpoint, ...]:
+    def get_endpoints(self, symbol_id: SymbolId) -> QueryResult[Endpoint]:
         if (
             self._should_skip_base_for_symbol(symbol_id)
             or self.get_symbol(symbol_id) is None
         ):
-            return tuple(self._added_endpoints.get(symbol_id, []))
-        base_endpoints = self.base.get_endpoints(symbol_id)
+            return QueryResult(tuple(self._added_endpoints.get(symbol_id, [])), complete=True)
+        base_res = self.base.get_endpoints(symbol_id)
         v_endpoints = [
-            ep for ep in base_endpoints if ep not in self.overlay.removed_endpoints
+            ep for ep in base_res.facts if ep not in self.overlay.removed_endpoints
         ]
-        return tuple(v_endpoints + self._added_endpoints.get(symbol_id, []))
+        complete = True if self._is_symbol_changed(symbol_id) else base_res.complete
+        return QueryResult(tuple(v_endpoints + self._added_endpoints.get(symbol_id, [])), complete=complete)
 
     def get_database_relationships(
         self, symbol_id: SymbolId
-    ) -> tuple[DatabaseRelationship, ...]:
+    ) -> QueryResult[DatabaseRelationship]:
         if (
             self._should_skip_base_for_symbol(symbol_id)
             or self.get_symbol(symbol_id) is None
         ):
-            return tuple(self._added_db_rels.get(symbol_id, []))
-        base_db_rels = self.base.get_database_relationships(symbol_id)
+            return QueryResult(tuple(self._added_db_rels.get(symbol_id, [])), complete=True)
+        base_res = self.base.get_database_relationships(symbol_id)
         v_db_rels = [
             db
-            for db in base_db_rels
+            for db in base_res.facts
             if db not in self.overlay.removed_database_relationships
         ]
-        return tuple(v_db_rels + self._added_db_rels.get(symbol_id, []))
+        complete = True if self._is_symbol_changed(symbol_id) else base_res.complete
+        return QueryResult(tuple(v_db_rels + self._added_db_rels.get(symbol_id, [])), complete=complete)
 
-    def get_published_events(self, symbol_id: SymbolId) -> tuple[EventPublication, ...]:
+    def get_published_events(self, symbol_id: SymbolId) -> QueryResult[EventPublication]:
         if (
             self._should_skip_base_for_symbol(symbol_id)
             or self.get_symbol(symbol_id) is None
         ):
-            return tuple(self._added_event_pubs.get(symbol_id, []))
-        base_pubs = self.base.get_published_events(symbol_id)
+            return QueryResult(tuple(self._added_event_pubs.get(symbol_id, [])), complete=True)
+        base_res = self.base.get_published_events(symbol_id)
         v_pubs = [
             pub
-            for pub in base_pubs
+            for pub in base_res.facts
             if pub not in self.overlay.removed_event_publications
         ]
-        return tuple(v_pubs + self._added_event_pubs.get(symbol_id, []))
+        complete = True if self._is_symbol_changed(symbol_id) else base_res.complete
+        return QueryResult(tuple(v_pubs + self._added_event_pubs.get(symbol_id, [])), complete=complete)
 
-    def get_event_consumers(self, event_id: EventId) -> tuple[EventSubscription, ...]:
-        base_subs = self.base.get_event_consumers(event_id)
+    def get_event_consumers(self, event_id: EventId) -> QueryResult[EventSubscription]:
+        base_res = self.base.get_event_consumers(event_id)
         v_subs = [
             sub
-            for sub in base_subs
+            for sub in base_res.facts
             if not self._should_skip_base_for_symbol(sub.symbol_id)
             and self.get_symbol(sub.symbol_id) is not None
             and sub not in self.overlay.removed_event_subscriptions
         ]
-        return tuple(v_subs + self._added_event_subs.get(event_id, []))
+        return QueryResult(tuple(v_subs + self._added_event_subs.get(event_id, [])), complete=base_res.complete)
 
-    def get_tests(self, symbol_id: SymbolId) -> tuple[TestRelationship, ...]:
-        base_tests = self.base.get_tests(symbol_id)
+    def get_tests(self, symbol_id: SymbolId) -> QueryResult[TestRelationship]:
+        base_res = self.base.get_tests(symbol_id)
         v_tests = [
             t
-            for t in base_tests
+            for t in base_res.facts
             if not self._should_skip_base_for_symbol(t.test_symbol_id)
             and self.get_symbol(t.test_symbol_id) is not None
             and t not in self.overlay.removed_test_relationships
         ]
-        return tuple(v_tests + self._added_tests.get(symbol_id, []))
+        return QueryResult(tuple(v_tests + self._added_tests.get(symbol_id, [])), complete=base_res.complete)
 
-    def get_entry_points(self) -> tuple[EntryPoint, ...]:
-        base_eps = self.base.get_entry_points()
+    def get_entry_points(self) -> QueryResult[EntryPoint]:
+        base_res = self.base.get_entry_points()
         v_eps = []
-        for ep in base_eps:
+        for ep in base_res.facts:
             try:
                 sym_id_int = int(ep.handler_id)
                 sym_id = SymbolId(sym_id_int)
@@ -391,11 +410,11 @@ class RepositoryView(RepositoryQuery):
                     )
                 )
 
-        return tuple(v_eps)
+        return QueryResult(tuple(v_eps), complete=base_res.complete)
 
-    def get_symbols_in_file(self, file_id: FileId) -> tuple[Symbol, ...]:
+    def get_symbols_in_file(self, file_id: FileId) -> QueryResult[Symbol]:
         if file_id in self.overlay.removed_files and file_id not in self.overlay.modified_files:
-            return ()
+            return QueryResult((), complete=True)
 
         if (
             file_id in self.overlay.added_files
@@ -404,9 +423,9 @@ class RepositoryView(RepositoryQuery):
             added_syms = [
                 s for s in self.overlay.added_symbols.values() if s.file_id == file_id
             ]
-            return tuple(added_syms)
+            return QueryResult(tuple(added_syms), complete=True)
 
-        base_syms = self.base.get_symbols_in_file(file_id)
-        return tuple(s for s in base_syms if s.id not in self.overlay.removed_symbols)
+        base_res = self.base.get_symbols_in_file(file_id)
+        return QueryResult(tuple(s for s in base_res.facts if s.id not in self.overlay.removed_symbols), complete=base_res.complete)
 
 

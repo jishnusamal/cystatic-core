@@ -3,9 +3,40 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Literal, Sequence
 
 from models.core import DiffSnapshot, RepositoryReference, RepositorySnapshot
+
+
+class RepositoryAcquisitionMode(str, Enum):
+    ZIP = "zip"
+    GIT = "git"
+
+
+@dataclass(frozen=True)
+class RepositoryCommit:
+    sha: str
+    repository: str
+    message: str | None = None
+    author: str | None = None
+
+
+@dataclass(frozen=True)
+class RepositoryTreeEntry:
+    path: str
+    type: Literal["blob", "tree"]
+    sha: str
+    size: int | None = None
+
+
+@dataclass(frozen=True)
+class RepositoryBlob:
+    path: str
+    sha: str
+    size: int
+    content: bytes
 
 
 class RepositoryProvider(ABC):
@@ -108,4 +139,72 @@ class RepositoryProvider(ABC):
 
         Returns:
             Commit information
+        """
+
+    @abstractmethod
+    async def get_commit(
+        self,
+        repository: str,
+        sha: str,
+    ) -> RepositoryCommit:
+        """Fetch commit metadata.
+
+        Args:
+            repository: Full repository name (owner/repo)
+            sha: Commit SHA to fetch
+
+        Returns:
+            RepositoryCommit object
+        """
+
+    @abstractmethod
+    async def get_tree(
+        self,
+        repository: str,
+        sha: str,
+    ) -> Sequence[RepositoryTreeEntry]:
+        """Fetch repository tree metadata.
+
+        Args:
+            repository: Full repository name (owner/repo)
+            sha: Commit SHA
+
+        Returns:
+            Sequence of RepositoryTreeEntry objects
+        """
+
+    @abstractmethod
+    async def get_file(
+        self,
+        repository: str,
+        path: str,
+        ref: str,
+    ) -> RepositoryBlob:
+        """Fetch a single file blob.
+
+        Args:
+            repository: Full repository name (owner/repo)
+            path: File path
+            ref: Commit SHA or ref
+
+        Returns:
+            RepositoryBlob object
+        """
+
+    @abstractmethod
+    async def get_files(
+        self,
+        repository: str,
+        paths: Sequence[str],
+        ref: str,
+    ) -> Sequence[RepositoryBlob]:
+        """Fetch multiple file blobs.
+
+        Args:
+            repository: Full repository name (owner/repo)
+            paths: File paths to fetch
+            ref: Commit SHA or ref
+
+        Returns:
+            Sequence of RepositoryBlob objects
         """

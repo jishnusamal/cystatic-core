@@ -10,7 +10,7 @@ from engine.change.model import (
 )
 from engine.change.model.repository_comparison import RepositoryComparison
 from engine.repository.facts import Call, FileId, Import, Reference, SymbolId
-from engine.repository.query import RepositoryQuery
+from engine.repository.query import RepositoryQuery, QueryResult
 
 
 class RepositoryModelQuery(RepositoryQuery):
@@ -27,53 +27,68 @@ class RepositoryModelQuery(RepositoryQuery):
         return None
 
     def get_callers(self, symbol_id):
-        return tuple(
-            Call(caller_id=SymbolId(e.caller_id), callee_id=SymbolId(e.callee_id))
-            for e in self.model.call_graph.edges
-            if e.callee_id == symbol_id
+        return QueryResult(
+            tuple(
+                Call(caller_id=SymbolId(e.caller_id), callee_id=SymbolId(e.callee_id))
+                for e in self.model.call_graph.edges
+                if e.callee_id == symbol_id
+            ),
+            complete=True,
         )
 
     def get_callees(self, symbol_id):
-        return tuple(
-            Call(caller_id=SymbolId(e.caller_id), callee_id=SymbolId(e.callee_id))
-            for e in self.model.call_graph.edges
-            if e.caller_id == symbol_id
+        return QueryResult(
+            tuple(
+                Call(caller_id=SymbolId(e.caller_id), callee_id=SymbolId(e.callee_id))
+                for e in self.model.call_graph.edges
+                if e.caller_id == symbol_id
+            ),
+            complete=True,
         )
 
     def get_references_from(self, symbol_id):
-        return tuple(
-            Reference(source_id=SymbolId(e.source_id), target_id=SymbolId(e.target_id))
-            for e in self.model.reference_graph.edges
-            if e.source_id == symbol_id
+        return QueryResult(
+            tuple(
+                Reference(source_id=SymbolId(e.source_id), target_id=SymbolId(e.target_id))
+                for e in self.model.reference_graph.edges
+                if e.source_id == symbol_id
+            ),
+            complete=True,
         )
 
     def get_references_to(self, symbol_id):
-        return tuple(
-            Reference(source_id=SymbolId(e.source_id), target_id=SymbolId(e.target_id))
-            for e in self.model.reference_graph.edges
-            if e.target_id == symbol_id
+        return QueryResult(
+            tuple(
+                Reference(source_id=SymbolId(e.source_id), target_id=SymbolId(e.target_id))
+                for e in self.model.reference_graph.edges
+                if e.target_id == symbol_id
+            ),
+            complete=True,
         )
 
     def get_imports(self, file_id):
-        return tuple(
-            Import(
-                source_file_id=FileId(s.file),
-                target_file_id=None,
-                module=s.properties.get("module", ""),
-                imported_name=s.name,
-            )
-            for s in self.model.symbols
-            if s.kind == "import" and s.file == file_id
+        return QueryResult(
+            tuple(
+                Import(
+                    source_file_id=FileId(s.file),
+                    target_file_id=None,
+                    module=s.properties.get("module", ""),
+                    imported_name=s.name,
+                )
+                for s in self.model.symbols
+                if s.kind == "import" and s.file == file_id
+            ),
+            complete=True,
         )
 
     def get_importers(self, file_id):
-        return ()
+        return QueryResult((), complete=True)
 
     def get_type_relationships(self, symbol_id):
-        return ()
+        return QueryResult((), complete=True)
 
     def get_type_dependents(self, symbol_id):
-        return ()
+        return QueryResult((), complete=True)
 
     def get_endpoints(self, symbol_id):
         symbol = self.get_symbol(symbol_id)
@@ -87,34 +102,37 @@ class RepositoryModelQuery(RepositoryQuery):
                 method = EndpointMethod(method_str)
             except Exception:
                 method = EndpointMethod.ANY
-            return (
-                Endpoint(
-                    id=EndpointId(hash(symbol_id) & 0xFFFFFFFF),
-                    symbol_id=SymbolId(symbol_id),
-                    method=method,
-                    path=symbol.properties.get("endpoint", ""),
-                    framework="",
+            return QueryResult(
+                (
+                    Endpoint(
+                        id=EndpointId(hash(symbol_id) & 0xFFFFFFFF),
+                        symbol_id=SymbolId(symbol_id),
+                        method=method,
+                        path=symbol.properties.get("endpoint", ""),
+                        framework="",
+                    ),
                 ),
+                complete=True,
             )
-        return ()
+        return QueryResult((), complete=True)
 
     def get_database_relationships(self, symbol_id):
-        return ()
+        return QueryResult((), complete=True)
 
     def get_published_events(self, symbol_id):
-        return ()
+        return QueryResult((), complete=True)
 
     def get_event_consumers(self, event_id):
-        return ()
+        return QueryResult((), complete=True)
 
     def get_tests(self, symbol_id):
-        return ()
+        return QueryResult((), complete=True)
 
     def get_entry_points(self):
-        return tuple(getattr(self.model, "entry_points", ()))
+        return QueryResult(tuple(getattr(self.model, "entry_points", ())), complete=True)
 
     def get_symbols_in_file(self, file_id):
-        return tuple(s for s in self.model.symbols if s.file == file_id)
+        return QueryResult(tuple(s for s in self.model.symbols if s.file == file_id), complete=True)
 
 
 class ChangeCompiler:

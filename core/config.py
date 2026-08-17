@@ -73,6 +73,9 @@ class Settings(BaseSettings):
 
     GITHUB_APP_WEBHOOK_SECRET: str
 
+    REPOSITORY_ACQUISITION_MODE: str = "zip"
+    GITHUB_MAX_CONCURRENT_BLOB_REQUESTS: int = 10
+
     # ------------------------------------------------------------------
     # Redis
     # ------------------------------------------------------------------

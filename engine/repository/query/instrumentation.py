@@ -16,6 +16,7 @@ from .types import (
     File,
     FileId,
     Import,
+    QueryResult,
     Reference,
     Symbol,
     SymbolId,
@@ -88,6 +89,8 @@ class InstrumentedRepository(RepositoryQuery):
         # Calculate result count
         if result is None:
             count = 0
+        elif isinstance(result, QueryResult):
+            count = len(result.facts)
         elif isinstance(result, tuple):
             count = len(result)
         else:

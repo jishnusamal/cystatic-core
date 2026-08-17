@@ -354,6 +354,50 @@ class Pipeline:
             total_time = time.perf_counter() - pipeline_start_time
             pipeline_logger.log_pipeline(f"Total: {total_time:.1f}s", to_terminal=True)
 
+            # Repository materialization logging
+            metrics = context.repository_materialization
+            if metrics.repository_files == 0 and context.base_query is not None:
+                base_files_count = 0
+                if hasattr(context.base_query, "conn"):
+                    try:
+                        cur = context.base_query.conn.cursor()
+                        repo_id_ctx, version_id_ctx = context.base_query._get_context()
+                        cur.execute(
+                            "SELECT COUNT(*) as count FROM files WHERE repository_id = ? AND version_id = ?",
+                            (repo_id_ctx, version_id_ctx),
+                        )
+                        row = cur.fetchone()
+                        if row:
+                            base_files_count = row["count"]
+                    except Exception:
+                        pass
+                elif hasattr(context.base_query, "_facts"):
+                    base_files_count = len(context.base_query._facts.files)
+                
+                if base_files_count > 0:
+                    metrics.set_repository_size(files=base_files_count, bytes=0)
+
+            # JSON log
+            import json
+            log_payload = {
+                "event": "repository_materialization",
+                "repository": repo_name,
+                "commit": context.base_sha or "unknown",
+                **metrics.snapshot(),
+            }
+            pipeline_logger.log_pipeline(json.dumps(log_payload), to_terminal=False)
+
+            # Human readable summary
+            repo_mb = metrics.repository_bytes / (1024 * 1024)
+            mat_mb = metrics.materialized_bytes / (1024 * 1024)
+            human_summary = (
+                "Repository materialization:\n"
+                f"  repository: {repo_name}\n"
+                f"  files: {metrics.materialized_files:,} / {metrics.repository_files:,} ({metrics.materialization_percent:.2f}%)\n"
+                f"  bytes: {mat_mb:.2f} MB / {repo_mb:.2f} MB ({metrics.materialization_bytes_percent:.2f}%)"
+            )
+            pipeline_logger.log_pipeline(human_summary, to_terminal=True)
+
             context.mark_complete()
 
         except Exception as exc:
@@ -704,11 +748,14 @@ class Pipeline:
                         print(
                             f"[pipeline] Base facts for {repo_id}@{base_sha} not found in store. Fetching repository on-demand..."
                         )
+                        acq_start = time.perf_counter()
                         snapshot = (
                             await self.repository_provider.fetch_repository_at_sha(
                                 request.repository, base_sha
                             )
                         )
+                        acq_duration = (time.perf_counter() - acq_start) * 1000
+                        context.repository_materialization.repository_acquisition_ms += acq_duration
                     except Exception as exc:
                         print(
                             f"[pipeline] Failed to fetch repository at base SHA {base_sha}: {exc}"
@@ -716,6 +763,13 @@ class Pipeline:
                         snapshot = None
 
                 if snapshot is not None:
+                    context.repository_materialization.set_repository_size(
+                        files=len(snapshot.files),
+                        bytes=sum(
+                            len(content.encode("utf-8"))
+                            for content in snapshot.files.values()
+                        ),
+                    )
                     if context.language is None:
                         detector = LanguageDetector(self.language_registry)
                         file_contexts = [
@@ -760,9 +814,13 @@ class Pipeline:
                                 self.repository_store, actual_repo_id, actual_version_id
                             )
                             indexer = RepositoryIndexer(sink)
+                            idx_start = time.perf_counter()
                             indexer.index_repository(
-                                {"files": snapshot.files, "language": language}, adapter
+                                {"files": snapshot.files, "language": language}, adapter,
+                                metrics=context.repository_materialization
                             )
+                            idx_duration = (time.perf_counter() - idx_start) * 1000
+                            context.repository_materialization.repository_indexing_ms += idx_duration
                             sink.flush()
 
                             base_query = self.repository_store
@@ -777,17 +835,25 @@ class Pipeline:
                             )
                             base_sink = InMemoryFactSink()
                             base_indexer = RepositoryIndexer(base_sink)
+                            idx_start = time.perf_counter()
                             base_indexer.index_repository(
-                                {"files": snapshot.files, "language": language}, adapter
+                                {"files": snapshot.files, "language": language}, adapter,
+                                metrics=context.repository_materialization
                             )
+                            idx_duration = (time.perf_counter() - idx_start) * 1000
+                            context.repository_materialization.repository_indexing_ms += idx_duration
                             base_facts = base_sink.build_facts()
                             base_query = InMemoryRepository(base_facts)
                     else:
                         base_sink = InMemoryFactSink()
                         base_indexer = RepositoryIndexer(base_sink)
+                        idx_start = time.perf_counter()
                         base_indexer.index_repository(
-                            {"files": snapshot.files, "language": language}, adapter
+                            {"files": snapshot.files, "language": language}, adapter,
+                            metrics=context.repository_materialization
                         )
+                        idx_duration = (time.perf_counter() - idx_start) * 1000
+                        context.repository_materialization.repository_indexing_ms += idx_duration
                         base_facts = base_sink.build_facts()
                         base_query = InMemoryRepository(base_facts)
                 else:
@@ -845,11 +911,14 @@ class Pipeline:
                         print(f"[pipeline] File {file_path} not found at head: {exc}")
                         return file_path, None
 
+                acq_start = time.perf_counter()
                 tasks = [
                     fetch_one(file_info["file_path"])
                     for file_info in context.diff_data["files"]
                 ]
                 results = await asyncio.gather(*tasks)
+                acq_duration = (time.perf_counter() - acq_start) * 1000
+                context.repository_materialization.repository_acquisition_ms += acq_duration
                 changed_files_dict = dict(results)
 
             # 3. Index ONLY changed files
@@ -909,9 +978,13 @@ class Pipeline:
             files_to_index = {
                 f: c for f, c in changed_files_dict.items() if c is not None
             }
+            head_idx_start = time.perf_counter()
             head_indexer.index_repository(
-                {"files": files_to_index, "language": language}, adapter
+                {"files": files_to_index, "language": language}, adapter,
+                metrics=context.repository_materialization
             )
+            head_idx_duration = (time.perf_counter() - head_idx_start) * 1000
+            context.repository_materialization.repository_indexing_ms += head_idx_duration
             head_facts = head_sink.build_facts()
 
             # 4. Construct RepositoryOverlay

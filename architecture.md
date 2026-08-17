@@ -38,7 +38,10 @@ flowchart TB
         direction TB
         PL["Pipeline Orchestrator"]
         LA["Language Detection & Adapters"]
-        RC["Repository Compiler"]
+        RI["Repository Indexer"]
+        RS["Repository Store (SQLite)"]
+        RO["Repository Overlay"]
+        RV["Repository View"]
         CC["Change Compiler"]
         BC["Behavior Compiler"]
         OC["Operational Compiler"]
@@ -46,7 +49,12 @@ flowchart TB
         RVC["ReviewContext Compiler"]
         LLMC["LLMContext Compiler"]
         
-        PL --> LA --> RC
+        PL --> LA --> RI
+        RI --> RS
+        RI --> RO
+        RS --> RV
+        RO --> RV
+        RV --> CC
         PL --> CC
         PL --> BC
         PL --> OC
@@ -54,7 +62,7 @@ flowchart TB
         PL --> RVC
         PL --> LLMC
     end
-    class Engine,PL,LA,RC,CC,BC,OC,DC,RVC,LLMC engineStyle;
+    class Engine,PL,LA,RI,RS,RO,RV,CC,BC,OC,DC,RVC,LLMC engineStyle;
 
     subgraph Output [Rendering & Publishing]
         direction TB
@@ -81,7 +89,7 @@ flowchart TD
     classDef stepStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:1px;
     classDef ioStyle fill:#fff3e0,stroke:#f57c00,stroke-width:1px;
 
-    Start(["Git Repository / Diff Payload"]) --> Step1["Step 1: Repository Model Compilation<br/>(Cache via RepositoryStore)"]
+    Start(["Git Repository / Diff Payload"]) --> Step1["Step 1: Repository Fact & Overlay Compilation<br/>(Cache via RepositoryStore / RepositoryView)"]
     Step1 --> Step2["Step 2: Fetch Diff Data<br/>(Parse hunks & changed files)"]
     Step2 --> Step3["Step 3: Change Compilation<br/>(ChangedSymbolsPass + Classification)"]
     Step3 --> Step4["Step 4: Behavior Compilation<br/>(Trace call graphs to entry points)"]
@@ -100,12 +108,13 @@ flowchart TD
 
 | Phase | Component | Key Operations & Outputs |
 | :--- | :--- | :--- |
-| **Step 1** | `RepositoryCompiler` | Fetches code tree snapshots for base and head references. Detects language adapter (**Python**, **Java**, or **TypeScript**) and parses syntax trees (ASTs/Tree-sitter) into a unified `RepositoryModel`. Caches compiled repositories in `RepositoryStore`. |
+| **Step 1** | `RepositoryIndexer`, `RepositoryStore`, `RepositoryOverlay`, `RepositoryView` | Resolves base version facts from `SQLiteRepositoryStore` (or indexes base repository snapshot on-demand using `RepositoryIndexer` and persists to store). Extracts head version files changed in the PR diff, indexes them, and constructs a `RepositoryOverlay`. Wraps the base query and overlay in a `RepositoryView` to present a unified `RepositoryQuery` interface for subsequent phases without materializing a full repository in memory. |
 | **Step 2** | `DiffFetcher` | Extracts diff hunks, matching line changes back to files and symbol scopes. |
 | **Step 3** | `ChangeCompiler` | Computes semantic deltas using `ChangedSymbolsPass` (detects added, modified, or removed symbols) and `ChangeClassificationPass` (categorizes mutations such as method signature, body, visibility, or decorators). |
 | **Step 4** | `BehaviorCompiler` | Traces downstream caller-callee execution chains starting from changed symbols to identify impacted paths and entry points. |
 | **Step 5** | `OperationalCompiler` | Enriches findings with domain-specific analysis passes:<br/>- **API Pass:** Detects alterations or breakages in HTTP contracts.<br/>- **Data Pass:** Tracks changes to database schemas, models, or active query structures.<br/>- **Event Pass:** Traces publish/subscribe updates. |
-| **Step 6 & 7** | `DiscoveryCompiler` | Normalizes findings into a canonical `EngineeringDiscoveryModel` and runs rule-based analysis passes to extract boundary-crossing transfers, state mutations, shared dependencies, and validation gaps. |
+| **Step 6** | `EngineeringDiscoveryCompiler` | Normalizes operational change findings into a structured `EngineeringDiscoveryModel`. |
+| **Step 7** | `DiscoveryCompiler` | Executes deep rule-based analysis passes on the `EngineeringDiscoveryModel` to extract deterministic insights (e.g. boundary-crossing transitions, state mutations, shared dependencies, validation gaps) and compiles them into `DiscoveryIR`. |
 | **Step 8 & 9** | `LLMContextCompiler` | Bundles findings into a compact `LLMContext` via discovery-centered build orders. Applies token compression, including enum ID encoding, location normalization, duplicate label elimination, and **dead-string elimination** (removing unreferenced string table entries). |
 
 ---
@@ -138,9 +147,13 @@ cystatic-core/
 │   │   ├── java/                # Java adapter parsing (Tree-sitter parser)
 │   │   ├── typescript/          # TypeScript adapter parsing
 │   │   └── detection.py         # Automatic language detection factory
-│   ├── repository/              # Repository model declarations and caching
-│   │   ├── model/               # Dataclass entities (symbols, graphs, persistence, events)
-│   │   └── indexing/            # Caching and indexing layer (RepositoryStore)
+│   ├── repository/              # Fact-based Repository Architecture
+│   │   ├── facts/               # Lightweight semantic entities (Symbol, Call, Endpoint, DB/Event facts, IDs)
+│   │   ├── query/               # Abstract RepositoryQuery interface and InMemoryRepository fallback
+│   │   ├── store/               # SQLiteRepositoryStore backend for persistent version facts and schema definition
+│   │   ├── indexing/            # RepositoryIndexer parsing and indexing facts into sinks (InMemory/PersistentFactSink)
+│   │   ├── overlay/             # RepositoryOverlay (PR diff mutations) and RepositoryView (layered query scope)
+│   │   └── model/               # Legacy RepositoryGraph & RepositoryModel structures (guarded from construction)
 │   ├── change/                  # ChangeCompiler (changed symbols & classification passes)
 │   ├── behavior/                # BehaviorCompiler (impacted control flows & call graphs)
 │   ├── operational/             # OperationalCompiler (API/DB/Event passes)
@@ -169,7 +182,14 @@ External platforms are abstracted behind interfaces defined in [`integrations/ba
 To prevent side effects across compiler passes, all data structures produced throughout the compilation pipeline are designed as frozen, immutable dataclasses. The pipeline guarantees that given the same input `ReviewContext`, the output `LLMContext` is 100% deterministic and reproducible.
 
 ### Isolated Language Parsers
-Language-specific features are normalized by language adapters in [`engine/language/`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/) into a language-agnostic representation. Downstream compilers (Change, Behavior, Operational) consume this normalized abstract syntax map, isolating them from syntactic quirks of individual programming languages.
+Language-specific features are parsed by language adapters in [`engine/language/`](file:///Users/jishnupsamal/Jishnu/Factor/cystatic-core/engine/language/) and emitted as normalized, language-agnostic repository facts (symbols, calls, references, database entries, events, etc.). Downstream compilers query the repository and overlays via the `RepositoryQuery` and `RepositoryView` interfaces, completely isolating them from syntactic quirks of individual programming languages.
+
+### Fact-Based Repository View Pattern
+To scale the engine to repositories with thousands of files and millions of lines of code without incurring massive memory overhead (which previously caused 3.4+ GB memory peaks), the repository is represented as a set of lightweight, queryable facts stored in a persistent `SQLiteRepositoryStore`.
+- **Base Version Facts**: Fully indexed facts (symbols, calls, imports, type dependencies, endpoints, database entities, events) are cached in SQLite.
+- **PR Overlay**: During analysis, only the files added or modified in the pull request diff are indexed on the fly. Their facts are collected in a `RepositoryOverlay`.
+- **Dynamic View**: A `RepositoryView` merges the base database facts with the `RepositoryOverlay` in memory, presenting a unified `RepositoryQuery` interface. This allows downstream compilers to resolve call graphs and operational surfaces dynamically, without ever loading the entire code tree or constructing full in-memory graph objects.
+- **Architectural Guard**: In production PR-analysis runs, the runtime sets `PREVENT_LEGACY_ARCHITECTURE` to `True` via a ContextVar. Any attempt to construct legacy in-memory objects (like `RepositoryGraph`, `RepositoryModel`, or `GraphPatcher`) immediately raises a runtime error to prevent memory regressions.
 
 ### Graceful Degradation
 Analysis and operational passes run independently. If a highly complex database parse or event subscription extraction fails, the pipeline isolates the error and degrades gracefully, allowing standard symbol change and control flow tracing to proceed uninterrupted.
