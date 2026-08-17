@@ -1,30 +1,34 @@
-from collections import deque
+from dataclasses import dataclass, field
 from typing import Set
 from .requirements import ResolutionRequirement
+from engine.repository.query import SymbolId
 
+@dataclass
 class ResolutionFrontier:
-    """Manages the set/queue of active and processed requirements."""
+    """Manages the set‑based frontier for lazy resolution.
 
-    def __init__(self) -> None:
-        self._pending = deque()
-        self._processed: Set[ResolutionRequirement] = set()
+    Attributes:
+        symbols: Symbols currently participating in impact traversal.
+        paths: Repository paths discovered as candidates for resolving the frontier.
+        unresolved: Symbols whose required facts are not currently complete.
+    """
+    symbols: Set[SymbolId] = field(default_factory=set)
+    paths: Set[str] = field(default_factory=set)
+    unresolved: Set[ResolutionRequirement] = field(default_factory=set)
 
-    def add(self, requirement: ResolutionRequirement) -> None:
-        """Add a requirement to the frontier if it hasn't been processed yet."""
-        if requirement not in self._processed and requirement not in self._pending:
-            self._pending.append(requirement)
+    def add_symbol(self, symbol: SymbolId) -> None:
+        self.symbols.add(symbol)
 
-    def pop(self) -> ResolutionRequirement | None:
-        """Pop a pending requirement, marking it as processed."""
-        if not self._pending:
-            return None
-        req = self._pending.popleft()
-        self._processed.add(req)
-        return req
+    def add_path(self, path: str) -> None:
+        self.paths.add(path)
 
-    def is_empty(self) -> bool:
-        return len(self._pending) == 0
+    def add_unresolved(self, req: ResolutionRequirement) -> None:
+        self.unresolved.add(req)
+
+    def has_work(self) -> bool:
+        return bool(self.symbols) or bool(self.unresolved)
 
     def clear(self) -> None:
-        self._pending.clear()
-        self._processed.clear()
+        self.symbols.clear()
+        self.paths.clear()
+        self.unresolved.clear()

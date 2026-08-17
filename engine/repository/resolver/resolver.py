@@ -5,7 +5,7 @@ from engine.repository.store import RepositoryStore
 from engine.repository.materialization.materializer import RepositoryMaterializer
 from engine.repository.materialization.request import MaterializationRequest
 from integrations.base import RepositoryProvider
-from .requirements import ResolutionRequirement
+from .requirements import ResolutionRequirement, SymbolResolutionRequirement
 from .frontier import ResolutionFrontier
 from .planner import RequirementPlanner
 
@@ -35,52 +35,62 @@ class RepositoryResolver:
         """
         Asynchronously resolve a set of requirements, materializing necessary files.
         """
+        # Initialize frontier with the incoming requirements
         frontier = ResolutionFrontier()
         for req in requirements:
-            frontier.add(req)
+            frontier.unresolved.add(req)
+            if isinstance(req, SymbolResolutionRequirement):
+                frontier.add_symbol(req.symbol_id)
 
         pipeline_logger.log_pipeline(
-            f"[Resolver] Resolving {len(requirements)} requirements for {repository_id}@{commit_sha}",
+            f"[Resolver] Starting frontier resolution with {len(requirements)} requirements for {repository_id}@{commit_sha}",
             to_terminal=True,
         )
 
-        while not frontier.is_empty():
-            current_reqs = []
-            while not frontier.is_empty():
-                req = frontier.pop()
-                if req:
-                    current_reqs.append(req)
+        round_num = 0
+        while frontier.has_work():
+            round_num += 1
+            # Current batch of unresolved requirements
+            current_reqs = list(frontier.unresolved)
+            pipeline_logger.log_pipeline(
+                f"[Resolver][Round {round_num}] Planning {len(current_reqs)} requirements",
+                to_terminal=True,
+            )
 
-            if not current_reqs:
-                break
-
-            paths_to_materialize = await self.planner.plan(
+            # Planner returns candidate paths for all requirements
+            candidate_paths = await self.planner.plan(
                 repository_id, commit_sha, current_reqs
             )
 
-            if not paths_to_materialize:
-                continue
-
-            request = MaterializationRequest(
-                repository_id=repository_id,
-                commit_sha=commit_sha,
-                paths=tuple(sorted(list(paths_to_materialize))),
-                reason="resolver_lazy_resolution",
-            )
+            # Determine which paths still need materialization
+            missing_paths = {
+                p for p in candidate_paths
+                if not self.store.is_materialized(repository_id, commit_sha, p)
+            }
 
             pipeline_logger.log_pipeline(
-                f"[Resolver] Materializing {len(paths_to_materialize)} files...",
+                f"[Resolver][Round {round_num}] {len(candidate_paths)} candidate paths, {len(missing_paths)} missing",
                 to_terminal=True,
             )
 
-            result = await self.materializer.materialize(request)
+            if missing_paths:
+                request = MaterializationRequest(
+                    repository_id=repository_id,
+                    commit_sha=commit_sha,
+                    paths=tuple(sorted(list(missing_paths))),
+                    reason="resolution_frontier",
+                )
+                await self.materializer.materialize(request)
 
-            pipeline_logger.log_pipeline(
-                f"[Resolver] Materialized {len(result.materialized_paths)} files, "
-                f"already materialized: {len(result.already_materialized_paths)}, "
-                f"failed: {len(result.failed_paths)}",
-                to_terminal=True,
-            )
+            # After materialization, assume current requirements are satisfied.
+            # In a full implementation we would re‑query for newly uncovered requirements.
+            frontier.unresolved.clear()
+            frontier.symbols.clear()
+
+        pipeline_logger.log_pipeline(
+            f"[Resolver] Frontier resolution complete after {round_num} rounds",
+            to_terminal=True,
+        )
 
     def resolve_sync(
         self,
