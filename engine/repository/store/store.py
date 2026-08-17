@@ -146,3 +146,12 @@ class RepositoryStore(RepositoryQuery):
     ) -> None:
         """Set whether the commit indexing is fully complete."""
 
+    @abstractmethod
+    def get_tree_entries(
+        self,
+        repository_id: str,
+        commit_sha: str,
+        paths: Sequence[str],
+    ) -> dict[str, dict[str, Any]]:
+        """Get the tree entries for the specified paths."""
+

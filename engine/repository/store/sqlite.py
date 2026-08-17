@@ -533,6 +533,35 @@ class SQLiteRepositoryStore(RepositoryStore):
                 (repository_id, commit_sha, val),
             )
 
+    def get_tree_entries(
+        self,
+        repository_id: str,
+        commit_sha: str,
+        paths: Sequence[str],
+    ) -> dict[str, dict[str, Any]]:
+        if not paths:
+            return {}
+        cur = self.conn.cursor()
+        results = {}
+        paths_list = list(paths)
+        chunk_size = 999
+        for i in range(0, len(paths_list), chunk_size):
+            chunk = paths_list[i : i + chunk_size]
+            placeholders = ",".join(["?"] * len(chunk))
+            cur.execute(
+                f"SELECT path, type, blob_sha, size FROM repository_tree "
+                f"WHERE repository_id = ? AND commit_sha = ? AND path IN ({placeholders})",
+                (repository_id, commit_sha, *chunk),
+            )
+            for row in cur.fetchall():
+                results[row["path"]] = {
+                    "path": row["path"],
+                    "type": row["type"],
+                    "blob_sha": row["blob_sha"],
+                    "size": row["size"],
+                }
+        return results
+
     def get_symbol(self, symbol_id: SymbolId) -> Symbol | None:
         repo_id, _ = self._get_context()
         resolved_version, _ = self._get_symbol_resolved_version(symbol_id)

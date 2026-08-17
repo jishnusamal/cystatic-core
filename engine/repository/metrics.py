@@ -21,6 +21,15 @@ class RepositoryMaterializationMetrics:
     blob_cache_misses: int = 0
     indexed_files: int = 0
 
+    requested_files: int = 0
+    deduplicated_files: int = 0
+    already_materialized_files: int = 0
+    files_fetched: int = 0
+    bytes_fetched: int = 0
+    remote_requests: int = 0
+    duration: float = 0.0
+    reason: str = ""
+
     def set_repository_size(
         self,
         *,
@@ -69,7 +78,7 @@ class RepositoryMaterializationMetrics:
     def materialization_bytes_percent(self) -> float:
         return self.materialization_bytes_ratio * 100
 
-    def snapshot(self) -> dict[str, int | float]:
+    def snapshot(self) -> dict[str, int | float | str]:
         return {
             "repository_acquisition_ms": round(self.repository_acquisition_ms, 3),
             "repository_indexing_ms": round(self.repository_indexing_ms, 3),
@@ -87,4 +96,12 @@ class RepositoryMaterializationMetrics:
             "blob_cache_hits": self.blob_cache_hits,
             "blob_cache_misses": self.blob_cache_misses,
             "indexed_files": self.indexed_files,
+            "requested_files": self.requested_files,
+            "deduplicated_files": self.deduplicated_files,
+            "already_materialized_files": self.already_materialized_files,
+            "files_fetched": self.files_fetched,
+            "bytes_fetched": self.bytes_fetched,
+            "remote_requests": self.remote_requests,
+            "duration": round(self.duration, 3),
+            "reason": self.reason,
         }
