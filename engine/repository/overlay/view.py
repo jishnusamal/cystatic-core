@@ -37,10 +37,12 @@ class RepositoryView(RepositoryQuery):
         resolver = None,
         repository_id: str | None = None,
         commit_sha: str | None = None,
+        symbol_fqn_map: dict[SymbolId, str] | None = None,
     ) -> None:
         self.base = base
         self.overlay = overlay
         self.resolver = resolver
+        self.symbol_fqn_map = symbol_fqn_map
         self.repository_id = repository_id or getattr(base, "repository_id", None)
         
         # Resolve commit_sha if possible
@@ -126,31 +128,60 @@ class RepositoryView(RepositoryQuery):
                 return indexer._symbol_id_map[fqn]
         return None
 
+    def _normalize_symbol_id(self, symbol_id: SymbolId) -> SymbolId:
+        if isinstance(symbol_id, str) and symbol_id.isdigit():
+            return int(symbol_id)
+        return symbol_id
+
     def _resolve_unresolved_symbol_id(self, unresolved_id: SymbolId) -> SymbolId:
-        if self.resolver and hasattr(self.resolver, "materializer") and hasattr(self.resolver.materializer, "indexer"):
+        unresolved_id = self._normalize_symbol_id(unresolved_id)
+        fqn = None
+        # Always try the head (overlay) FQN map first.
+        if hasattr(self, "symbol_fqn_map") and self.symbol_fqn_map:
+            fqn = self.symbol_fqn_map.get(unresolved_id)
+        # Also check the base materializer's indexer FQN map — covers unresolved IDs
+        # assigned by the base indexer during lazy materialization (e.g., when c.py is
+        # indexed it creates an unresolved call for func_d with a new base-store ID).
+        if fqn is None and self.resolver and hasattr(self.resolver, "materializer") and hasattr(self.resolver.materializer, "indexer"):
             indexer = self.resolver.materializer.indexer
             fqn = indexer._symbol_fqn_map.get(unresolved_id)
-            if fqn and fqn.startswith("unresolved://"):
-                name = fqn[len("unresolved://"):]
-                if hasattr(self.base, "conn"):
-                    cur = self.base.conn.cursor()
-                    repo_id = self.repository_id or ""
-                    version_id = ""
-                    if hasattr(self.base, "_get_context"):
-                        try:
-                            _, version_id = self.base._get_context()
-                        except Exception:
-                            pass
-                    cur.execute(
-                        "SELECT id FROM symbols WHERE name = ? AND repository_id = ? AND version_id = ? LIMIT 1",
-                        (name, repo_id, version_id),
-                    )
-                    row = cur.fetchone()
-                    if row:
-                        return SymbolId(row[0])
+        if fqn and fqn.startswith("unresolved://"):
+            name = fqn[len("unresolved://"):]
+            if hasattr(self.base, "conn"):
+                cur = self.base.conn.cursor()
+                repo_id = self.repository_id or ""
+                version_id = ""
+                if hasattr(self.base, "_get_context"):
+                    try:
+                        _, version_id = self.base._get_context()
+                    except Exception:
+                        pass
+                cur.execute(
+                    "SELECT id FROM symbols WHERE name = ? AND repository_id = ? AND version_id = ? LIMIT 1",
+                    (name, repo_id, version_id),
+                )
+                row = cur.fetchone()
+                if row:
+                    return SymbolId(row[0])
+
+                # Trigger resolution!
+                from engine.repository.resolver.requirements import SymbolResolutionRequirement
+                req = SymbolResolutionRequirement(unresolved_id, "symbols")
+                self._resolved_requirements.add(req)
+                self.resolver.resolve_sync(repo_id, self.commit_sha, [req])
+
+                # Re-check after resolution
+                cur.execute(
+                    "SELECT id FROM symbols WHERE name = ? AND repository_id = ? AND version_id = ? LIMIT 1",
+                    (name, repo_id, version_id),
+                )
+                row = cur.fetchone()
+                if row:
+                    return SymbolId(row[0])
         return unresolved_id
 
     def _should_skip_base_for_symbol(self, symbol_id: SymbolId) -> bool:
+        symbol_id = self._normalize_symbol_id(symbol_id)
         if symbol_id in self.overlay.added_symbols:
             return True
         if symbol_id in self.overlay.removed_symbols:
@@ -165,12 +196,16 @@ class RepositoryView(RepositoryQuery):
         return False
 
     def get_symbol(self, symbol_id: SymbolId) -> Symbol | None:
+        symbol_id = self._normalize_symbol_id(symbol_id)
         if symbol_id in self.overlay.added_symbols:
             return self.overlay.added_symbols[symbol_id]
         if symbol_id in self.overlay.removed_symbols:
             return None
 
-        base_symbol = self.base.get_symbol(symbol_id)
+        # Resolve unresolved ID if possible
+        resolved_id = self._resolve_unresolved_symbol_id(symbol_id)
+
+        base_symbol = self.base.get_symbol(resolved_id)
         if base_symbol is not None:
             if (
                 base_symbol.file_id in self.overlay.removed_files
@@ -250,6 +285,7 @@ class RepositoryView(RepositoryQuery):
         return None
 
     def get_callers(self, symbol_id: SymbolId) -> QueryResult[Call]:
+        symbol_id = self._normalize_symbol_id(symbol_id)
         base_res = self.base.get_callers(symbol_id)
         facts = list(base_res.facts)
         symbol = self.get_symbol(symbol_id)
@@ -283,6 +319,7 @@ class RepositoryView(RepositoryQuery):
         return res
 
     def get_callees(self, symbol_id: SymbolId) -> QueryResult[Call]:
+        symbol_id = self._normalize_symbol_id(symbol_id)
         if (
             self._should_skip_base_for_symbol(symbol_id)
             or self.get_symbol(symbol_id) is None
@@ -307,6 +344,7 @@ class RepositoryView(RepositoryQuery):
         return res
 
     def get_references_from(self, symbol_id: SymbolId) -> QueryResult[Reference]:
+        symbol_id = self._normalize_symbol_id(symbol_id)
         if (
             self._should_skip_base_for_symbol(symbol_id)
             or self.get_symbol(symbol_id) is None
@@ -331,6 +369,7 @@ class RepositoryView(RepositoryQuery):
         return res
 
     def get_references_to(self, symbol_id: SymbolId) -> QueryResult[Reference]:
+        symbol_id = self._normalize_symbol_id(symbol_id)
         base_res = self.base.get_references_to(symbol_id)
         facts = list(base_res.facts)
         symbol = self.get_symbol(symbol_id)
@@ -418,6 +457,7 @@ class RepositoryView(RepositoryQuery):
     def get_type_relationships(
         self, symbol_id: SymbolId
     ) -> QueryResult[TypeRelationship]:
+        symbol_id = self._normalize_symbol_id(symbol_id)
         if (
             self._should_skip_base_for_symbol(symbol_id)
             or self.get_symbol(symbol_id) is None
@@ -442,6 +482,7 @@ class RepositoryView(RepositoryQuery):
         return res
 
     def get_type_dependents(self, symbol_id: SymbolId) -> QueryResult[TypeRelationship]:
+        symbol_id = self._normalize_symbol_id(symbol_id)
         base_res = self.base.get_type_dependents(symbol_id)
         facts = list(base_res.facts)
         symbol = self.get_symbol(symbol_id)
@@ -475,6 +516,7 @@ class RepositoryView(RepositoryQuery):
         return res
 
     def get_endpoints(self, symbol_id: SymbolId) -> QueryResult[Endpoint]:
+        symbol_id = self._normalize_symbol_id(symbol_id)
         if (
             self._should_skip_base_for_symbol(symbol_id)
             or self.get_symbol(symbol_id) is None
@@ -497,6 +539,7 @@ class RepositoryView(RepositoryQuery):
     def get_database_relationships(
         self, symbol_id: SymbolId
     ) -> QueryResult[DatabaseRelationship]:
+        symbol_id = self._normalize_symbol_id(symbol_id)
         if (
             self._should_skip_base_for_symbol(symbol_id)
             or self.get_symbol(symbol_id) is None
@@ -519,6 +562,7 @@ class RepositoryView(RepositoryQuery):
         return res
 
     def get_published_events(self, symbol_id: SymbolId) -> QueryResult[EventPublication]:
+        symbol_id = self._normalize_symbol_id(symbol_id)
         if (
             self._should_skip_base_for_symbol(symbol_id)
             or self.get_symbol(symbol_id) is None
@@ -559,6 +603,7 @@ class RepositoryView(RepositoryQuery):
         return res
 
     def get_tests(self, symbol_id: SymbolId) -> QueryResult[TestRelationship]:
+        symbol_id = self._normalize_symbol_id(symbol_id)
         base_res = self.base.get_tests(symbol_id)
         v_tests = [
             t

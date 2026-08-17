@@ -30,6 +30,8 @@ class RepositoryResolver:
         self.source = source
         self.materializer = materializer
         self.planner = planner or DefaultRequirementPlanner(store, source)
+        if hasattr(self.planner, "set_indexer") and self.materializer:
+            self.planner.set_indexer(self.materializer.indexer)
         self.tree_metadata = tree_metadata
         self.base_commit = base_commit
         self.budget = budget

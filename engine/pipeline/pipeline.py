@@ -682,7 +682,7 @@ class Pipeline:
         from engine.repository.resolver.resolver import RepositoryResolver
         from engine.repository.overlay import RepositoryOverlay, RepositoryView
         from engine.repository.facts import (
-            File, FileId, SymbolId, Call, Reference, Import,
+            File, FileId, Symbol, SymbolId, Call, Reference, Import,
             TypeRelationship, Endpoint, DatabaseRelationship,
             EventPublication, EventSubscription, TestRelationship
         )
@@ -937,12 +937,13 @@ class Pipeline:
 
         # Query all facts for the head version from SQL
         cur = self.repository_store.conn.cursor()
+        head_version_id = f"{actual_repo_id}@{head_sha}"
         
         # 1. added_symbols
         cur.execute(
             "SELECT id, name, file_id, kind, language, start_line, end_line, visibility, parent_symbol_id "
             "FROM symbols WHERE repository_id = ? AND version_id = ?",
-            (actual_repo_id, head_sha),
+            (actual_repo_id, head_version_id),
         )
         added_symbols = {}
         for row in cur.fetchall():
@@ -962,7 +963,7 @@ class Pipeline:
         # 2. added_calls
         cur.execute(
             "SELECT caller_id, callee_id, call_type FROM calls WHERE repository_id = ? AND version_id = ?",
-            (actual_repo_id, head_sha),
+            (actual_repo_id, head_version_id),
         )
         added_calls = set()
         for row in cur.fetchall():
@@ -975,7 +976,7 @@ class Pipeline:
         # 3. added_references
         cur.execute(
             "SELECT source_id, target_id, relation_type FROM \"references\" WHERE repository_id = ? AND version_id = ?",
-            (actual_repo_id, head_sha),
+            (actual_repo_id, head_version_id),
         )
         added_references = set()
         for row in cur.fetchall():
@@ -989,7 +990,7 @@ class Pipeline:
         cur.execute(
             "SELECT source_file_id, target_file_id, module, imported_name, import_type "
             "FROM imports WHERE repository_id = ? AND version_id = ?",
-            (actual_repo_id, head_sha),
+            (actual_repo_id, head_version_id),
         )
         added_imports = set()
         for row in cur.fetchall():
@@ -1004,7 +1005,7 @@ class Pipeline:
         # 5. added_type_relationships
         cur.execute(
             "SELECT source_id, target_id, relationship_type FROM type_relationships WHERE repository_id = ? AND version_id = ?",
-            (actual_repo_id, head_sha),
+            (actual_repo_id, head_version_id),
         )
         added_type_relationships = set()
         for row in cur.fetchall():
@@ -1017,7 +1018,7 @@ class Pipeline:
         # 6. added_endpoints
         cur.execute(
             "SELECT id, symbol_id, method, path, framework FROM endpoints WHERE repository_id = ? AND version_id = ?",
-            (actual_repo_id, head_sha),
+            (actual_repo_id, head_version_id),
         )
         added_endpoints = set()
         for row in cur.fetchall():
@@ -1032,7 +1033,7 @@ class Pipeline:
         # 7. added_database_relationships
         cur.execute(
             "SELECT symbol_id, resource_id, relationship_type FROM database_relationships WHERE repository_id = ? AND version_id = ?",
-            (actual_repo_id, head_sha),
+            (actual_repo_id, head_version_id),
         )
         added_database_relationships = set()
         for row in cur.fetchall():
@@ -1045,7 +1046,7 @@ class Pipeline:
         # 8. added_event_publications
         cur.execute(
             "SELECT symbol_id, event_id, publication_type FROM event_publications WHERE repository_id = ? AND version_id = ?",
-            (actual_repo_id, head_sha),
+            (actual_repo_id, head_version_id),
         )
         added_event_publications = set()
         for row in cur.fetchall():
@@ -1058,7 +1059,7 @@ class Pipeline:
         # 9. added_event_subscriptions
         cur.execute(
             "SELECT symbol_id, event_id, subscription_type FROM event_subscriptions WHERE repository_id = ? AND version_id = ?",
-            (actual_repo_id, head_sha),
+            (actual_repo_id, head_version_id),
         )
         added_event_subscriptions = set()
         for row in cur.fetchall():
@@ -1071,7 +1072,7 @@ class Pipeline:
         # 10. added_test_relationships
         cur.execute(
             "SELECT test_symbol_id, target_symbol_id, relationship_type FROM test_relationships WHERE repository_id = ? AND version_id = ?",
-            (actual_repo_id, head_sha),
+            (actual_repo_id, head_version_id),
         )
         added_test_relationships = set()
         for row in cur.fetchall():
@@ -1121,6 +1122,11 @@ class Pipeline:
             base_commit=base_sha,
             budget=budget,
         )
+        if hasattr(resolver.planner, "set_symbol_fqn_map"):
+            resolver.planner.set_symbol_fqn_map(indexer._symbol_fqn_map)
+        
+        # Link resolver to base view for nested lazy queries
+        base_query.resolver = resolver
 
         # 8. Construct RepositoryView
         context.repository_view = RepositoryView(
@@ -1129,6 +1135,12 @@ class Pipeline:
             resolver=resolver,
             repository_id=actual_repo_id,
             commit_sha=base_sha,
+            symbol_fqn_map=indexer._symbol_fqn_map,
+        )
+
+        # Restore version context to base commit
+        self.repository_store.set_version_context(
+            actual_repo_id, actual_version_id
         )
 
         repository_view_construction_duration += (time.perf_counter() - t_view_start) * 1000.0
@@ -1567,7 +1579,13 @@ class Pipeline:
                 added_test_relationships=set(head_facts.test_relationships),
             )
 
-            context.repository_view = RepositoryView(base_query, overlay)
+            context.repository_view = RepositoryView(
+                base=base_query,
+                overlay=overlay,
+                repository_id=repo_id,
+                commit_sha=base_sha,
+                symbol_fqn_map=head_indexer._symbol_fqn_map,
+            )
             compile_duration = time.perf_counter() - start_time
 
         context.mark_repository_compiled()
@@ -1736,6 +1754,15 @@ class Pipeline:
                 base_query = context.base_query or getattr(
                     context.repository_view, "base", None
                 )
+                if getattr(context.repository_view, "resolver", None) is not None:
+                    # Wrap base_query in a RepositoryView with empty overlay to propagate lazy resolution
+                    base_query = RepositoryView(
+                        base=base_query,
+                        overlay=RepositoryOverlay(),
+                        resolver=context.repository_view.resolver,
+                        repository_id=context.repository_view.repository_id,
+                        commit_sha=context.repository_view.commit_sha,
+                    )
                 head_query = context.repository_view
                 context.change_facts = self._change_compiler.compile(
                     diff=context.diff_data,

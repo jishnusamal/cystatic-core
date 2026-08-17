@@ -74,16 +74,17 @@ class DependencyModel:
             object.__setattr__(self, "fan_out", dict(self.fan_out))
 
 
-def _service_of(symbol_id: str) -> str:
+def _service_of(symbol_id: Any) -> str:
     """Extract the top-level service/module from a symbol id.
 
     Symbol ids are formatted as ``<language>://<path>#<name>`` or
     ``<language>://<path>::<name>``. The service is the first path segment.
     """
-    if "://" in symbol_id:
-        rest = symbol_id.split("://", 1)[1]
+    symbol_id_str = str(symbol_id)
+    if "://" in symbol_id_str:
+        rest = symbol_id_str.split("://", 1)[1]
     else:
-        rest = symbol_id
+        rest = symbol_id_str
     path = rest.split("#", 1)[0].split("::", 1)[0]
     parts = path.split("/", 1)
     return parts[0] if parts else path

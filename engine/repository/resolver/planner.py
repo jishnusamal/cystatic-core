@@ -51,6 +51,14 @@ class DefaultRequirementPlanner:
     def __init__(self, store: RepositoryStore, source: RepositoryProvider) -> None:
         self.store = store
         self.source = source
+        self.indexer = None
+        self.symbol_fqn_map = None
+
+    def set_indexer(self, indexer) -> None:
+        self.indexer = indexer
+
+    def set_symbol_fqn_map(self, fqn_map) -> None:
+        self.symbol_fqn_map = fqn_map
 
     # ---------------------------------------------------------------------
     # Helper methods – largely identical to the previous implementation
@@ -156,6 +164,31 @@ class DefaultRequirementPlanner:
         req: SymbolResolutionRequirement,
         paths: Set[str],
     ) -> None:
+        # Check if symbol is unresolved
+        symbol_name = None
+        lookup_key = req.symbol_id
+        if isinstance(req.symbol_id, str) and req.symbol_id.isdigit():
+            lookup_key = int(req.symbol_id)
+        elif isinstance(req.symbol_id, int):
+            lookup_key = req.symbol_id
+
+        fqn = None
+        if hasattr(self, "symbol_fqn_map") and self.symbol_fqn_map:
+            fqn = self.symbol_fqn_map.get(lookup_key)
+        # Also check the base materializer's indexer FQN map — covers unresolved IDs
+        # assigned by the base indexer during lazy materialization.
+        if fqn is None and hasattr(self, "indexer") and self.indexer:
+            fqn = self.indexer._symbol_fqn_map.get(lookup_key)
+
+        if fqn and fqn.startswith("unresolved://"):
+            symbol_name = fqn[len("unresolved://"):]
+
+        if symbol_name:
+            if hasattr(self.source, "filter_paths_containing"):
+                matching = await self.source.filter_paths_containing(symbol_name, list(self._get_all_tree_entries(repository_id, commit_sha).keys()))
+                paths.update(matching)
+            return
+
         def_path = self._get_path_from_symbol_id(repository_id, commit_sha, req.symbol_id)
         if def_path and not self.store.is_materialized(repository_id, commit_sha, def_path):
             paths.add(def_path)
@@ -210,6 +243,10 @@ class DefaultRequirementPlanner:
             p for p, entry in tree_entries.items()
             if entry.get("type") == "blob" and not self.store.is_materialized(repository_id, commit_sha, p)
         ]
+        if hasattr(self.source, "filter_paths_containing"):
+            matching = await self.source.filter_paths_containing(module_name, unmaterialized)
+            paths.update(matching)
+            return
         batch_size = 50
         for i in range(0, len(unmaterialized), batch_size):
             batch = unmaterialized[i : i + batch_size]
@@ -235,6 +272,10 @@ class DefaultRequirementPlanner:
             p for p, entry in tree_entries.items()
             if entry.get("type") == "blob" and not self.store.is_materialized(repository_id, commit_sha, p)
         ]
+        if hasattr(self.source, "filter_paths_containing"):
+            matching = await self.source.filter_paths_containing(symbol_name, unmaterialized)
+            paths.update(matching)
+            return
         batch_size = 50
         for i in range(0, len(unmaterialized), batch_size):
             batch = unmaterialized[i : i + batch_size]
@@ -260,6 +301,13 @@ class DefaultRequirementPlanner:
             if entry.get("type") == "blob" and not self.store.is_materialized(repository_id, commit_sha, p)
         ]
         event_str = str(event_id)
+        if hasattr(self.source, "filter_paths_containing"):
+            matching = set()
+            for kw in (event_str, "subscribe", "consumer"):
+                m = await self.source.filter_paths_containing(kw, unmaterialized)
+                matching.update(m)
+            paths.update(matching)
+            return
         batch_size = 50
         for i in range(0, len(unmaterialized), batch_size):
             batch = unmaterialized[i : i + batch_size]
@@ -283,6 +331,13 @@ class DefaultRequirementPlanner:
             p for p, entry in tree_entries.items()
             if entry.get("type") == "blob" and not self.store.is_materialized(repository_id, commit_sha, p)
         ]
+        if hasattr(self.source, "filter_paths_containing"):
+            matching = set()
+            for kw in ("@app.", "FastAPI", "Blueprint", "def main", "if __name__"):
+                m = await self.source.filter_paths_containing(kw, unmaterialized)
+                matching.update(m)
+            paths.update(matching)
+            return
         batch_size = 50
         for i in range(0, len(unmaterialized), batch_size):
             batch = unmaterialized[i : i + batch_size]
