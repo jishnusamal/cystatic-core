@@ -1,5 +1,9 @@
+from __future__ import annotations
+
 import os
-from typing import Set, Sequence, Union, Any
+from dataclasses import dataclass
+from typing import Collection, Tuple, Set, Protocol
+
 from engine.repository.store import RepositoryStore
 from engine.repository.query import SymbolId, FileId, EventId
 from integrations.base import RepositoryProvider
@@ -10,28 +14,98 @@ from .requirements import (
     EventResolutionRequirement,
     AllEntryPointsRequirement,
 )
+from .materialization.request import MaterializationRequest
 
-class RequirementPlanner:
-    """
-    Plans which files need to be materialized/indexed to satisfy resolution requirements.
-    """
+# ---------------------------------------------------------------------------
+# Planner contract (protocol)
+# ---------------------------------------------------------------------------
 
-    def __init__(
-        self,
-        store: RepositoryStore,
-        source: RepositoryProvider,
-    ) -> None:
-        self.store = store
-        self.source = source
+class RequirementPlanner(Protocol):
+    """Protocol for planning which repository paths need to be materialized.
+
+    Implementations must provide an async ``plan`` method that receives a
+    collection of ``ResolutionRequirement`` objects and returns one or more
+    :class:`MaterializationRequest` instances.
+    """
 
     async def plan(
         self,
         repository_id: str,
         commit_sha: str,
-        requirements: Sequence[ResolutionRequirement],
-    ) -> Set[str]:
+        requirements: Collection[ResolutionRequirement],
+    ) -> Tuple[MaterializationRequest, ...]:
+        ...
+
+# ---------------------------------------------------------------------------
+# Default implementation – retains legacy behaviour for now
+# ---------------------------------------------------------------------------
+
+class DefaultRequirementPlanner:
+    """Concrete planner used by the resolver.
+
+    For the initial phase we keep the behaviour of the previous planner but
+    adapt the return type to ``MaterializationRequest``.  Future work will replace
+    the rule‑based logic with the ``engine.repository.resolver.planning`` package.
+    """
+
+    def __init__(self, store: RepositoryStore, source: RepositoryProvider) -> None:
+        self.store = store
+        self.source = source
+
+    # ---------------------------------------------------------------------
+    # Helper methods – largely identical to the previous implementation
+    # ---------------------------------------------------------------------
+
+    def _get_path_from_file_id(self, repository_id: str, commit_sha: str, file_ref: FileId | str) -> str | None:
+        """Resolve a ``FileId`` or raw path string to a relative file path."""
+        if isinstance(file_ref, str):
+            return file_ref
+        file_obj = self.store.get_file(file_ref)
+        if file_obj:
+            return file_obj.path
+        return None
+
+    def _get_path_from_symbol_id(self, repository_id: str, commit_sha: str, symbol_id: SymbolId) -> str | None:
+        """Find the file that defines the given symbol, if known."""
+        symbol = self.store.get_symbol(symbol_id)
+        if symbol:
+            return self._get_path_from_file_id(repository_id, commit_sha, symbol.file_id)
+        return None
+
+    def _get_all_tree_entries(self, repository_id: str, commit_sha: str) -> dict[str, dict[str, object]]:
+        """Return a dict mapping path → metadata for every entry in the repo tree.
+
+        The store may expose a low‑level SQLite connection; we fall back to an empty
+        dict if that attribute is missing.
         """
-        Produce a set of file paths that must be materialized to satisfy the requirements.
+        if hasattr(self.store, "conn"):
+            cur = self.store.conn.cursor()
+            cur.execute(
+                "SELECT path, type, blob_sha, size FROM repository_tree WHERE repository_id = ? AND commit_sha = ?",
+                (repository_id, commit_sha),
+            )
+            return {
+                row["path"]: {"path": row["path"], "type": row["type"], "blob_sha": row["blob_sha"], "size": row["size"]}
+                for row in cur.fetchall()
+            }
+        return {}
+
+    # ---------------------------------------------------------------------
+    # Core planning entry‑point
+    # ---------------------------------------------------------------------
+
+    async def plan(
+        self,
+        repository_id: str,
+        commit_sha: str,
+        requirements: Collection[ResolutionRequirement],
+    ) -> Tuple[MaterializationRequest, ...]:
+        """Generate ``MaterializationRequest`` objects for a batch of requirements.
+
+        The current implementation mirrors the legacy behaviour: it gathers a set
+        of candidate file paths and returns a single request with reason
+        ``"resolution"``.  The result is deterministic because the paths are
+        sorted before constructing the request.
         """
         paths_to_materialize: Set[str] = set()
 
@@ -45,44 +119,17 @@ class RequirementPlanner:
             elif isinstance(req, AllEntryPointsRequirement):
                 await self._plan_all_entry_points(repository_id, commit_sha, paths_to_materialize)
 
-        return paths_to_materialize
+        request = MaterializationRequest(
+            repository_id=repository_id,
+            commit_sha=commit_sha,
+            paths=tuple(sorted(paths_to_materialize)),
+            reason="resolution",
+        )
+        return (request,)
 
-    def _get_path_from_file_id(self, repository_id: str, commit_sha: str, file_ref: Union[FileId, str]) -> str | None:
-        """Resolve a FileId or path string to a relative file path."""
-        if isinstance(file_ref, str):
-            return file_ref
-        
-        file_obj = self.store.get_file(file_ref)
-        if file_obj:
-            return file_obj.path
-        return None
-
-    def _get_path_from_symbol_id(self, repository_id: str, commit_sha: str, symbol_id: SymbolId) -> str | None:
-        """Get file path containing the given symbol ID."""
-        symbol = self.store.get_symbol(symbol_id)
-        if symbol:
-            return self._get_path_from_file_id(repository_id, commit_sha, symbol.file_id)
-        return None
-
-    def _get_all_tree_entries(self, repository_id: str, commit_sha: str) -> dict[str, dict[str, Any]]:
-        """Retrieve all tree entries from the store (bypassing paths constraint)."""
-        if hasattr(self.store, "conn"):
-            cur = self.store.conn.cursor()
-            cur.execute(
-                "SELECT path, type, blob_sha, size FROM repository_tree "
-                "WHERE repository_id = ? AND commit_sha = ?",
-                (repository_id, commit_sha),
-            )
-            return {
-                row["path"]: {
-                    "path": row["path"],
-                    "type": row["type"],
-                    "blob_sha": row["blob_sha"],
-                    "size": row["size"],
-                }
-                for row in cur.fetchall()
-            }
-        return {}
+    # ---------------------------------------------------------------------
+    # Individual planning helpers (unchanged from previous version)
+    # ---------------------------------------------------------------------
 
     async def _plan_file(
         self,
@@ -94,7 +141,6 @@ class RequirementPlanner:
         path = self._get_path_from_file_id(repository_id, commit_sha, req.file_id)
         if not path:
             return
-
         if req.query_type in ("file", "symbols"):
             if not self.store.is_materialized(repository_id, commit_sha, path):
                 paths.add(path)
@@ -113,12 +159,10 @@ class RequirementPlanner:
         def_path = self._get_path_from_symbol_id(repository_id, commit_sha, req.symbol_id)
         if def_path and not self.store.is_materialized(repository_id, commit_sha, def_path):
             paths.add(def_path)
-
         if req.query_type in ("callers", "references_to", "type_dependents", "tests"):
             symbol_obj = self.store.get_symbol(req.symbol_id)
             if not symbol_obj:
                 return
-
             coverage = self.store.get_materialization_coverage(repository_id, commit_sha)
             if coverage.materialized_files < coverage.known_files:
                 await self._scan_for_symbol_references(
@@ -146,6 +190,10 @@ class RequirementPlanner:
         if coverage.materialized_files < coverage.known_files:
             await self._scan_for_entry_points(repository_id, commit_sha, paths)
 
+    # ---------------------------------------------------------------------
+    # Scanning helpers – unchanged
+    # ---------------------------------------------------------------------
+
     async def _scan_for_imports(
         self,
         repository_id: str,
@@ -157,13 +205,11 @@ class RequirementPlanner:
         module_name, _ = os.path.splitext(base_name)
         if not module_name:
             return
-
         tree_entries = self._get_all_tree_entries(repository_id, commit_sha)
         unmaterialized = [
             p for p, entry in tree_entries.items()
             if entry.get("type") == "blob" and not self.store.is_materialized(repository_id, commit_sha, p)
         ]
-
         batch_size = 50
         for i in range(0, len(unmaterialized), batch_size):
             batch = unmaterialized[i : i + batch_size]
@@ -189,7 +235,6 @@ class RequirementPlanner:
             p for p, entry in tree_entries.items()
             if entry.get("type") == "blob" and not self.store.is_materialized(repository_id, commit_sha, p)
         ]
-
         batch_size = 50
         for i in range(0, len(unmaterialized), batch_size):
             batch = unmaterialized[i : i + batch_size]
@@ -206,7 +251,7 @@ class RequirementPlanner:
         self,
         repository_id: str,
         commit_sha: str,
-        event_id: Union[EventId, int, str],
+        event_id: EventId | int | str,
         paths: Set[str],
     ) -> None:
         tree_entries = self._get_all_tree_entries(repository_id, commit_sha)
@@ -214,9 +259,7 @@ class RequirementPlanner:
             p for p, entry in tree_entries.items()
             if entry.get("type") == "blob" and not self.store.is_materialized(repository_id, commit_sha, p)
         ]
-
         event_str = str(event_id)
-
         batch_size = 50
         for i in range(0, len(unmaterialized), batch_size):
             batch = unmaterialized[i : i + batch_size]
@@ -240,7 +283,6 @@ class RequirementPlanner:
             p for p, entry in tree_entries.items()
             if entry.get("type") == "blob" and not self.store.is_materialized(repository_id, commit_sha, p)
         ]
-
         batch_size = 50
         for i in range(0, len(unmaterialized), batch_size):
             batch = unmaterialized[i : i + batch_size]
