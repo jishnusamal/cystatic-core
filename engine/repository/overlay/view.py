@@ -171,6 +171,8 @@ class RepositoryView(RepositoryQuery):
                 # Trigger resolution!
                 from engine.repository.resolver.requirements import SymbolResolutionRequirement
                 req = SymbolResolutionRequirement(unresolved_id, "symbols")
+                if self.resolver is None:
+                    return unresolved_id
                 self._resolved_requirements.add(req)
                 self.resolver.resolve_sync(repo_id, self.commit_sha, [req])
 
