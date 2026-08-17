@@ -22,11 +22,7 @@ http:
       //   "pr_url": "https://github.com/polarsource/polar/pull/9204"
       // }
       // {
-      //     "repo": "usefactorapp/cystatic-demo-python-app",
-      //     "pr_number": 3
-      // }
-      // {
-      //     "pr_url": "https://github.com/getsentry/sentry/pull/122120"
+      //     "pr_url": "https://github.com/stripe/stripe-python/pull/1878"
       // }
 
 settings:
