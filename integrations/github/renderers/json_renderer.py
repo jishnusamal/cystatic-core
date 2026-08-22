@@ -200,15 +200,28 @@ class JSONRenderer:
         }
 
     def _render_behavior(self, behavior: Any) -> dict[str, Any]:
-        """Render BehaviorModel to dictionary."""
-        return {
-            "behaviors_count": len(behavior.behaviors),
-            "execution_graphs_count": len(behavior.execution_graphs),
-            "behaviors": [self._render_behavior_summary(b) for b in behavior.behaviors],
-            "execution_graphs": [
-                self._render_execution_graph(g) for g in behavior.execution_graphs
-            ],
-        }
+        """Render BehaviorModel or ImpactSurface to dictionary."""
+        if hasattr(behavior, "behaviors"):
+            return {
+                "behaviors_count": len(behavior.behaviors),
+                "execution_graphs_count": len(behavior.execution_graphs),
+                "behaviors": [self._render_behavior_summary(b) for b in behavior.behaviors],
+                "execution_graphs": [
+                    self._render_execution_graph(g) for g in behavior.execution_graphs
+                ],
+            }
+        else:
+            return {
+                "behaviors_count": 0,
+                "execution_graphs_count": 0,
+                "behaviors": [],
+                "execution_graphs": [],
+                "affected_symbols_count": len(getattr(behavior, "affected_symbols", ())),
+                "affected_services_count": len(getattr(behavior, "affected_services", ())),
+                "affected_endpoints_count": len(getattr(behavior, "affected_endpoints", ())),
+                "affected_databases_count": len(getattr(behavior, "affected_databases", ())),
+                "affected_events_count": len(getattr(behavior, "affected_events", ())),
+            }
 
     def _render_dependency(self, dependency: Any) -> dict[str, Any]:
         """Render DependencyModel to dictionary."""

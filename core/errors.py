@@ -44,6 +44,66 @@ class RepositoryAccessDenied(RepositoryError):
 
 
 
+class CommitNotFound(RepositoryError):
+    """Raised when a commit is not found."""
+
+
+
+class TreeNotFound(RepositoryError):
+    """Raised when a tree is not found."""
+
+
+
+class TreeTruncated(RepositoryError):
+    """Raised when a tree response from provider is truncated/incomplete."""
+
+
+
+class FileNotFound(RepositoryError):
+    """Raised when a specific file is not found in the repository."""
+
+
+
+class BlobUnavailable(RepositoryError):
+    """Raised when a blob cannot be fetched/retrieved."""
+
+
+
+class AuthenticationFailure(RepositoryError):
+    """Raised when authentication with the repository host provider fails."""
+
+
+
+class RateLimitExceeded(RepositoryError):
+    """Raised when the repository host provider's rate limit is exceeded."""
+
+
+
+class RemoteTimeout(RepositoryError):
+    """Raised when requests to the repository host provider timeout."""
+
+
+
+class PartialBatchFailure(RepositoryError):
+    """Raised when a batched file request fails partially.
+
+    Attributes:
+        successes: List of successfully retrieved RepositoryBlob objects.
+        failures: Dict mapping file paths to the Exception that caused the failure.
+    """
+
+    def __init__(self, successes: Any, failures: dict[str, Exception]) -> None:
+        message = f"Batch retrieval failed for {len(failures)} files out of {len(failures) + len(successes)}"
+        super().__init__(message, details={
+            "successes": [b.path for b in successes] if hasattr(successes, "__iter__") else [],
+            "failures": {path: str(exc) for path, exc in failures.items()}
+        })
+        self.successes = successes
+        self.failures = failures
+
+
+
+
 # ─── Webhook errors ──────────────────────────────────────────────────────────
 
 
@@ -174,6 +234,15 @@ __all__ = [
     "RepositoryNotSupported",
     "RepositoryCompilationFailed",
     "RepositoryNotInstalled",
+    "CommitNotFound",
+    "TreeNotFound",
+    "TreeTruncated",
+    "FileNotFound",
+    "BlobUnavailable",
+    "AuthenticationFailure",
+    "RateLimitExceeded",
+    "RemoteTimeout",
+    "PartialBatchFailure",
     # Webhook
     "WebhookError",
     "WebhookVerificationError",

@@ -18,6 +18,7 @@ from .types import (
     FileId,
     Import,
     ImportType,
+    QueryResult,
     Reference,
     ReferenceType,
     ResourceId,
@@ -66,4 +67,5 @@ __all__ = [
     "EventSubscriptionType",
     "TestRelationship",
     "TestRelationshipType",
+    "QueryResult",
 ]

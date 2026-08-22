@@ -6,10 +6,11 @@ No compiler logic - pure orchestration state.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from core.runtime import RunContext
+from engine.repository.metrics import RepositoryMaterializationMetrics
 
 if TYPE_CHECKING:
     from engine.behavior.model.impact_surface import ImpactSurface
@@ -76,6 +77,11 @@ class PipelineContext:
     adapter: str | None = None
     request_id: str | None = None
     installation_id: str | None = None
+
+    # Metrics
+    repository_materialization: RepositoryMaterializationMetrics = field(
+        default_factory=RepositoryMaterializationMetrics
+    )
 
     # Timing
     compile_started_at: float | None = None
@@ -183,4 +189,7 @@ class PipelineContext:
             "render_time": self.render_time,
             "total_time": self.total_time,
             "has_error": self.error is not None,
+            "repository_materialization": self.repository_materialization.snapshot()
+            if self.repository_materialization
+            else None,
         }

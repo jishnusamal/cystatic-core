@@ -40,6 +40,20 @@ class MockRepositoryProvider(RepositoryProvider):
     async def fetch_commit(self, repo_ref, sha):
         return {}
 
+    async def get_commit(self, repository, sha):
+        from integrations.base import RepositoryCommit
+        return RepositoryCommit(sha=sha, repository=repository)
+
+    async def get_tree(self, repository, sha):
+        return []
+
+    async def get_file(self, repository, path, ref):
+        from integrations.base import RepositoryBlob
+        return RepositoryBlob(path=path, sha="mock", size=0, content=b"")
+
+    async def get_files(self, repository, paths, ref):
+        return []
+
 
 @pytest.mark.asyncio
 async def test_pipeline_logging():
@@ -91,3 +105,20 @@ async def test_pipeline_logging():
         assert "[pipeline]" in pipeline_log
         assert "Factor Analysis" in pipeline_log
         assert context.run_context.run_id in pipeline_log
+        assert "repository_materialization" in pipeline_log
+        assert '"event": "repository_materialization"' in pipeline_log
+        assert "Repository materialization:" in pipeline_log
+        assert "files: 2 / 2 (100.00%)" in pipeline_log
+
+    # Verify context metrics properties directly
+    assert context.repository_materialization is not None
+    assert context.repository_materialization.repository_files == 2
+    assert context.repository_materialization.materialized_files == 2
+    assert context.repository_materialization.materialization_ratio == 1.0
+    assert context.repository_materialization.materialization_percent == 100.0
+    snap = context.repository_materialization.snapshot()
+    assert snap["repository_files"] == 2
+    assert snap["materialized_files"] == 2
+    assert snap["materialization_ratio"] == 1.0
+    assert snap["materialization_percent"] == 100.0
+

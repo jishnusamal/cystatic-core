@@ -142,6 +142,41 @@ CREATE TABLE IF NOT EXISTS test_relationships (
     relationship_type TEXT NOT NULL,
     FOREIGN KEY (version_id) REFERENCES repository_versions(id)
 );
+CREATE TABLE IF NOT EXISTS repository_metadata (
+    repository_id TEXT NOT NULL,
+    commit_sha TEXT NOT NULL,
+    tree_complete INTEGER NOT NULL DEFAULT 0,
+    indexed_complete INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (repository_id, commit_sha)
+);
+
+CREATE TABLE IF NOT EXISTS repository_tree (
+    repository_id TEXT NOT NULL,
+    commit_sha TEXT NOT NULL,
+    path TEXT NOT NULL,
+    type TEXT NOT NULL,
+    blob_sha TEXT,
+    size INTEGER,
+    PRIMARY KEY (repository_id, commit_sha, path)
+);
+
+CREATE TABLE IF NOT EXISTS repository_materialization (
+    repository_id TEXT NOT NULL,
+    commit_sha TEXT NOT NULL,
+    path TEXT NOT NULL,
+    blob_sha TEXT NOT NULL,
+    indexed_status TEXT NOT NULL,
+    indexed_at TEXT NOT NULL,
+    PRIMARY KEY (repository_id, commit_sha, path)
+);
+
+CREATE TABLE IF NOT EXISTS blob_fact_cache (
+    blob_sha TEXT NOT NULL,
+    fact_type TEXT NOT NULL,
+    fact_identity TEXT NOT NULL,
+    fact_payload TEXT NOT NULL,
+    PRIMARY KEY (blob_sha, fact_type, fact_identity)
+);
 """
 
 CREATE_INDEXES_SQL = """
@@ -179,4 +214,8 @@ CREATE INDEX IF NOT EXISTS idx_event_subscriptions_event ON event_subscriptions 
 
 CREATE INDEX IF NOT EXISTS idx_test_relationships_file ON test_relationships (repository_id, version_id, file_id);
 CREATE INDEX IF NOT EXISTS idx_test_relationships_target ON test_relationships (repository_id, version_id, target_symbol_id);
+
+CREATE INDEX IF NOT EXISTS idx_repo_tree_commit ON repository_tree (repository_id, commit_sha);
+CREATE INDEX IF NOT EXISTS idx_repo_mat_commit ON repository_materialization (repository_id, commit_sha);
 """
+
