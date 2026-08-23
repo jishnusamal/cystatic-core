@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+from engine.change.passes.file_classification import FileClassification
+
 
 @dataclass
 class ChangePassContext:
@@ -15,6 +17,13 @@ class ChangePassContext:
 
     # Input from git diff
     diff_data: dict[str, Any] = field(default_factory=dict)
+
+    # Pass 0 output: File role classification
+    file_classifications: dict[str, FileClassification] = field(
+        default_factory=dict
+    )
+    analysis_eligible_files: set[str] = field(default_factory=set)
+    excluded_files: set[str] = field(default_factory=set)
 
     # Pass 1 output: Changed symbols
     added_symbols: list = field(default_factory=list)

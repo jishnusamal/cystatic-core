@@ -3,12 +3,24 @@
 from typing import Any
 
 
+from engine.change.compiler.passes import (
+    ChangeClassificationPass,
+    ChangedSymbolsPass,
+    FileClassificationPass,
+)
 from engine.change.model import (
     ChangedSymbol,
     ChangeFacts,
     ContractChange,
 )
 from engine.change.model.repository_comparison import RepositoryComparison
+from engine.change.passes.file_classification import (
+    AnalysisPolicy,
+    DEFAULT_ANALYSIS_POLICY,
+    FileClassification,
+    FileClassifier,
+    detect_language,
+)
 from engine.repository.facts import Call, FileId, Import, Reference, SymbolId
 from engine.repository.query import RepositoryQuery, QueryResult
 
@@ -141,7 +153,34 @@ class ChangeCompiler:
 
     Processes the diff (local files modified) and compares facts locally
     using RepositoryQuery instead of repository-wide full model comparisons.
+
+    Pass chain::
+
+        ChangeCompiler
+         ├── FileClassificationPass   (role classification + analysis eligibility)
+         ├── ChangedSymbolsPass       (semantic symbol diff)
+         └── ChangeClassificationPass (structural change classification)
     """
+
+    def __init__(
+        self,
+        classifier: FileClassifier | None = None,
+        policy: AnalysisPolicy | None = None,
+    ) -> None:
+        self.classifier = classifier or FileClassifier()
+        self.policy = policy or DEFAULT_ANALYSIS_POLICY
+
+        # Canonical pass order; FileClassificationPass must run first so that
+        # excluded files never reach semantic change analysis.
+        self.passes = (
+            FileClassificationPass(self.classifier, self.policy),
+            ChangedSymbolsPass(),
+            ChangeClassificationPass(),
+        )
+
+        # Diagnostics from the most recent compile() run.
+        self.last_file_classifications: dict[str, FileClassification] = {}
+        self.last_excluded_files: frozenset[str] = frozenset()
 
     def compile(
         self,
@@ -194,6 +233,24 @@ class ChangeCompiler:
                 changed_files = {f.path for f in base_query._facts.files} | {
                     f.path for f in head_query._facts.files
                 }
+
+        # 2.5 File role classification — analysis eligibility gate.
+        #     Frontend TS/TSX and generated files are excluded before any
+        #     semantic change analysis is performed.
+        file_classifications: dict[str, FileClassification] = {
+            file_path: self.classifier.classify(file_path)
+            for file_path in sorted(changed_files)
+        }
+        excluded_files = frozenset(
+            file_path
+            for file_path, classification in file_classifications.items()
+            if not self.policy.is_analyzable(
+                classification, detect_language(file_path)
+            )
+        )
+        changed_files -= set(excluded_files)
+        self.last_file_classifications = file_classifications
+        self.last_excluded_files = excluded_files
 
         changed_symbols = []
         added_calls = []
