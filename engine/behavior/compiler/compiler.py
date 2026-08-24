@@ -134,7 +134,7 @@ class BehaviorCompiler:
         # Phase 8: We no longer run the legacy passes that depend on the materialized graph.
         # Instead, we return the ImpactSurface produced by bounded traversal.
         assert impact_surface is not None
-        return impact_surface
+        return impact_surface  # type: ignore[return-value]
 
     def _build_behavior_model(self, context: BehaviorPassContext) -> BehaviorModel:
         """

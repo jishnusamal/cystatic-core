@@ -239,7 +239,7 @@ class GitHubRepositoryProvider(RepositoryProvider):
 
         # Extract files from the zip archive
         files = {}
-            tree_entries: list[dict[str, str]] = []
+        zip_tree_entries: list[dict[str, str]] = []
 
         with zipfile.ZipFile(io.BytesIO(zip_content)) as zf:
             all_names = zf.namelist()
@@ -259,7 +259,7 @@ class GitHubRepositoryProvider(RepositoryProvider):
                     continue
 
                 if zf.getinfo(name).is_dir():
-                    tree_entries.append(
+                    zip_tree_entries.append(
                         {
                             "path": relative_name.rstrip("/"),
                             "type": "tree",
@@ -267,7 +267,7 @@ class GitHubRepositoryProvider(RepositoryProvider):
                         }
                     )
                 else:
-                    tree_entries.append(
+                    zip_tree_entries.append(
                         {
                             "path": relative_name,
                             "type": "blob",
@@ -291,7 +291,7 @@ class GitHubRepositoryProvider(RepositoryProvider):
 
         tree = {
             "sha": "",
-            "tree": tree_entries,
+            "tree": zip_tree_entries,
             "truncated": False,
         }
 

@@ -238,8 +238,8 @@ class RepositoryResolver:
             missing_paths: set[str] = set()
             size_by_path: dict[str, int] = {}
 
-            for req in candidate_requests:
-                for p in req.paths:
+            for mat_req in candidate_requests:
+                for p in mat_req.paths:
                     if not self.store.is_materialized(repository_id, commit_sha, p):
                         missing_paths.add(p)
 

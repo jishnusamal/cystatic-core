@@ -2,7 +2,7 @@
 
 from collections import deque
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from engine.behavior.model.impact_surface import ImpactSurface
 from engine.repository.query import SymbolId
@@ -79,7 +79,7 @@ class ImpactEngine:
 
             # Fetch callers via repository query
             # get_callers returns calls targeting current_id (i.e. caller calls current_id)
-            callers = repository_query.get_callers(SymbolId(current_id))
+            callers = repository_query.get_callers(cast(SymbolId, current_id))
             for call in callers:
                 caller_id_str = str(call.caller_id)
                 if caller_id_str not in visited_up:
@@ -96,12 +96,16 @@ class ImpactEngine:
 
             # Check database dependencies and events
             if capabilities is None or getattr(capabilities, "persistence", True):
-                dbs = repository_query.get_database_relationships(SymbolId(current_id))
+                dbs = repository_query.get_database_relationships(
+                    cast(SymbolId, current_id)
+                )
                 for db in dbs:
                     affected_databases.add(db)
 
             if capabilities is None or getattr(capabilities, "events", True):
-                events = repository_query.get_published_events(SymbolId(current_id))
+                events = repository_query.get_published_events(
+                    cast(SymbolId, current_id)
+                )
                 for ev in events:
                     affected_events.add(ev)
 
@@ -109,7 +113,7 @@ class ImpactEngine:
                 continue
 
             # Fetch callees
-            callees = repository_query.get_callees(SymbolId(current_id))
+            callees = repository_query.get_callees(cast(SymbolId, current_id))
             for call in callees:
                 callee_id_str = str(call.callee_id)
                 if callee_id_str not in visited_down:

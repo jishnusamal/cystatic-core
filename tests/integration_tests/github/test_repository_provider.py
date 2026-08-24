@@ -3,7 +3,7 @@ import json
 from unittest.mock import MagicMock
 
 import pytest
-import requests
+import requests  # type: ignore[import-untyped]
 
 from core.errors import (
     CommitNotFound,

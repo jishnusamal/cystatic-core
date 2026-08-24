@@ -100,8 +100,11 @@ class InstrumentedRepository(RepositoryQuery):
         return result
 
     def get_symbol(self, symbol_id: SymbolId) -> Symbol | None:
-        return self._execute_instrumented(
-            "get_symbol", lambda: self._delegate.get_symbol(symbol_id)
+        return cast(
+            "Symbol | None",
+            self._execute_instrumented(
+                "get_symbol", lambda: self._delegate.get_symbol(symbol_id)
+            ),
         )
 
     def get_symbols(self, symbol_ids: list[SymbolId]) -> QueryResult[Symbol]:
@@ -113,8 +116,11 @@ class InstrumentedRepository(RepositoryQuery):
         )
 
     def get_file(self, file_id: FileId) -> File | None:
-        return self._execute_instrumented(
-            "get_file", lambda: self._delegate.get_file(file_id)
+        return cast(
+            "File | None",
+            self._execute_instrumented(
+                "get_file", lambda: self._delegate.get_file(file_id)
+            ),
         )
 
     def get_callers(self, symbol_id: SymbolId) -> QueryResult[Call]:

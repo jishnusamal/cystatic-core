@@ -274,9 +274,9 @@ class GraphPatcher:
             for sym in contrib.symbols:
                 symbol = self.compiler._create_symbol(sym, file_path, language)
                 graph.symbols[symbol.id] = symbol
-            for imp in contrib.imports:
+            for import_entry in contrib.imports:
                 import_sym = self.compiler._create_import_symbol(
-                    imp, file_path, language
+                    import_entry, file_path, language
                 )
                 if import_sym:
                     graph.imports[import_sym.id] = import_sym

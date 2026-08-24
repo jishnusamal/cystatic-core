@@ -7,7 +7,7 @@ into the normalized LLM context artifact format.
 from typing import Any
 
 import pytest
-import yaml
+import yaml  # type: ignore[import-untyped]
 from engine.language.model import (
     CallEdge,
     CallGraph,

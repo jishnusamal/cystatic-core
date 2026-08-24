@@ -51,7 +51,7 @@ def extract_view_fqns(view: RepositoryView, base_indexer: RepositoryIndexer, hea
     
     # 1. Active Symbols
     active_symbols = {}
-    for s in view.base._facts.symbols:
+    for s in view.base._facts.symbols:  # type: ignore[attr-defined]
         if s.id not in view.overlay.removed_symbols:
             fqn = base_indexer.get_symbol_fqn(s.id)
             if fqn:
@@ -67,12 +67,13 @@ def extract_view_fqns(view: RepositoryView, base_indexer: RepositoryIndexer, hea
     # 2. Call Edges
     calls_fqns = set()
     # Base calls
-    for c in view.base._facts.calls:
+    for c in view.base._facts.calls:  # type: ignore[attr-defined]
         caller_fqn = base_indexer.get_symbol_fqn(c.caller_id)
         callee_fqn = base_indexer.get_symbol_fqn(c.callee_id)
         base_symbol = view.base.get_symbol(c.caller_id)
         if base_symbol and caller_fqn == 'python://module_3.py::func_3':
-            file_name = view.base.get_file(base_symbol.file_id).path
+            base_file = view.base.get_file(base_symbol.file_id)
+            file_name = base_file.path if base_file else "unknown"
             print(f"DEBUG CALL STACK: caller={caller_fqn}, callee={callee_fqn}, file={file_name}, in_removed={base_symbol.file_id in view.overlay.removed_files}")
             
         if view._should_skip_base_for_symbol(c.caller_id) or view._should_skip_base_for_symbol(c.callee_id):
@@ -94,7 +95,7 @@ def extract_view_fqns(view: RepositoryView, base_indexer: RepositoryIndexer, hea
     # 3. Reference Edges
     refs_fqns = set()
     # Base references
-    for r in view.base._facts.references:
+    for r in view.base._facts.references:  # type: ignore[attr-defined]
         if view._should_skip_base_for_symbol(r.source_id) or view._should_skip_base_for_symbol(r.target_id):
             continue
         if r.source_id not in active_symbols:

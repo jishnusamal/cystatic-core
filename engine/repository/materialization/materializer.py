@@ -122,9 +122,9 @@ class RepositoryMaterializer:
             # Dynamically bind the indexer sink to the requested version
             if hasattr(self.indexer, "sink") and self.indexer.sink:
                 if hasattr(self.indexer.sink, "repository_id"):
-                    self.indexer.sink.repository_id = request.repository_id
+                    self.indexer.sink.repository_id = request.repository_id  # type: ignore[union-attr]
                 if hasattr(self.indexer.sink, "version_id"):
-                    self.indexer.sink.version_id = version_id
+                    self.indexer.sink.version_id = version_id  # type: ignore[union-attr]
 
             # 3. Query repository tree entries to validate paths and get expected info
             tree_entries = self.store.get_tree_entries(

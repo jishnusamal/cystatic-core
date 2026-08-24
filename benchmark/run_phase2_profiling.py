@@ -311,7 +311,7 @@ class DiagnosticProfiler:
         )
         await pipeline._fetch_diff(context, analysis_request_obj)
 
-        changed_files_dict = {}
+        changed_files_dict: dict[str, str | None] = {}
         if context.diff_data and "files" in context.diff_data:
             for file_info in context.diff_data["files"]:
                 file_path = file_info["file_path"]
@@ -365,10 +365,10 @@ class DiagnosticProfiler:
         # Step H: Incremental Compilation / GraphPatcher
         print("[DIAGNOSTIC] Incremental patching on cloned graph...")
         # Get structural facts for changed files
-        changed_contribs = {}
-        for path, content in changed_files_dict.items():
-            if content is not None:
-                file_index = adapter._index_single_file(path, content, "python")
+        changed_contribs: dict[str, FileContribution | None] = {}
+        for path, changed_content in changed_files_dict.items():
+            if changed_content is not None:
+                file_index = adapter._index_single_file(path, changed_content, "python")
                 changed_contribs[path] = FileContribution.from_file_index(file_index)
             else:
                 changed_contribs[path] = None
