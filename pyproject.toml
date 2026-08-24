@@ -85,3 +85,11 @@ dev = [
     "ruff>=0.6.0",
     "mypy>=1.10.0"
 ]
+
+[tool.ruff.lint]
+# Explicitly enforce rules whose default-enablement varies across ruff versions,
+# so local envs, CI, and ruff upgrades all agree on the baseline.
+extend-select = [
+    "E402", # module-level import not at top of file
+    "E731", # lambda assigned to a name
+]

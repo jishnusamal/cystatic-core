@@ -203,7 +203,8 @@ class TypeScriptLanguageAdapter(BaseLanguageAdapter):
 
         from core.logging import pipeline_logger
 
-        log = lambda msg: pipeline_logger.log_pipeline(msg, to_terminal=False)
+        def log(msg: str) -> None:
+            pipeline_logger.log_pipeline(msg, to_terminal=False)
 
         log(
             f"[adapter] TypeScript Files: {len(files)} total, {files_parsed} parsed, {files_skipped} skipped, {files_failed} failed"

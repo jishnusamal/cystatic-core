@@ -42,16 +42,7 @@ from engine.review_context.model import (
 
 from .model import ENUM_REVERSE, ExecutionGraph, LLMContext, StringTable
 
-if TYPE_CHECKING:
-    from core.config import CompilerSettings
-
-# Regex for extracting file path and line range from location strings
-_LOCATION_RE = re.compile(r"^(.+?)(?::(\d+)(?:-(\d+))?)?$")
-
-
-# ---------------------------------------------------------------------------
 # Review-scope pruning (imported from review_scope_builder to avoid circularity)
-# ---------------------------------------------------------------------------
 from .review_scope_builder import (
     FRAMEWORK_MODULES,
     FRAMEWORK_NAMES,
@@ -61,6 +52,12 @@ from .review_scope_builder import (
     STD_LIBS,
     build_review_scope,
 )
+
+if TYPE_CHECKING:
+    from core.config import CompilerSettings
+
+# Regex for extracting file path and line range from location strings
+_LOCATION_RE = re.compile(r"^(.+?)(?::(\d+)(?:-(\d+))?)?$")
 
 
 def _parse_location(location: str) -> tuple[str, int, int]:

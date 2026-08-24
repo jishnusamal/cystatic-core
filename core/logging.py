@@ -9,8 +9,10 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 import traceback
-from contextlib import suppress
+from collections.abc import Generator
+from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
@@ -379,11 +381,6 @@ pipeline_logger = PipelineLogger()
 
 
 # ─── Timer ───────────────────────────────────────────────────────────────────
-
-
-import time
-from collections.abc import Generator
-from contextlib import contextmanager
 
 
 class Timer:
