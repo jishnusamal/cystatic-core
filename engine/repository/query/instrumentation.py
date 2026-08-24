@@ -1,7 +1,7 @@
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from engine.repository.model.repository_model import EntryPoint
 
@@ -104,9 +104,12 @@ class InstrumentedRepository(RepositoryQuery):
             "get_symbol", lambda: self._delegate.get_symbol(symbol_id)
         )
 
-    def get_symbols(self, symbol_ids: list[SymbolId]) -> tuple[Symbol, ...]:
-        return self._execute_instrumented(
-            "get_symbols", lambda: self._delegate.get_symbols(symbol_ids)
+    def get_symbols(self, symbol_ids: list[SymbolId]) -> QueryResult[Symbol]:
+        return cast(
+            QueryResult[Symbol],
+            self._execute_instrumented(
+                "get_symbols", lambda: self._delegate.get_symbols(symbol_ids)
+            ),
         )
 
     def get_file(self, file_id: FileId) -> File | None:
@@ -114,84 +117,129 @@ class InstrumentedRepository(RepositoryQuery):
             "get_file", lambda: self._delegate.get_file(file_id)
         )
 
-    def get_callers(self, symbol_id: SymbolId) -> tuple[Call, ...]:
-        return self._execute_instrumented(
-            "get_callers", lambda: self._delegate.get_callers(symbol_id)
+    def get_callers(self, symbol_id: SymbolId) -> QueryResult[Call]:
+        return cast(
+            QueryResult[Call],
+            self._execute_instrumented(
+                "get_callers", lambda: self._delegate.get_callers(symbol_id)
+            ),
         )
 
-    def get_callees(self, symbol_id: SymbolId) -> tuple[Call, ...]:
-        return self._execute_instrumented(
-            "get_callees", lambda: self._delegate.get_callees(symbol_id)
+    def get_callees(self, symbol_id: SymbolId) -> QueryResult[Call]:
+        return cast(
+            QueryResult[Call],
+            self._execute_instrumented(
+                "get_callees", lambda: self._delegate.get_callees(symbol_id)
+            ),
         )
 
-    def get_references_from(self, symbol_id: SymbolId) -> tuple[Reference, ...]:
-        return self._execute_instrumented(
-            "get_references_from", lambda: self._delegate.get_references_from(symbol_id)
+    def get_references_from(self, symbol_id: SymbolId) -> QueryResult[Reference]:
+        return cast(
+            QueryResult[Reference],
+            self._execute_instrumented(
+                "get_references_from", lambda: self._delegate.get_references_from(symbol_id)
+            ),
         )
 
-    def get_references_to(self, symbol_id: SymbolId) -> tuple[Reference, ...]:
-        return self._execute_instrumented(
-            "get_references_to", lambda: self._delegate.get_references_to(symbol_id)
+    def get_references_to(self, symbol_id: SymbolId) -> QueryResult[Reference]:
+        return cast(
+            QueryResult[Reference],
+            self._execute_instrumented(
+                "get_references_to", lambda: self._delegate.get_references_to(symbol_id)
+            ),
         )
 
-    def get_imports(self, file_id: FileId) -> tuple[Import, ...]:
-        return self._execute_instrumented(
-            "get_imports", lambda: self._delegate.get_imports(file_id)
+    def get_imports(self, file_id: FileId) -> QueryResult[Import]:
+        return cast(
+            QueryResult[Import],
+            self._execute_instrumented(
+                "get_imports", lambda: self._delegate.get_imports(file_id)
+            ),
         )
 
-    def get_importers(self, file_id: FileId) -> tuple[Import, ...]:
-        return self._execute_instrumented(
-            "get_importers", lambda: self._delegate.get_importers(file_id)
+    def get_importers(self, file_id: FileId) -> QueryResult[Import]:
+        return cast(
+            QueryResult[Import],
+            self._execute_instrumented(
+                "get_importers", lambda: self._delegate.get_importers(file_id)
+            ),
         )
 
     def get_type_relationships(
         self, symbol_id: SymbolId
-    ) -> tuple[TypeRelationship, ...]:
-        return self._execute_instrumented(
-            "get_type_relationships",
-            lambda: self._delegate.get_type_relationships(symbol_id),
+    ) -> QueryResult[TypeRelationship]:
+        return cast(
+            QueryResult[TypeRelationship],
+            self._execute_instrumented(
+                "get_type_relationships",
+                lambda: self._delegate.get_type_relationships(symbol_id),
+            ),
         )
 
-    def get_type_dependents(self, symbol_id: SymbolId) -> tuple[TypeRelationship, ...]:
-        return self._execute_instrumented(
-            "get_type_dependents", lambda: self._delegate.get_type_dependents(symbol_id)
+    def get_type_dependents(self, symbol_id: SymbolId) -> QueryResult[TypeRelationship]:
+        return cast(
+            QueryResult[TypeRelationship],
+            self._execute_instrumented(
+                "get_type_dependents", lambda: self._delegate.get_type_dependents(symbol_id)
+            ),
         )
 
-    def get_endpoints(self, symbol_id: SymbolId) -> tuple[Endpoint, ...]:
-        return self._execute_instrumented(
-            "get_endpoints", lambda: self._delegate.get_endpoints(symbol_id)
+    def get_endpoints(self, symbol_id: SymbolId) -> QueryResult[Endpoint]:
+        return cast(
+            QueryResult[Endpoint],
+            self._execute_instrumented(
+                "get_endpoints", lambda: self._delegate.get_endpoints(symbol_id)
+            ),
         )
 
     def get_database_relationships(
         self, symbol_id: SymbolId
-    ) -> tuple[DatabaseRelationship, ...]:
-        return self._execute_instrumented(
-            "get_database_relationships",
-            lambda: self._delegate.get_database_relationships(symbol_id),
+    ) -> QueryResult[DatabaseRelationship]:
+        return cast(
+            QueryResult[DatabaseRelationship],
+            self._execute_instrumented(
+                "get_database_relationships",
+                lambda: self._delegate.get_database_relationships(symbol_id),
+            ),
         )
 
-    def get_published_events(self, symbol_id: SymbolId) -> tuple[EventPublication, ...]:
-        return self._execute_instrumented(
-            "get_published_events",
-            lambda: self._delegate.get_published_events(symbol_id),
+    def get_published_events(self, symbol_id: SymbolId) -> QueryResult[EventPublication]:
+        return cast(
+            QueryResult[EventPublication],
+            self._execute_instrumented(
+                "get_published_events",
+                lambda: self._delegate.get_published_events(symbol_id),
+            ),
         )
 
-    def get_event_consumers(self, event_id: EventId) -> tuple[EventSubscription, ...]:
-        return self._execute_instrumented(
-            "get_event_consumers", lambda: self._delegate.get_event_consumers(event_id)
+    def get_event_consumers(self, event_id: EventId) -> QueryResult[EventSubscription]:
+        return cast(
+            QueryResult[EventSubscription],
+            self._execute_instrumented(
+                "get_event_consumers", lambda: self._delegate.get_event_consumers(event_id)
+            ),
         )
 
-    def get_tests(self, symbol_id: SymbolId) -> tuple[TestRelationship, ...]:
-        return self._execute_instrumented(
-            "get_tests", lambda: self._delegate.get_tests(symbol_id)
+    def get_tests(self, symbol_id: SymbolId) -> QueryResult[TestRelationship]:
+        return cast(
+            QueryResult[TestRelationship],
+            self._execute_instrumented(
+                "get_tests", lambda: self._delegate.get_tests(symbol_id)
+            ),
         )
 
-    def get_entry_points(self) -> tuple[EntryPoint, ...]:
-        return self._execute_instrumented(
-            "get_entry_points", lambda: self._delegate.get_entry_points()
+    def get_entry_points(self) -> QueryResult[EntryPoint]:
+        return cast(
+            QueryResult[EntryPoint],
+            self._execute_instrumented(
+                "get_entry_points", lambda: self._delegate.get_entry_points()
+            ),
         )
 
-    def get_symbols_in_file(self, file_id: FileId) -> tuple[Symbol, ...]:
-        return self._execute_instrumented(
-            "get_symbols_in_file", lambda: self._delegate.get_symbols_in_file(file_id)
+    def get_symbols_in_file(self, file_id: FileId) -> QueryResult[Symbol]:
+        return cast(
+            QueryResult[Symbol],
+            self._execute_instrumented(
+                "get_symbols_in_file", lambda: self._delegate.get_symbols_in_file(file_id)
+            ),
         )

@@ -174,7 +174,7 @@ class JavaPersistenceExtractor(BaseExtractor):
         for match in re.finditer(repo_pattern, content):
             interface_name = match.group(1)
             repo_type = match.group(2)
-            entity_type = match.group(3) if match.lastindex >= 3 else ""
+            entity_type = match.group(3) if match.lastindex is not None and match.lastindex >= 3 else ""
 
             symbol_id = f"java://{file_path}#{interface_name}"
 

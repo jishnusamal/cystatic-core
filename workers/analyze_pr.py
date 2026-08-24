@@ -159,6 +159,7 @@ async def _process_pr_analysis(
             except Exception as exc:  # noqa: BLE001 -- worker task isolation; failure logged for the delivery
                 print(f"[analyze_pr] Failed to render repository artifacts: {exc}")
 
+        assert context.ocm is not None
         await output_provider.publish(context.ocm, destination)
         print(f"Successfully analyzed {repo_full_name} PR#{pr_number}")
 

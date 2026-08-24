@@ -97,7 +97,7 @@ class JavaSymbolExtractor(BaseExtractor):
         self, content: str, lines: list[str]
     ) -> list[dict[str, Any]]:
         """Extract top-level functions (methods not in classes)."""
-        functions = []
+        functions: list[dict[str, Any]] = []
         method_pattern = r"(public|private|protected)?\s*(static)?\s*\w+\s+(\w+)\s*\("
 
         for i, line in enumerate(lines, 1):

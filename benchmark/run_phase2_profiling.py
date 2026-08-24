@@ -36,7 +36,7 @@ class DiagnosticProfiler:
 
     def get_rss(self) -> float:
         gc.collect()
-        return self.process.memory_info().rss / (1024 * 1024)
+        return float(self.process.memory_info().rss / (1024 * 1024))
 
     def count_reachable_source(self) -> tuple[int, int]:
         import gc

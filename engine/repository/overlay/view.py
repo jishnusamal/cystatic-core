@@ -18,6 +18,7 @@ from engine.repository.facts import (
     TestRelationship,
     TypeRelationship,
 )
+from engine.repository.resolver.requirements import ResolutionRequirement
 from engine.repository.model.repository_model import EntryPoint, EntryPointKind
 from engine.repository.overlay.overlay import RepositoryOverlay
 from engine.repository.query import QueryResult, RepositoryQuery
@@ -56,7 +57,7 @@ class RepositoryView(RepositoryQuery):
         if not self.commit_sha and version_id:
             self.commit_sha = version_id.split("@")[-1]
 
-        self._resolved_requirements = set()
+        self._resolved_requirements: set[ResolutionRequirement] = set()
         self._last_resolution_outcome = None  # Phase 11: last ResolutionOutcome for observability
         # Phase 12: resolution mode and last fallback result for observability
         self._resolution_mode: str = "LAZY"   # "LAZY" | "FULL" | "LAZY_TO_FULL"
@@ -149,7 +150,9 @@ class RepositoryView(RepositoryQuery):
         This prevents the infinite fallback loop described in Phase 12 §20.
         """
         if hasattr(self.base, "_is_indexing_complete"):
-            return self.base._is_indexing_complete()
+            result = self.base._is_indexing_complete()
+            assert isinstance(result, bool)
+            return result
         return False
 
     def _should_fallback(self) -> bool:
@@ -188,7 +191,9 @@ class RepositoryView(RepositoryQuery):
             indexer = self.resolver.materializer.indexer
             fqn = f"unresolved://{symbol_name}"
             if fqn in indexer._symbol_id_map:
-                return indexer._symbol_id_map[fqn]
+                result = indexer._symbol_id_map[fqn]
+                assert isinstance(result, int)
+                return SymbolId(result)
         return None
 
     def _normalize_symbol_id(self, symbol_id: SymbolId) -> SymbolId:
@@ -329,7 +334,7 @@ class RepositoryView(RepositoryQuery):
         if file_id in self.overlay.added_files:
             return self.overlay.added_files[file_id]
         for f in self.overlay.added_files.values():
-            if f.path == file_id:
+            if f.id == file_id:
                 return f
         if file_id in self.overlay.removed_files:
             return None
@@ -529,7 +534,7 @@ class RepositoryView(RepositoryQuery):
             if not self._should_skip_base_for_symbol(tr.target_id) and tr not in self.overlay.removed_type_relationships:
                 resolved_target_id = self._resolve_unresolved_symbol_id(tr.target_id)
                 if self.get_symbol(resolved_target_id) is not None:
-                    v_rels.append(TypeRelationship(tr.source_id, resolved_target_id, tr.relation_type))
+                    v_rels.append(TypeRelationship(tr.source_id, resolved_target_id, tr.relationship_type))
 
         complete = True if self._is_symbol_changed(symbol_id) else base_res.complete
         res = QueryResult(tuple(v_rels + self._added_type_from.get(symbol_id, [])), complete=complete)
@@ -554,7 +559,7 @@ class RepositoryView(RepositoryQuery):
                     mapped_tr = TypeRelationship(
                         source_id=tr.source_id,
                         target_id=symbol_id,
-                        relation_type=tr.relation_type
+                        relationship_type=tr.relationship_type
                     )
                     if mapped_tr not in facts:
                         facts.append(mapped_tr)
@@ -697,18 +702,18 @@ class RepositoryView(RepositoryQuery):
                 v_eps.append(ep)
 
         for ep_list in self._added_endpoints.values():
-            for ep in ep_list:
-                sym_id_str = str(ep.symbol_id)
-                route = f"{ep.method} {ep.path}"
+            for endpoint in ep_list:
+                sym_id_str = str(endpoint.symbol_id)
+                route = f"{endpoint.method} {endpoint.path}"
                 v_eps.append(
                     EntryPoint(
                         kind=EntryPointKind.REST_ENDPOINT,
                         route=route,
                         handler_id=sym_id_str,
                         metadata={
-                            "framework": ep.framework,
-                            "method": ep.method,
-                            "path": ep.path,
+                            "framework": endpoint.framework,
+                            "method": endpoint.method,
+                            "path": endpoint.path,
                         },
                     )
                 )

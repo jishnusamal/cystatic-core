@@ -405,7 +405,7 @@ class LLMContextCompiler:
         # -----------------------------------------------------------------------
         # Step 5: Build endpoint table (retained EPs only)
         # -----------------------------------------------------------------------
-        endpoint_table = []
+        endpoint_table: list[tuple[int, int]] = []
         seen_endpoints = {}
         for ep, _ in selected_eps:
             key = (ep.method, ep.path)
@@ -511,7 +511,7 @@ class LLMContextCompiler:
         # Also update path_map in sb to use new indices (needed for get_string lookups in tests)
         new_path_map: dict[int, str] = {}
         for old_idx, path in sb.path_map.items():
-            new_idx = old_to_new.get(old_idx)
+            new_idx = old_to_new.get(old_idx, 0)
             if new_idx is not None:
                 new_path_map[new_idx] = path
 
@@ -618,7 +618,7 @@ class LLMContextCompiler:
         all_referenced = chain_symbol_ids | disc_symbol_ids
         for ep, compressed_steps in selected_eps:
             for step in compressed_steps:
-                sym = step.symbol
+                sym: Any = step.symbol
                 if sym and sym.id and sym.id not in symbol_id_map:
                     # Only add if referenced by a retained chain or discovery
                     if sym.id not in all_referenced:
@@ -656,7 +656,7 @@ class LLMContextCompiler:
         # Pass 3: Remaining discovery-referenced symbols from any retained chain (even if EP was discarded)
         for ep, compressed_steps in retained_eps:
             for step in compressed_steps:
-                sym = step.symbol
+                sym: Any = step.symbol
                 if (
                     sym
                     and sym.id

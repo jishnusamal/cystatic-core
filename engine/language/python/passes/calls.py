@@ -185,7 +185,7 @@ class PythonCallIndexPass(BaseIndexPass):
             for node in ast.walk(tree):
                 for child in ast.iter_child_nodes(node):
                     pm[id(child)] = node
-            tree._parent_map = pm
+            setattr(tree, "_parent_map", pm)
 
         return pm
 

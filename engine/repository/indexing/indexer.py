@@ -59,8 +59,8 @@ class RepositoryIndexer:
     the AST and file-scoped context before moving to the next file.
     """
 
-    def __init__(self, sink: RepositoryFactSink) -> None:
-        self.sink = sink
+    def __init__(self, sink: RepositoryFactSink | FactCapturer) -> None:
+        self.sink: RepositoryFactSink | FactCapturer = sink
         self._file_id_map: dict[str, FileId] = {}
         self._next_file_id = 1
 
@@ -326,7 +326,7 @@ class RepositoryIndexer:
 
         d = json.loads(payload_str)
         if fact_type == 'symbol':
-            fact = Symbol(
+            self.sink.add_symbol(Symbol(
                 id=self.get_or_create_symbol_id(d['id']),
                 name=d['name'],
                 file_id=self.get_or_create_file_id(d['file_id']),
@@ -336,75 +336,65 @@ class RepositoryIndexer:
                 end_line=d['end_line'],
                 visibility=SymbolVisibility(d['visibility']),
                 parent_symbol_id=self.get_or_create_symbol_id(d['parent_symbol_id']) if d['parent_symbol_id'] else None
-            )
-            self.sink.add_symbol(fact)
+            ))
         elif fact_type == 'call':
-            fact = Call(
+            self.sink.add_call(Call(
                 caller_id=self.get_or_create_symbol_id(d['caller_id']),
                 callee_id=self.get_or_create_symbol_id(d['callee_id']),
                 call_type=CallType(d['call_type'])
-            )
-            self.sink.add_call(fact)
+            ))
         elif fact_type == 'reference':
-            fact = Reference(
+            self.sink.add_reference(Reference(
                 source_id=self.get_or_create_symbol_id(d['source_id']),
                 target_id=self.get_or_create_symbol_id(d['target_id']),
                 relation_type=ReferenceType(d['relation_type'])
-            )
-            self.sink.add_reference(fact)
+            ))
         elif fact_type == 'import':
-            fact = Import(
+            self.sink.add_import(Import(
                 source_file_id=self.get_or_create_file_id(d['source_file_id']),
                 target_file_id=self.get_or_create_file_id(d['target_file_id']) if d['target_file_id'] else None,
                 module=d['module'],
                 imported_name=d['imported_name'],
                 import_type=ImportType(d['import_type'])
-            )
-            self.sink.add_import(fact)
+            ))
         elif fact_type == 'type_relationship':
-            fact = TypeRelationship(
+            self.sink.add_type_relationship(TypeRelationship(
                 source_id=self.get_or_create_symbol_id(d['source_id']),
                 target_id=self.get_or_create_symbol_id(d['target_id']),
                 relationship_type=TypeRelationshipType(d['relationship_type'])
-            )
-            self.sink.add_type_relationship(fact)
+            ))
         elif fact_type == 'endpoint':
-            fact = Endpoint(
+            self.sink.add_endpoint(Endpoint(
                 id=EndpointId(d['id']),
                 symbol_id=self.get_or_create_symbol_id(d['symbol_id']),
                 method=EndpointMethod(d['method']),
                 path=d['path'],
                 framework=d['framework']
-            )
-            self.sink.add_endpoint(fact)
+            ))
         elif fact_type == 'database_relationship':
-            fact = DatabaseRelationship(
+            self.sink.add_database_relationship(DatabaseRelationship(
                 symbol_id=self.get_or_create_symbol_id(d['symbol_id']),
                 resource_id=ResourceId(d['resource_id']),
                 relationship_type=DatabaseRelationshipType(d['relationship_type'])
-            )
-            self.sink.add_database_relationship(fact)
+            ))
         elif fact_type == 'event_publication':
-            fact = EventPublication(
+            self.sink.add_event_publication(EventPublication(
                 symbol_id=self.get_or_create_symbol_id(d['symbol_id']),
                 event_id=EventId(d['event_id']),
                 publication_type=EventPublicationType(d['publication_type'])
-            )
-            self.sink.add_event_publication(fact)
+            ))
         elif fact_type == 'event_subscription':
-            fact = EventSubscription(
+            self.sink.add_event_subscription(EventSubscription(
                 symbol_id=self.get_or_create_symbol_id(d['symbol_id']),
                 event_id=EventId(d['event_id']),
                 subscription_type=EventSubscriptionType(d['subscription_type'])
-            )
-            self.sink.add_event_subscription(fact)
+            ))
         elif fact_type == 'test_relationship':
-            fact = TestRelationship(
+            self.sink.add_test_relationship(TestRelationship(
                 test_symbol_id=self.get_or_create_symbol_id(d['test_symbol_id']),
                 target_symbol_id=self.get_or_create_symbol_id(d['target_symbol_id']),
                 relationship_type=TestRelationshipType(d['relationship_type'])
-            )
-            self.sink.add_test_relationship(fact)
+            ))
 
     def index_files(
         self,
@@ -451,7 +441,7 @@ class RepositoryIndexer:
             # Check if we can reuse blob facts
             cached_facts = None
             if has_db:
-                cached_facts = self._get_cached_facts(self.sink.store.conn, blob_sha)
+                cached_facts = self._get_cached_facts(self.sink.store.conn, blob_sha)  # type: ignore[union-attr]
 
             self.sink.begin()
             try:
@@ -499,9 +489,9 @@ class RepositoryIndexer:
 
                     # Record materialization
                     if has_db:
-                        self.sink.store.record_materialization(
-                            self.sink.repository_id,
-                            self.sink.version_id.split("@")[-1],
+                        self.sink.store.record_materialization(  # type: ignore[union-attr]
+                            self.sink.repository_id,  # type: ignore[union-attr]
+                            self.sink.version_id.split("@")[-1],  # type: ignore[union-attr]
                             file_path,
                             blob_sha,
                             "indexed",
@@ -550,12 +540,12 @@ class RepositoryIndexer:
                             self._serialize_captured_fact(name, args)
                             for name, args, kwargs in capturer.captured
                         ]
-                        self._save_cached_facts(self.sink.store.conn, blob_sha, serialized)
+                        self._save_cached_facts(self.sink.store.conn, blob_sha, serialized)  # type: ignore[union-attr]
 
                         # Record materialization
-                        self.sink.store.record_materialization(
-                            self.sink.repository_id,
-                            self.sink.version_id.split("@")[-1],
+                        self.sink.store.record_materialization(  # type: ignore[union-attr]
+                            self.sink.repository_id,  # type: ignore[union-attr]
+                            self.sink.version_id.split("@")[-1],  # type: ignore[union-attr]
                             file_path,
                             blob_sha,
                             "indexed",
@@ -570,16 +560,16 @@ class RepositoryIndexer:
                     # Failure recording is best-effort; the original error is
                     # re-raised below regardless of its outcome
                     with suppress(Exception):
-                        self.sink.store.record_materialization(
-                            self.sink.repository_id,
-                            self.sink.version_id.split("@")[-1],
+                        self.sink.store.record_materialization(  # type: ignore[union-attr]
+                            self.sink.repository_id,  # type: ignore[union-attr]
+                            self.sink.version_id.split("@")[-1],  # type: ignore[union-attr]
                             file_path,
                             blob_sha,
                             "failed",
                         )
                         # We must commit the failed status
                         if hasattr(self.sink, "store") and hasattr(self.sink.store, "conn"):
-                            self.sink.store.conn.commit()
+                            self.sink.store.conn.commit()  # type: ignore[union-attr]
                 raise
             finally:
                 if "file_index" in locals():

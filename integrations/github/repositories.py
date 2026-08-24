@@ -7,7 +7,7 @@ import base64
 from collections.abc import Sequence
 from typing import Any
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from core.errors import (
     AuthenticationFailure,
@@ -239,7 +239,7 @@ class GitHubRepositoryProvider(RepositoryProvider):
 
         # Extract files from the zip archive
         files = {}
-        tree_entries = []
+            tree_entries: list[dict[str, str]] = []
 
         with zipfile.ZipFile(io.BytesIO(zip_content)) as zf:
             all_names = zf.namelist()
@@ -776,7 +776,7 @@ class GitHubRepositoryProvider(RepositoryProvider):
                 failures[path] = FileNotFound(f"File not found in tree: {path}")
             else:
                 entry = path_to_entry[path]
-                tasks.append(fetch_blob_safe(path, entry.sha, entry.size))
+                tasks.append(fetch_blob_safe(path, entry.sha, entry.size or 0))
                 paths_to_fetch.append(path)
                 
         results = await asyncio.gather(*tasks) if tasks else []

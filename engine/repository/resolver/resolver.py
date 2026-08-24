@@ -228,7 +228,7 @@ class RepositoryResolver:
             # ----------------------------------------------------------------
             # 3. Plan candidate paths
             # ----------------------------------------------------------------
-            candidate_requests = await self.planner.plan(
+            candidate_requests: tuple[MaterializationRequest, ...] = await self.planner.plan(
                 repository_id, commit_sha, current_reqs
             )
 

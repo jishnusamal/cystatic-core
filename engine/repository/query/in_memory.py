@@ -103,7 +103,7 @@ class InMemoryRepository(RepositoryQuery):
                 EntryPoint(
                     kind=EntryPointKind.REST_ENDPOINT,
                     route=f"{ep.method} {ep.path}",
-                    handler_id=ep.symbol_id,
+                    handler_id=str(ep.symbol_id),
                     metadata={
                         "framework": ep.framework,
                         "method": ep.method,
@@ -117,7 +117,7 @@ class InMemoryRepository(RepositoryQuery):
                 EntryPoint(
                     kind=EntryPointKind.EVENT_CONSUMER,
                     route=f"event:{sub.event_id}",
-                    handler_id=sub.symbol_id,
+                    handler_id=str(sub.symbol_id),
                     metadata={
                         "subscription_type": sub.subscription_type,
                         "event_id": sub.event_id,

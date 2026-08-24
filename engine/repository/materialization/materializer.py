@@ -175,6 +175,7 @@ class RepositoryMaterializer:
                         path=path, kind=classification.kind.value
                     )
                     # Persist the exclusion explicitly: excluded ≠ missing ≠ failed.
+                    assert expected_sha is not None
                     self.store.record_materialization(
                         request.repository_id,
                         request.commit_sha,

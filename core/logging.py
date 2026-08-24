@@ -373,7 +373,7 @@ class PipelineLogger:
         mgr.write_json("call_resolution.json", self.call_resolutions)
 
         print(f"\nDetailed profile written to:\n\n{log_dir}/\n")
-        return log_dir
+        return Path(log_dir)
 
 
 # Singleton logger instance used across the pipeline

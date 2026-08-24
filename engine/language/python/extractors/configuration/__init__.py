@@ -174,7 +174,7 @@ class PythonConfigurationExtractor(BaseExtractor):
                 return f"{node.func.value.id}.{node.func.attr}"
             elif isinstance(node.func.value, ast.Attribute):
                 parts = []
-                current = node.func
+                current: ast.expr = node.func
                 while isinstance(current, ast.Attribute):
                     parts.append(current.attr)
                     current = current.value

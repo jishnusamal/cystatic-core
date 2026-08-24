@@ -185,7 +185,7 @@ class ValidationCompilationPass(OperationalCompilerPass):
                 if hasattr(repo, "get_file"):
                     f = repo.get_file(s.file_id)
                     if f is not None:
-                        return f.path
+                        return str(f.path)
                 if isinstance(s.file_id, str):
                     return s.file_id
             return ""

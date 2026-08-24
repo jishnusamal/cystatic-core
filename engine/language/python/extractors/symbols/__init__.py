@@ -85,7 +85,7 @@ class PythonSymbolExtractor(BaseExtractor):
         self, node: ast.FunctionDef | ast.AsyncFunctionDef
     ) -> dict[str, Any]:
         """Extract additional properties from a function."""
-        properties = {}
+        properties: dict[str, Any] = {}
 
         docstring = ast.get_docstring(node)
         if docstring:
@@ -99,7 +99,7 @@ class PythonSymbolExtractor(BaseExtractor):
 
     def _extract_class_properties(self, node: ast.ClassDef) -> dict[str, Any]:
         """Extract additional properties from a class."""
-        properties = {}
+        properties: dict[str, Any] = {}
 
         docstring = ast.get_docstring(node)
         if docstring:

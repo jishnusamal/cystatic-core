@@ -261,8 +261,8 @@ class ChangeCompiler:
         contract_changes = []
 
         # Helper to extract all symbol IDs for changed files
-        base_symbols_by_file = {}
-        head_symbols_by_file = {}
+        base_symbols_by_file: dict[str, list[Any]] = {}
+        head_symbols_by_file: dict[str, list[Any]] = {}
 
         # 3. Retrieve symbols scoped only to changed files
         if hasattr(base_query, "model"):
@@ -459,10 +459,10 @@ class ChangeCompiler:
                                     change_kind="modified",
                                     details={
                                         "old_visibility": b_vis.value
-                                        if hasattr(b_vis, "value")
+                                        if b_vis is not None and hasattr(b_vis, "value")
                                         else str(b_vis),
                                         "new_visibility": h_vis.value
-                                        if hasattr(h_vis, "value")
+                                        if h_vis is not None and hasattr(h_vis, "value")
                                         else str(h_vis),
                                     },
                                 )

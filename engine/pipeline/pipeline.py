@@ -360,6 +360,7 @@ class Pipeline:
                     # Counting is best-effort; fall through to the facts-based count
                     with suppress(Exception):
                         cur = context.base_query.conn.cursor()
+                        assert hasattr(context.base_query, "_get_context")
                         repo_id_ctx, version_id_ctx = context.base_query._get_context()
                         cur.execute(
                             "SELECT COUNT(*) as count FROM files WHERE repository_id = ? AND version_id = ?",
@@ -470,6 +471,7 @@ class Pipeline:
         """Fetch and compile base repository graph in a local scope to ensure source release."""
         base_fetch_start = time.perf_counter()
         try:
+            assert self.repository_provider is not None
             snapshot = await self.repository_provider.fetch_repository_at_sha(
                 request.repository, base_sha
             )
@@ -843,6 +845,7 @@ class Pipeline:
             row = cur.fetchone()
             next_id = row["max_id"] + 1 if row else 1
             
+            assert context.diff_data is not None
             for file_info in context.diff_data.get("files", []):
                 file_path = file_info["file_path"]
                 cur.execute(
@@ -859,6 +862,7 @@ class Pipeline:
 
         # 5. Fetch changed file blobs & index them
         # Sync indexer and materializer
+        assert isinstance(self.repository_store, SQLiteRepositoryStore)
         sink = PersistentFactSink(
             self.repository_store, actual_repo_id, actual_version_id
         )
@@ -940,6 +944,7 @@ class Pipeline:
                 removed_symbols.add(s.id)
 
         # Query all facts for the head version from SQL
+        assert isinstance(self.repository_store, SQLiteRepositoryStore)
         cur = self.repository_store.conn.cursor()
         head_version_id = f"{actual_repo_id}@{head_sha}"
         
@@ -1105,6 +1110,7 @@ class Pipeline:
 
         # 7. Construct RepositoryResolver
         # We need a new materializer instance for the base SHA since resolver materializes base files
+        assert isinstance(self.repository_store, SQLiteRepositoryStore)
         base_sink = PersistentFactSink(
             self.repository_store, actual_repo_id, actual_version_id
         )
@@ -1130,6 +1136,7 @@ class Pipeline:
             resolver.planner.set_symbol_fqn_map(indexer._symbol_fqn_map)
         
         # Link resolver to base view for nested lazy queries
+        assert hasattr(base_query, "resolver")
         base_query.resolver = resolver
 
         # 8. Construct RepositoryView
@@ -1395,7 +1402,7 @@ class Pipeline:
                     )
 
             context.base_query = base_query
-            language = context.language
+            language = context.language  # type: ignore[assignment]
             if language is None and base_query is not None:
                 if hasattr(base_query, "conn"):
                     # Language detection is best-effort; defaults are applied below
@@ -1461,6 +1468,7 @@ class Pipeline:
             if hasattr(base_query, "conn"):
                 try:
                     cur = base_query.conn.cursor()
+                    assert hasattr(base_query, "_get_context")
                     repo_id, version_id = base_query._get_context()
 
                     # Load files
@@ -1699,6 +1707,7 @@ class Pipeline:
                 )
                 if getattr(context.repository_view, "resolver", None) is not None:
                     # Wrap base_query in a RepositoryView with empty overlay to propagate lazy resolution
+                    assert base_query is not None
                     base_query = RepositoryView(
                         base=base_query,
                         overlay=RepositoryOverlay(),
@@ -1712,8 +1721,10 @@ class Pipeline:
                     repository=base_query,
                     head_repository=head_query,
                 )
-                context.change_model = context.change_facts
+                context.change_model = context.change_facts  # type: ignore[assignment]
             else:
+                assert context.base_repository_model is not None
+                assert context.head_repository_model is not None
                 comparison = RepositoryComparison(
                     base_model=context.base_repository_model,
                     head_model=context.head_repository_model,
@@ -1721,7 +1732,7 @@ class Pipeline:
                     base_sha=context.base_sha or "",
                     head_sha=context.head_sha or "",
                 )
-                context.change_model = self._change_compiler.compile(
+                context.change_model = self._change_compiler.compile(  # type: ignore[assignment]
                     comparison=comparison
                 )
             context.mark_change_compiled()
@@ -1767,6 +1778,7 @@ class Pipeline:
                 # Language detection is best-effort; defaults are applied below
                 with suppress(Exception):
                     cur = base_query.conn.cursor()
+                    assert hasattr(base_query, "_get_context")
                     repo_id, version_id = base_query._get_context()
                     cur.execute(
                         "SELECT DISTINCT language FROM files WHERE repository_id = ? AND version_id = ?",
@@ -1827,7 +1839,7 @@ class Pipeline:
                 else None
             )
             capabilities = self._get_repository_capabilities(context)
-            context.impact_surface = self._behavior_compiler.compile(
+            context.impact_surface = self._behavior_compiler.compile(  # type: ignore[assignment]
                 change_model=change_input,
                 repository_query=query_input,
                 repository_delta=context.repository_delta,
@@ -2447,7 +2459,7 @@ class Pipeline:
                         parents = db.get_symbols(parent_ids_to_fetch)
                         for p in parents:
                             all_resolved[p.id] = p
-                        curr_symbols = parents
+                        curr_symbols = list(parents)
 
                     # Batch fetch all required files to get paths
                     file_ids = {sym.file_id for sym in all_resolved.values() if sym.file_id is not None}
@@ -2490,12 +2502,12 @@ class Pipeline:
                         symbol_names[sym.id] = full_name
 
                     # Replace DB IDs in strings list
-                    for idx, s in zip(candidate_indices, candidate_ids):
-                        if s in symbol_names:
-                            strings[idx] = symbol_names[s]
+                    for idx, sym_id in zip(candidate_indices, candidate_ids):
+                        if sym_id in symbol_names:
+                            strings[idx] = symbol_names[sym_id]
 
             # Deduplicate the resolved strings and build the remapping table
-            new_st_entries = []
+            new_st_entries: list[str] = []
             new_st_map = {}
             old_to_new_idx = {}
             for old_idx, s in enumerate(strings):
@@ -2637,7 +2649,9 @@ class Pipeline:
                 llm_context_serialized = llm_context_compressed
                 llm_context_json = json.dumps(llm_context_compressed, indent=2)
             else:
-                llm_context_serialized = self.serialize_llm_context(context)
+                serialized = self.serialize_llm_context(context)
+                assert serialized is not None
+                llm_context_serialized = serialized
                 llm_context_json = json.dumps(llm_context_serialized, indent=2)
 
             # Build the Presentation Compiler prompt
@@ -3059,6 +3073,7 @@ If any answer is NO, select a different discovery or return the empty result.
         # 1. Ensure base snapshot and facts are compiled
         snapshot = context.base_repository_snapshot
         if snapshot is None:
+            assert self.repository_provider is not None
             snapshot = await self.repository_provider.fetch_repository_at_sha(
                 request.repository, base_sha
             )
@@ -3144,14 +3159,14 @@ If any answer is NO, select a different discovery or return the empty result.
                         id=file_id, path=file_path, language=language
                     )
                 elif change_type == "deleted":
-                    file_id = base_indexer._file_id_map.get(file_path)
-                    if file_id is not None:
-                        removed_files.add(file_id)
+                    deleted_file_id = base_indexer._file_id_map.get(file_path)
+                    if deleted_file_id is not None:
+                        removed_files.add(deleted_file_id)
                 elif change_type == "modified":
-                    file_id = base_indexer._file_id_map.get(file_path)
-                    if file_id is not None:
-                        removed_files.add(file_id)
-                        modified_files.add(file_id)
+                    modified_file_id = base_indexer._file_id_map.get(file_path)
+                    if modified_file_id is not None:
+                        removed_files.add(modified_file_id)
+                        modified_files.add(modified_file_id)
                         added_files[file_id] = File(
                             id=file_id, path=file_path, language=language
                         )

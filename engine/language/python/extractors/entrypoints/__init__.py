@@ -52,8 +52,6 @@ class PythonEntrypointExtractor(BaseExtractor):
 
     def _get_arg_value(self, node: ast.AST) -> str | None:
         """Get string value from an AST node."""
-        if isinstance(node, ast.Constant):
-            return str(node.value)
-        elif isinstance(node, ast.Str):  # Python 3.7 compatibility
-            return node.s
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
         return None
