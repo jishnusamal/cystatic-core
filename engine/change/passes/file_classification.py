@@ -55,7 +55,9 @@ class FileClassification:
 # Analysis policy
 # ---------------------------------------------------------------------------
 
-FRONTEND_EXCLUDED_LANGUAGES = frozenset({"typescript", "javascript"})
+# Frontend files are included in analysis.  This set can be re-populated to
+# exclude specific frontend languages in the future if needed.
+FRONTEND_EXCLUDED_LANGUAGES: frozenset[str] = frozenset()
 
 
 def is_analyzable(
@@ -64,25 +66,24 @@ def is_analyzable(
 ) -> bool:
     """Decide whether a classified file is eligible for semantic change analysis.
 
-    Policy (first implementation):
+    Policy:
       * generated files are never analyzed;
-      * frontend TypeScript/JavaScript is excluded from analysis;
-      * everything else (including backend/shared TS) remains eligible.
+      * everything else (including frontend TS/JS) is eligible.
     """
     if classification.kind == FileKind.GENERATED:
         return False
 
-    return not (classification.kind == FileKind.FRONTEND and language in FRONTEND_EXCLUDED_LANGUAGES)
+    return True
 
 
 @dataclass(frozen=True)
 class AnalysisPolicy:
     """Configurable analysis/materialization eligibility policy.
 
-    The default policy excludes generated files of every language and
-    frontend TS/JS. ``should_materialize`` is the lazy-materialization hook:
-    it lets the RepositoryMaterializer skip remote fetches for files that
-    ChangeCompiler analysis has already decided to ignore.
+    The default policy excludes only generated files.  Frontend files are
+    included in analysis.  ``should_materialize`` is the lazy-materialization
+    hook: it lets the RepositoryMaterializer skip remote fetches for files
+    that ChangeCompiler analysis has already decided to ignore.
     """
 
     excluded_frontend_languages: frozenset[str] = FRONTEND_EXCLUDED_LANGUAGES
@@ -96,7 +97,10 @@ class AnalysisPolicy:
         if self.exclude_generated and classification.kind == FileKind.GENERATED:
             return False
 
-        return not (classification.kind == FileKind.FRONTEND and language in self.excluded_frontend_languages)
+        if classification.kind == FileKind.FRONTEND and language in self.excluded_frontend_languages:
+            return False
+
+        return True
 
     def should_materialize(
         self,
@@ -397,12 +401,9 @@ class FileClassifier:
         return None
 
     def _classify_frontend(self, dirs: set[str], ext: str) -> FileClassification | None:
-        if ext in _FRONTEND_EXTENSIONS:
-            return FileClassification(
-                kind=FileKind.FRONTEND,
-                confidence=0.85,
-                reason=f"UI extension '{ext}'",
-            )
+        # Directory-based signals take precedence over extension checks.
+        # A .tsx file in a backend directory (e.g. server/components/App.tsx)
+        # must NOT be classified as frontend.
         top = dirs & _FRONTEND_PATH_SEGMENTS
         if top:
             return FileClassification(
@@ -416,6 +417,15 @@ class FileClassifier:
                 kind=FileKind.FRONTEND,
                 confidence=0.8,
                 reason=f"frontend path segment '{min(deep)}/'",
+            )
+        # Extension-only check: only applied when no directory signal matched,
+        # so .tsx/.jsx in ambiguous locations (e.g. root-level App.tsx) still
+        # defaults to frontend — but backend directories are respected first.
+        if ext in _FRONTEND_EXTENSIONS:
+            return FileClassification(
+                kind=FileKind.FRONTEND,
+                confidence=0.75,
+                reason=f"UI extension '{ext}'",
             )
         return None
 

@@ -589,7 +589,7 @@ class TestFileClassificationIntegration:
         assert isinstance(compiler.passes[1], ChangedSymbolsPass)
         assert isinstance(compiler.passes[2], ChangeClassificationPass)
 
-    def test_frontend_tsx_excluded_from_analysis(self):
+    def test_frontend_tsx_included_in_analysis(self):
         old_btn = _ts_symbol(
             "ts://frontend/Button.tsx::Button",
             "Button",
@@ -606,11 +606,10 @@ class TestFileClassificationIntegration:
 
         compiler, result = self._compile_models([old_btn], [new_btn])
 
-        # Excluded: no semantic change analysis for the frontend file
-        assert len(result.modified_symbols) == 0
-        assert len(result.changed_symbols) == 0
-        assert result.files_changed == 0
-        assert compiler.last_excluded_files == frozenset({"frontend/Button.tsx"})
+        # Frontend TSX is now included in analysis
+        assert len(result.modified_symbols) == 1
+        assert result.modified_symbols[0].symbol.file == "frontend/Button.tsx"
+        assert compiler.last_excluded_files == frozenset()
         assert (
             compiler.last_file_classifications["frontend/Button.tsx"].kind
             == FileKind.FRONTEND
@@ -711,9 +710,9 @@ class TestFileClassificationIntegration:
         compiler, result = self._compile_models([old_btn, old_api], [new_btn, new_api])
 
         analyzed_files = {m.symbol.file for m in result.modified_symbols}
-        assert analyzed_files == {"workers/process.ts"}
-        assert result.files_changed == 1
-        assert sorted(compiler.last_excluded_files) == ["src/components/Button.tsx"]
+        assert analyzed_files == {"workers/process.ts", "src/components/Button.tsx"}
+        assert result.files_changed == 2
+        assert compiler.last_excluded_files == frozenset()
 
 
 class TestFileClassificationPass:
@@ -735,11 +734,16 @@ class TestFileClassificationPass:
         assert ctx.file_classifications["server/api.ts"].kind == FileKind.BACKEND
         assert ctx.file_classifications["generated/client.tsx"].kind == FileKind.GENERATED
 
-        assert ctx.excluded_files == {"src/pages/Home.tsx", "generated/client.tsx"}
-        assert ctx.analysis_eligible_files == {"server/api.ts"}
+        assert ctx.excluded_files == {"generated/client.tsx"}
+        assert ctx.analysis_eligible_files == {"src/pages/Home.tsx", "server/api.ts"}
         assert ctx.metadata["excluded_files"] == ctx.excluded_files
 
     def test_changed_symbols_pass_skips_excluded_files(self):
+        """ChangedSymbolsPass must respect the excluded_files set.
+
+        This test sets up the context directly (without FileClassificationPass)
+        to verify ChangedSymbolsPass filtering in isolation.
+        """
         excluded = {"src/components/Button.tsx"}
 
         old_btn = _ts_symbol(
@@ -773,10 +777,8 @@ class TestFileClassificationPass:
         ctx.metadata["new_repository_model"] = TestHelper.create_repository_model(
             [new_btn, new_api]
         )
+        ctx.excluded_files = excluded
         ctx.metadata["excluded_files"] = excluded
-
-        ctx = FileClassificationPass().run(ctx)
-        assert ctx.excluded_files == {"src/components/Button.tsx"}
 
         ctx = ChangedSymbolsPass().run(ctx)
 

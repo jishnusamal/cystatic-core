@@ -115,7 +115,7 @@ def materializer_env():
 
 class TestExcludedFilesAreNotFetched:
     @pytest.mark.asyncio
-    async def test_frontend_tsx_not_remotely_fetched(self, materializer_env):
+    async def test_frontend_tsx_materialized(self, materializer_env):
         files = {
             "frontend/Button.tsx": ("sha_btn", b"export const Button = () => null;"),
             "backend/api.py": ("sha_api", b"def handler():\n    pass\n"),
@@ -132,35 +132,23 @@ class TestExcludedFilesAreNotFetched:
             )
         )
 
-        # Frontend TSX excluded explicitly — not failed, not missing.
-        assert result.excluded_paths == ("frontend/Button.tsx",)
-        assert result.excluded_classifications == {"frontend/Button.tsx": "frontend"}
-        assert "frontend/Button.tsx" not in result.failed_paths
-        assert "frontend/Button.tsx" not in result.materialized_paths
-
-        # Backend and shared still materialized.
-        assert set(result.materialized_paths) == {"backend/api.py", "shared/types.ts"}
-
-        # The remote provider was never asked for the excluded file.
-        assert source.get_files_called_count == 1
-        assert "frontend/Button.tsx" not in source.get_files_called_paths[0]
-
-        # Not marked as indexed in the store either.
-        assert not store.is_materialized(repo_id, commit_sha, "frontend/Button.tsx")
+        # Frontend TSX is now included in analysis.
+        assert result.excluded_paths == ()
+        assert set(result.materialized_paths) == {"frontend/Button.tsx", "backend/api.py", "shared/types.ts"}
 
     @pytest.mark.asyncio
     async def test_exclusion_persisted_as_explicit_status(self, materializer_env):
         files = {
-            "src/components/Card.tsx": ("sha_card", b"export const Card = () => null;"),
+            "generated/schema_pb2.py": ("sha_pb2", b"# Generated code\n"),
         }
         store, _source, materializer, _metrics, repo_id, commit_sha = materializer_env(files)
 
         result = await materializer.materialize(
-            MaterializationRequest(repo_id, commit_sha, ("src/components/Card.tsx",), "t")
+            MaterializationRequest(repo_id, commit_sha, ("generated/schema_pb2.py",), "t")
         )
 
-        assert result.excluded_paths == ("src/components/Card.tsx",)
-        record = store.get_materialization(repo_id, commit_sha, "src/components/Card.tsx")
+        assert result.excluded_paths == ("generated/schema_pb2.py",)
+        record = store.get_materialization(repo_id, commit_sha, "generated/schema_pb2.py")
         assert record is not None
         assert record.indexed_status == "excluded"
 
@@ -206,17 +194,17 @@ class TestExcludedFilesAreNotFetched:
             )
         )
 
-        assert result.excluded_paths == ("frontend/Page.tsx",)
+        assert result.excluded_paths == ()
         assert result.failed_paths == ("missing.py",)
-        assert result.materialized_paths == ("services/core.py",)
+        assert set(result.materialized_paths) == {"frontend/Page.tsx", "services/core.py"}
 
 
 class TestBudgetInteraction:
     @pytest.mark.asyncio
-    async def test_excluded_file_does_not_consume_file_budget(self, materializer_env):
+    async def test_generated_file_does_not_consume_file_budget(self, materializer_env):
         # Budget allows only ONE file; two requested but one is excluded.
         files = {
-            "frontend/Hero.tsx": ("sha_hero", b"export const Hero = () => null;"),
+            "generated/types.tsx": ("sha_gen", b"// generated"),
             "workers/job.py": ("sha_job", b"def job():\n    pass\n"),
         }
         _store, _source, materializer, metrics, repo_id, commit_sha = materializer_env(
@@ -225,16 +213,16 @@ class TestBudgetInteraction:
 
         result = await materializer.materialize(
             MaterializationRequest(
-                repo_id, commit_sha, ("frontend/Hero.tsx", "workers/job.py"), "t"
+                repo_id, commit_sha, ("generated/types.tsx", "workers/job.py"), "t"
             )
         )
 
         assert result.materialized_paths == ("workers/job.py",)
-        assert result.excluded_paths == ("frontend/Hero.tsx",)
+        assert result.excluded_paths == ("generated/types.tsx",)
         assert metrics.files_fetched == 1
 
     @pytest.mark.asyncio
-    async def test_all_excluded_requests_fetch_nothing(self, materializer_env):
+    async def test_only_generated_excluded_requests_fetch_remaining(self, materializer_env):
         files = {
             "web/App.jsx": ("sha_app", b"export default App;"),
             "__generated__/types.tsx": ("sha_gen", b"// generated"),
@@ -247,11 +235,10 @@ class TestBudgetInteraction:
             )
         )
 
-        assert result.excluded_paths == ("__generated__/types.tsx", "web/App.jsx")
-        assert result.materialized_paths == ()
-        assert source.get_files_called_count == 0
-        assert metrics.files_fetched == 0
-        assert metrics.bytes_fetched == 0
+        assert result.excluded_paths == ("__generated__/types.tsx",)
+        assert result.materialized_paths == ("web/App.jsx",)
+        assert source.get_files_called_count == 1
+        assert metrics.files_fetched == 1
 
 
 class TestClassificationMetrics:
@@ -282,9 +269,9 @@ class TestClassificationMetrics:
         )
 
         snap = metrics.snapshot()
-        assert snap["excluded_files"] == 2
-        assert snap["excluded_frontend_files"] == 2
-        assert snap["eligible_files"] == 3
+        assert snap["excluded_files"] == 0
+        assert snap["excluded_frontend_files"] == 0
+        assert snap["eligible_files"] == 5
         assert snap["classification_counts"]["frontend"] == 2
         assert snap["classification_counts"]["backend"] == 1
         assert snap["classification_counts"]["shared"] == 1

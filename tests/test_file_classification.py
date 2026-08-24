@@ -158,13 +158,13 @@ class TestDeterminismAndImmutability:
 class TestAnalysisEligibility:
     """is_analyzable / AnalysisPolicy acceptance criteria."""
 
-    def test_frontend_tsx_excluded(self):
+    def test_frontend_tsx_included(self):
         c = FileClassification(FileKind.FRONTEND, 0.85, "")
-        assert not is_analyzable(c, "typescript")
+        assert is_analyzable(c, "typescript")
 
-    def test_frontend_js_excluded(self):
+    def test_frontend_js_included(self):
         c = FileClassification(FileKind.FRONTEND, 0.85, "")
-        assert not is_analyzable(c, "javascript")
+        assert is_analyzable(c, "javascript")
 
     def test_frontend_python_still_eligible(self):
         c = FileClassification(FileKind.FRONTEND, 0.85, "")
@@ -193,7 +193,7 @@ class TestAnalysisEligibility:
         backend = FileClassification(FileKind.BACKEND, 0.8, "")
         generated = FileClassification(FileKind.GENERATED, 0.95, "")
 
-        assert not policy.should_materialize(frontend, "typescript")
+        assert policy.should_materialize(frontend, "typescript")
         assert not policy.should_materialize(generated, "python")
         assert policy.should_materialize(backend, "typescript")
 
