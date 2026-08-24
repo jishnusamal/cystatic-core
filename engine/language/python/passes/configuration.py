@@ -4,7 +4,7 @@ Emits only raw configuration facts. No resolution, no inference.
 """
 
 import ast
-from typing import Any
+from typing import Any, ClassVar
 
 from engine.language.base.file_context import FileContext
 from engine.language.base.passes import BaseIndexPass
@@ -21,7 +21,7 @@ class PythonConfigurationIndexPass(BaseIndexPass):
     process() method for backward compatibility.
     """
 
-    CONFIG_PATTERNS = {
+    CONFIG_PATTERNS: ClassVar[dict[str, str]] = {
         "os.environ.get": "environment_variable",
         "os.getenv": "environment_variable",
         "os.environ.__getitem__": "environment_variable",

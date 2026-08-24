@@ -1,6 +1,9 @@
 from dataclasses import FrozenInstanceError
+
 import pytest
+
 from engine.repository.materialization.request import MaterializationRequest
+
 
 def test_materialization_request_creation():
     request = MaterializationRequest(

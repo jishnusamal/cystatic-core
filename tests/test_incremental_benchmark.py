@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import time
+
 import pytest
 
 from engine.language.python.adapter import PythonLanguageAdapter
-from engine.repository.facts import File, FileId, Symbol, SymbolId
+from engine.repository.facts import File
 from engine.repository.indexing.indexer import RepositoryIndexer
 from engine.repository.indexing.sink import InMemoryFactSink
 from engine.repository.overlay import RepositoryOverlay, RepositoryView
@@ -50,7 +51,7 @@ def extract_view_fqns(view: RepositoryView, base_indexer: RepositoryIndexer, hea
     
     # 1. Active Symbols
     active_symbols = {}
-    for s in view.base._facts.symbols:
+    for s in view.base._facts.symbols:  # type: ignore[attr-defined]
         if s.id not in view.overlay.removed_symbols:
             fqn = base_indexer.get_symbol_fqn(s.id)
             if fqn:
@@ -66,12 +67,13 @@ def extract_view_fqns(view: RepositoryView, base_indexer: RepositoryIndexer, hea
     # 2. Call Edges
     calls_fqns = set()
     # Base calls
-    for c in view.base._facts.calls:
+    for c in view.base._facts.calls:  # type: ignore[attr-defined]
         caller_fqn = base_indexer.get_symbol_fqn(c.caller_id)
         callee_fqn = base_indexer.get_symbol_fqn(c.callee_id)
         base_symbol = view.base.get_symbol(c.caller_id)
         if base_symbol and caller_fqn == 'python://module_3.py::func_3':
-            file_name = view.base.get_file(base_symbol.file_id).path
+            base_file = view.base.get_file(base_symbol.file_id)
+            file_name = base_file.path if base_file else "unknown"
             print(f"DEBUG CALL STACK: caller={caller_fqn}, callee={callee_fqn}, file={file_name}, in_removed={base_symbol.file_id in view.overlay.removed_files}")
             
         if view._should_skip_base_for_symbol(c.caller_id) or view._should_skip_base_for_symbol(c.callee_id):
@@ -93,7 +95,7 @@ def extract_view_fqns(view: RepositoryView, base_indexer: RepositoryIndexer, hea
     # 3. Reference Edges
     refs_fqns = set()
     # Base references
-    for r in view.base._facts.references:
+    for r in view.base._facts.references:  # type: ignore[attr-defined]
         if view._should_skip_base_for_symbol(r.source_id) or view._should_skip_base_for_symbol(r.target_id):
             continue
         if r.source_id not in active_symbols:
@@ -161,7 +163,7 @@ class TestIncrementalBenchmark:
         base_indexer.index_repository({"files": repo_files}, adapter)
         base_facts = base_sink.build_facts()
         base_query = InMemoryRepository(base_facts)
-        base_build_duration = time.perf_counter() - t0
+        time.perf_counter() - t0
 
         # Modify N files
         head_files = dict(repo_files)
@@ -329,8 +331,8 @@ def new_feature_handler():
         inc_view = RepositoryView(base_query, overlay)
 
         # Verify
-        inc_syms, inc_calls, inc_refs = extract_view_fqns(inc_view, base_indexer, head_indexer)
-        full_syms, full_calls, full_refs = extract_full_fqns(full_facts, full_indexer)
+        inc_syms, inc_calls, _inc_refs = extract_view_fqns(inc_view, base_indexer, head_indexer)
+        full_syms, full_calls, _full_refs = extract_full_fqns(full_facts, full_indexer)
 
         assert inc_syms == full_syms
         assert inc_calls == full_calls
@@ -382,8 +384,8 @@ def new_feature_handler():
         head_indexer._next_symbol_id = base_indexer._next_symbol_id
 
         # Verify
-        inc_syms, inc_calls, inc_refs = extract_view_fqns(inc_view, base_indexer, head_indexer)
-        full_syms, full_calls, full_refs = extract_full_fqns(full_facts, full_indexer)
+        inc_syms, inc_calls, _inc_refs = extract_view_fqns(inc_view, base_indexer, head_indexer)
+        full_syms, full_calls, _full_refs = extract_full_fqns(full_facts, full_indexer)
 
         assert inc_syms == full_syms
         assert inc_calls == full_calls
@@ -457,8 +459,8 @@ def new_feature_handler():
         inc_view = RepositoryView(base_query, overlay)
 
         # Verify
-        inc_syms, inc_calls, inc_refs = extract_view_fqns(inc_view, base_indexer, head_indexer)
-        full_syms, full_calls, full_refs = extract_full_fqns(full_facts, full_indexer)
+        inc_syms, inc_calls, _inc_refs = extract_view_fqns(inc_view, base_indexer, head_indexer)
+        full_syms, full_calls, _full_refs = extract_full_fqns(full_facts, full_indexer)
 
         assert inc_syms == full_syms
         assert inc_calls == full_calls

@@ -476,7 +476,7 @@ class RepositoryIndex:
             Tuple of SymbolEntry objects from that file
         """
         file_index = self.get_file_index(file_path)
-        return file_index.symbols if file_index else tuple()
+        return file_index.symbols if file_index else ()
 
     def get_symbols_by_kind(self, kind: str) -> tuple[SymbolEntry, ...]:
         """Get all symbols of a specific kind across all files.
@@ -534,7 +534,7 @@ class RepositoryIndex:
             Tuple of RawReference objects from that file
         """
         file_index = self.get_file_index(file_path)
-        return file_index.references if file_index else tuple()
+        return file_index.references if file_index else ()
 
     def get_files_by_language(self, language: str) -> tuple[FileIndex, ...]:
         """Get all FileIndex entries for a specific language.

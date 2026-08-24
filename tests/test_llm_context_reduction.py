@@ -232,16 +232,14 @@ class TestChainCompression:
 
     def test_e2e_compressed_in_dag(self):
         """Long chain produces fewer DAG nodes than original steps."""
-        steps = tuple(
-            [
+        steps = (
                 _make_step("sym://svc/a", "EntryHandler", 0, changed=True),
                 _make_step("sym://svc/b", "HelperB", 1),
                 _make_step("sym://svc/c", "HelperC", 2),
                 _make_step("sym://svc/d", "HelperD", 3),
                 _make_step("sym://svc/e", "HelperE", 4),
                 _make_step("sym://svc/f", "Terminal", 5),
-            ]
-        )
+            )
         ep = TestHelper.create_entry_point(
             method="POST",
             path="/action",

@@ -29,12 +29,10 @@ class JavaSymbolExtractor(BaseExtractor):
         content = "\n".join(tree)
 
         # Extract classes
-        for cls in self._extract_classes(content, tree):
-            symbols.append(cls)
+        symbols.extend(self._extract_classes(content, tree))
 
         # Extract top-level functions (outside classes)
-        for func in self._extract_functions(content, tree):
-            symbols.append(func)
+        symbols.extend(self._extract_functions(content, tree))
 
         return symbols
 
@@ -99,7 +97,7 @@ class JavaSymbolExtractor(BaseExtractor):
         self, content: str, lines: list[str]
     ) -> list[dict[str, Any]]:
         """Extract top-level functions (methods not in classes)."""
-        functions = []
+        functions: list[dict[str, Any]] = []
         method_pattern = r"(public|private|protected)?\s*(static)?\s*\w+\s+(\w+)\s*\("
 
         for i, line in enumerate(lines, 1):

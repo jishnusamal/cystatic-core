@@ -89,7 +89,7 @@ class GraphPatcher:
         repo_prefix = ""
         for cf in changed_files:
             if os.path.isabs(cf):
-                for gf in graph.files.keys():
+                for gf in graph.files:
                     cf_norm = cf.replace("\\", "/")
                     gf_norm = gf.replace("\\", "/")
                     if (
@@ -274,9 +274,9 @@ class GraphPatcher:
             for sym in contrib.symbols:
                 symbol = self.compiler._create_symbol(sym, file_path, language)
                 graph.symbols[symbol.id] = symbol
-            for imp in contrib.imports:
+            for import_entry in contrib.imports:
                 import_sym = self.compiler._create_import_symbol(
-                    imp, file_path, language
+                    import_entry, file_path, language
                 )
                 if import_sym:
                     graph.imports[import_sym.id] = import_sym
@@ -657,9 +657,12 @@ class GraphPatcher:
         if graph.symbol_to_callers:
             for edge in graph.call_graph.edges:
                 caller_file = edge.file or self._get_file_from_symbol_id(edge.caller_id)
-                if caller_file and edge.callee_id in graph.symbol_to_callers:
-                    if caller_file not in graph.symbol_to_callers[edge.callee_id]:
-                        pass  # Tolerated for external/dynamic call edges
+                if (
+                    caller_file
+                    and edge.callee_id in graph.symbol_to_callers
+                    and caller_file not in graph.symbol_to_callers[edge.callee_id]
+                ):
+                    pass  # Tolerated for external/dynamic call edges
 
     def _get_file_from_symbol_id(self, sid: str) -> str:
         if "://" in sid:

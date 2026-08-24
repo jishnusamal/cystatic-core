@@ -13,8 +13,7 @@ Tests cover:
 from __future__ import annotations
 
 import asyncio
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -29,7 +28,6 @@ from engine.repository.resolver.context import ResolutionContext
 from engine.repository.resolver.outcome import ResolutionOutcome
 from engine.repository.resolver.requirements import FileResolutionRequirement
 from engine.repository.resolver.resolver import RepositoryResolver
-
 
 # ---------------------------------------------------------------------------
 # Helpers / Stubs
@@ -263,7 +261,7 @@ async def test_depth_limit_allows_at_boundary():
 async def test_depth_limit_exceeded_in_deep_context():
     """Resolver with a context already at depth 4 (> max_depth=3) is rejected."""
     budget = ResolutionBudget(max_depth=3)
-    ctx = ResolutionContext(budget=budget)
+    ResolutionContext(budget=budget)
     # Simulate being in round 4 (depth will become 4 inside resolve)
     # We do this by pre-seeding usage.depth and giving a very small max_depth
     # such that round_num=1 will immediately exceed the limit.

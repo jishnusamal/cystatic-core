@@ -1,7 +1,8 @@
 """TypeScript entrypoint index pass - detects REST API endpoints from TypeScript AST."""
 
 from typing import Any
-from tree_sitter import Tree, Node
+
+from tree_sitter import Node, Tree
 
 from engine.language.base.file_context import FileContext
 from engine.language.base.passes import BaseIndexPass
@@ -83,24 +84,23 @@ class TypeScriptEntrypointIndexPass(BaseIndexPass):
                     args = node.child_by_field_name("arguments")
                     if args:
                         named_args = [c for c in args.children if c.is_named]
-                        if named_args and len(named_args) >= 2:
-                            if named_args[0].type == "string":
-                                route = get_node_text(named_args[0], source_bytes).strip("'\"")
-                                handler_node = named_args[1]
-                                if handler_node.type == "identifier":
-                                    handler_name = get_node_text(handler_node, source_bytes)
-                                else:
-                                    handler_name = "anonymous"
+                        if len(named_args) >= 2 and named_args[0].type == "string":
+                            route = get_node_text(named_args[0], source_bytes).strip("'\"")
+                            handler_node = named_args[1]
+                            if handler_node.type == "identifier":
+                                handler_name = get_node_text(handler_node, source_bytes)
+                            else:
+                                handler_name = "anonymous"
 
-                                builder["entrypoints"].append(
-                                    EntrypointEntry(
-                                        route=f"{method.upper()} {route}",
-                                        handler=handler_name,
-                                        kind="rest_endpoint",
-                                        file=file_path,
-                                        line=node.start_point[0] + 1,
-                                    )
+                            builder["entrypoints"].append(
+                                EntrypointEntry(
+                                    route=f"{method.upper()} {route}",
+                                    handler=handler_name,
+                                    kind="rest_endpoint",
+                                    file=file_path,
+                                    line=node.start_point[0] + 1,
                                 )
+                            )
 
     def _check_decorator_entrypoint(
         self, decorator_node: Node, target_node: Node, file_path: str, source_bytes: bytes, builder: dict[str, Any]

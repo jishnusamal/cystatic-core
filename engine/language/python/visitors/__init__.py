@@ -35,7 +35,6 @@ class PythonVisitor(BaseVisitor[ast.AST]):
         """
         inst = get_instrumentation()
         tree = context.ast
-        file_path = context.path
 
         # Count AST nodes
         ast_nodes = 0

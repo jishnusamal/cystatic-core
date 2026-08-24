@@ -6,7 +6,7 @@ Factor compiles repository transitions, not individual snapshots.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from engine.repository.model import RepositoryModel
@@ -33,6 +33,13 @@ class RepositoryDelta:
     diff: dict[str, Any]
     base_sha: str
     head_sha: str
+
+    _base_symbol_ids: frozenset[str] = field(
+        default_factory=frozenset, init=False, repr=False, compare=False
+    )
+    _head_symbol_ids: frozenset[str] = field(
+        default_factory=frozenset, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         """Validate the delta after initialization."""

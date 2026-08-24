@@ -99,39 +99,44 @@ class PythonConfigurationExtractor(BaseExtractor):
     ) -> dict[str, Any] | None:
         """Extract config reference from a subscript access like os.environ['KEY']."""
         # os.environ['KEY']
-        if isinstance(node.value, ast.Attribute):
-            if isinstance(node.value.value, ast.Name) and node.value.value.id == "os":
-                if node.value.attr == "environ" and isinstance(
-                    node.slice, ast.Constant
-                ):
-                    caller_id = self._get_caller_id(node)
-                    config_key = str(node.slice.value)
+        if (
+            isinstance(node.value, ast.Attribute)
+            and isinstance(node.value.value, ast.Name)
+            and node.value.value.id == "os"
+            and node.value.attr == "environ"
+            and isinstance(node.slice, ast.Constant)
+        ):
+            caller_id = self._get_caller_id(node)
+            config_key = str(node.slice.value)
 
-                    return {
-                        "symbol_id": caller_id or "",
-                        "config_key": config_key,
-                        "kind": "environment_variable",
-                        "framework": "os.environ",
-                        "file": file_path,
-                        "line": node.lineno,
-                        "default_value": "",
-                    }
+            return {
+                "symbol_id": caller_id or "",
+                "config_key": config_key,
+                "kind": "environment_variable",
+                "framework": "os.environ",
+                "file": file_path,
+                "line": node.lineno,
+                "default_value": "",
+            }
 
-            # settings['KEY'] pattern
-            if node.value.attr in ("settings", "config", "conf"):
-                if isinstance(node.slice, ast.Constant):
-                    caller_id = self._get_caller_id(node)
-                    config_key = str(node.slice.value)
+        # settings['KEY'] pattern
+        if (
+            isinstance(node.value, ast.Attribute)
+            and node.value.attr in ("settings", "config", "conf")
+            and isinstance(node.slice, ast.Constant)
+        ):
+            caller_id = self._get_caller_id(node)
+            config_key = str(node.slice.value)
 
-                    return {
-                        "symbol_id": caller_id or "",
-                        "config_key": config_key,
-                        "kind": "settings_object",
-                        "framework": "custom",
-                        "file": file_path,
-                        "line": node.lineno,
-                        "default_value": "",
-                    }
+            return {
+                "symbol_id": caller_id or "",
+                "config_key": config_key,
+                "kind": "settings_object",
+                "framework": "custom",
+                "file": file_path,
+                "line": node.lineno,
+                "default_value": "",
+            }
 
         return None
 
@@ -169,7 +174,7 @@ class PythonConfigurationExtractor(BaseExtractor):
                 return f"{node.func.value.id}.{node.func.attr}"
             elif isinstance(node.func.value, ast.Attribute):
                 parts = []
-                current = node.func
+                current: ast.expr = node.func
                 while isinstance(current, ast.Attribute):
                     parts.append(current.attr)
                     current = current.value
@@ -204,7 +209,6 @@ class PythonConfigurationExtractor(BaseExtractor):
             return ""
         # Check keyword argument 'default'
         for kw in node.keywords:
-            if kw.arg in ("default", "fallback"):
-                if isinstance(kw.value, ast.Constant):
-                    return str(kw.value.value)
+            if kw.arg in ("default", "fallback") and isinstance(kw.value, ast.Constant):
+                return str(kw.value.value)
         return ""

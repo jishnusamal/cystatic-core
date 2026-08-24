@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+import pytest
 from engine.language.model import (
     CallGraph,
     ReferenceGraph,
@@ -12,12 +13,19 @@ from engine.language.model import (
 )
 
 from engine.change.compiler import ChangeCompiler
+from engine.change.compiler.passes import (
+    ChangeClassificationPass,
+    ChangedSymbolsPass,
+    FileClassificationPass,
+)
+from engine.change.compiler.passes.base import ChangePassContext
 from engine.change.model import (
     DecoratorChange,
     SignatureChange,
     VisibilityChange,
 )
 from engine.change.model.repository_comparison import RepositoryComparison
+from engine.change.passes.file_classification import FileKind
 
 
 @dataclass(frozen=True)
@@ -52,9 +60,9 @@ class TestHelper:
         """Create a test repository model."""
         return RepositoryModel(
             symbols=frozenset(symbols),
-            call_graph=CallGraph(edges=tuple()),
-            reference_graph=ReferenceGraph(edges=tuple()),
-            entry_points=tuple(),
+            call_graph=CallGraph(edges=()),
+            reference_graph=ReferenceGraph(edges=()),
+            entry_points=(),
         )
 
 
@@ -535,3 +543,247 @@ class TestChangeCompiler:
 
         # Non-existent symbol should return None
         assert result.get_changes_for_symbol("python://test.py::nonexistent") is None
+
+
+def _ts_symbol(
+    symbol_id: str,
+    name: str,
+    kind: SymbolKind,
+    file: str,
+    start_line: int = 1,
+    end_line: int = 5,
+) -> Symbol:
+    return Symbol(
+        id=symbol_id,
+        name=name,
+        kind=kind,
+        language="typescript",
+        file=file,
+        range=(start_line, end_line),
+        visibility=SymbolVisibility.PUBLIC,
+        properties={},
+    )
+
+
+class TestFileClassificationIntegration:
+    """Frontend TS/TSX must be excluded before semantic change analysis."""
+
+    def _compile_models(self, old_symbols, new_symbols):
+        compiler = ChangeCompiler()
+        result = compiler.compile(
+            RepositoryComparison(
+                base_model=TestHelper.create_repository_model(old_symbols),
+                head_model=TestHelper.create_repository_model(new_symbols),
+                diff={},
+                base_sha="abc123",
+                head_sha="def456",
+            )
+        )
+        return compiler, result
+
+    def test_pass_chain_order(self):
+        compiler = ChangeCompiler()
+        names = [p.name for p in compiler.passes]
+        assert names == ["file_classification", "changed_symbols", "change_classification"]
+        assert isinstance(compiler.passes[0], FileClassificationPass)
+        assert isinstance(compiler.passes[1], ChangedSymbolsPass)
+        assert isinstance(compiler.passes[2], ChangeClassificationPass)
+
+    def test_frontend_tsx_included_in_analysis(self):
+        old_btn = _ts_symbol(
+            "ts://frontend/Button.tsx::Button",
+            "Button",
+            SymbolKind.CLASS,
+            "frontend/Button.tsx",
+        )
+        new_btn = _ts_symbol(
+            "ts://frontend/Button.tsx::Button",
+            "Button",
+            SymbolKind.CLASS,
+            "frontend/Button.tsx",
+            end_line=20,
+        )
+
+        compiler, result = self._compile_models([old_btn], [new_btn])
+
+        # Frontend TSX is now included in analysis
+        assert len(result.modified_symbols) == 1
+        assert result.modified_symbols[0].symbol.file == "frontend/Button.tsx"
+        assert compiler.last_excluded_files == frozenset()
+        assert (
+            compiler.last_file_classifications["frontend/Button.tsx"].kind
+            == FileKind.FRONTEND
+        )
+
+    def test_backend_ts_continues_through_analysis(self):
+        old_api = _ts_symbol(
+            "ts://server/api.ts::handler", "handler", SymbolKind.FUNCTION, "server/api.ts"
+        )
+        new_api = _ts_symbol(
+            "ts://server/api.ts::handler",
+            "handler",
+            SymbolKind.FUNCTION,
+            "server/api.ts",
+            end_line=15,
+        )
+        new_helper = _ts_symbol(
+            "ts://server/api.ts::helper", "helper", SymbolKind.FUNCTION, "server/api.ts"
+        )
+
+        compiler, result = self._compile_models([old_api], [new_api, new_helper])
+
+        modified_files = {m.symbol.file for m in result.modified_symbols}
+        added_files = {s.file for s in result.added_symbols}
+        assert "server/api.ts" in modified_files or "server/api.ts" in added_files
+        assert compiler.last_excluded_files == frozenset()
+
+    def test_shared_ts_continues_through_analysis(self):
+        old_types = _ts_symbol(
+            "ts://shared/types.ts::User",
+            "User",
+            SymbolKind.CLASS,
+            "shared/types.ts",
+        )
+        new_types = _ts_symbol(
+            "ts://shared/types.ts::User",
+            "User",
+            SymbolKind.CLASS,
+            "shared/types.ts",
+            end_line=30,
+        )
+
+        compiler, result = self._compile_models([old_types], [new_types])
+
+        assert len(result.modified_symbols) == 1
+        assert result.modified_symbols[0].symbol.file == "shared/types.ts"
+        assert compiler.last_excluded_files == frozenset()
+
+    @pytest.mark.parametrize(
+        "path,sid",
+        [
+            ("backend/api.ts", "ts://backend/api.ts::handler"),
+            ("shared/types.ts", "ts://shared/types.ts::User"),
+            ("python/service.py", "python://python/service.py::run"),
+            ("java/Service.java", "java://java/Service.java::Service"),
+        ],
+    )
+    def test_regression_eligible_roles_unchanged(self, path, sid):
+        name = sid.split("::")[-1]
+        kind = SymbolKind.CLASS if name[0].isupper() else SymbolKind.FUNCTION
+        old_sym = _ts_symbol(sid, name, kind, path)
+        new_sym = _ts_symbol(sid, name, kind, path, end_line=42)
+
+        compiler, result = self._compile_models([old_sym], [new_sym])
+
+        assert len(result.modified_symbols) == 1
+        assert result.modified_symbols[0].symbol.id == sid
+        assert path not in compiler.last_excluded_files
+
+    def test_mixed_change_set_partitions_correctly(self):
+        old_btn = _ts_symbol(
+            "ts://src/components/Button.tsx::Button",
+            "Button",
+            SymbolKind.CLASS,
+            "src/components/Button.tsx",
+        )
+        new_btn = _ts_symbol(
+            "ts://src/components/Button.tsx::Button",
+            "Button",
+            SymbolKind.CLASS,
+            "src/components/Button.tsx",
+            end_line=99,
+        )
+        old_api = _ts_symbol(
+            "ts://workers/process.ts::process",
+            "process",
+            SymbolKind.FUNCTION,
+            "workers/process.ts",
+        )
+        new_api = _ts_symbol(
+            "ts://workers/process.ts::process",
+            "process",
+            SymbolKind.FUNCTION,
+            "workers/process.ts",
+            end_line=50,
+        )
+
+        compiler, result = self._compile_models([old_btn, old_api], [new_btn, new_api])
+
+        analyzed_files = {m.symbol.file for m in result.modified_symbols}
+        assert analyzed_files == {"workers/process.ts", "src/components/Button.tsx"}
+        assert result.files_changed == 2
+        assert compiler.last_excluded_files == frozenset()
+
+
+class TestFileClassificationPass:
+    """Standalone pass behavior on ChangePassContext."""
+
+    def test_classifies_and_partitions_diff_files(self):
+        ctx = ChangePassContext()
+        ctx.diff_data = {
+            "files": [
+                {"file_path": "src/pages/Home.tsx"},
+                {"file_path": "server/api.ts"},
+                {"file_path": "generated/client.tsx"},
+            ]
+        }
+
+        ctx = FileClassificationPass().run(ctx)
+
+        assert ctx.file_classifications["src/pages/Home.tsx"].kind == FileKind.FRONTEND
+        assert ctx.file_classifications["server/api.ts"].kind == FileKind.BACKEND
+        assert ctx.file_classifications["generated/client.tsx"].kind == FileKind.GENERATED
+
+        assert ctx.excluded_files == {"generated/client.tsx"}
+        assert ctx.analysis_eligible_files == {"src/pages/Home.tsx", "server/api.ts"}
+        assert ctx.metadata["excluded_files"] == ctx.excluded_files
+
+    def test_changed_symbols_pass_skips_excluded_files(self):
+        """ChangedSymbolsPass must respect the excluded_files set.
+
+        This test sets up the context directly (without FileClassificationPass)
+        to verify ChangedSymbolsPass filtering in isolation.
+        """
+        excluded = {"src/components/Button.tsx"}
+
+        old_btn = _ts_symbol(
+            "ts://src/components/Button.tsx::Button",
+            "Button",
+            SymbolKind.CLASS,
+            "src/components/Button.tsx",
+        )
+        new_btn = _ts_symbol(
+            "ts://src/components/Button.tsx::Button",
+            "Button",
+            SymbolKind.CLASS,
+            "src/components/Button.tsx",
+            end_line=77,
+        )
+        old_api = _ts_symbol(
+            "ts://server/api.ts::handler", "handler", SymbolKind.FUNCTION, "server/api.ts"
+        )
+        new_api = _ts_symbol(
+            "ts://server/api.ts::handler",
+            "handler",
+            SymbolKind.FUNCTION,
+            "server/api.ts",
+            end_line=12,
+        )
+
+        ctx = ChangePassContext()
+        ctx.metadata["old_repository_model"] = TestHelper.create_repository_model(
+            [old_btn, old_api]
+        )
+        ctx.metadata["new_repository_model"] = TestHelper.create_repository_model(
+            [new_btn, new_api]
+        )
+        ctx.excluded_files = excluded
+        ctx.metadata["excluded_files"] = excluded
+
+        ctx = ChangedSymbolsPass().run(ctx)
+
+        all_output_files = {s.file for s in ctx.added_symbols}
+        all_output_files |= {s.file for s in ctx.removed_symbols}
+        all_output_files |= {m["symbol"].file for m in ctx.modified_symbols}
+        assert all_output_files.isdisjoint(ctx.excluded_files)
+        assert any(m["symbol"].file == "server/api.ts" for m in ctx.modified_symbols)

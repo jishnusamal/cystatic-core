@@ -1,20 +1,22 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
-from typing import Collection, Tuple, Set, Protocol
+from collections.abc import Collection
+from contextlib import suppress
+from typing import Protocol
 
-from engine.repository.store import RepositoryStore
-from engine.repository.query import SymbolId, FileId, EventId
-from integrations.base import RepositoryProvider
-from .requirements import (
-    ResolutionRequirement,
-    FileResolutionRequirement,
-    SymbolResolutionRequirement,
-    EventResolutionRequirement,
-    AllEntryPointsRequirement,
-)
 from engine.repository.materialization.request import MaterializationRequest
+from engine.repository.query import EventId, FileId, SymbolId
+from engine.repository.store import RepositoryStore
+from integrations.base import RepositoryProvider
+
+from .requirements import (
+    AllEntryPointsRequirement,
+    EventResolutionRequirement,
+    FileResolutionRequirement,
+    ResolutionRequirement,
+    SymbolResolutionRequirement,
+)
 
 # ---------------------------------------------------------------------------
 # Planner contract (protocol)
@@ -33,7 +35,7 @@ class RequirementPlanner(Protocol):
         repository_id: str,
         commit_sha: str,
         requirements: Collection[ResolutionRequirement],
-    ) -> Tuple[MaterializationRequest, ...]:
+    ) -> tuple[MaterializationRequest, ...]:
         ...
 
 # ---------------------------------------------------------------------------
@@ -107,7 +109,7 @@ class DefaultRequirementPlanner:
         repository_id: str,
         commit_sha: str,
         requirements: Collection[ResolutionRequirement],
-    ) -> Tuple[MaterializationRequest, ...]:
+    ) -> tuple[MaterializationRequest, ...]:
         """Generate ``MaterializationRequest`` objects for a batch of requirements.
 
         The current implementation mirrors the legacy behaviour: it gathers a set
@@ -115,7 +117,7 @@ class DefaultRequirementPlanner:
         ``"resolution"``.  The result is deterministic because the paths are
         sorted before constructing the request.
         """
-        paths_to_materialize: Set[str] = set()
+        paths_to_materialize: set[str] = set()
 
         for req in requirements:
             if isinstance(req, FileResolutionRequirement):
@@ -144,7 +146,7 @@ class DefaultRequirementPlanner:
         repository_id: str,
         commit_sha: str,
         req: FileResolutionRequirement,
-        paths: Set[str],
+        paths: set[str],
     ) -> None:
         path = self._get_path_from_file_id(repository_id, commit_sha, req.file_id)
         if not path:
@@ -162,7 +164,7 @@ class DefaultRequirementPlanner:
         repository_id: str,
         commit_sha: str,
         req: SymbolResolutionRequirement,
-        paths: Set[str],
+        paths: set[str],
     ) -> None:
         # Check if symbol is unresolved
         symbol_name = None
@@ -207,7 +209,7 @@ class DefaultRequirementPlanner:
         repository_id: str,
         commit_sha: str,
         req: EventResolutionRequirement,
-        paths: Set[str],
+        paths: set[str],
     ) -> None:
         coverage = self.store.get_materialization_coverage(repository_id, commit_sha)
         if coverage.materialized_files < coverage.known_files:
@@ -217,7 +219,7 @@ class DefaultRequirementPlanner:
         self,
         repository_id: str,
         commit_sha: str,
-        paths: Set[str],
+        paths: set[str],
     ) -> None:
         coverage = self.store.get_materialization_coverage(repository_id, commit_sha)
         if coverage.materialized_files < coverage.known_files:
@@ -232,7 +234,7 @@ class DefaultRequirementPlanner:
         repository_id: str,
         commit_sha: str,
         target_path: str,
-        paths: Set[str],
+        paths: set[str],
     ) -> None:
         base_name = os.path.basename(target_path)
         module_name, _ = os.path.splitext(base_name)
@@ -252,12 +254,11 @@ class DefaultRequirementPlanner:
             batch = unmaterialized[i : i + batch_size]
             blobs = await self.source.get_files(repository_id, batch, commit_sha)
             for blob in blobs:
-                try:
+                # Malformed blobs are skipped; scanning is a heuristic filter
+                with suppress(Exception):
                     content = blob.content.decode("utf-8", errors="ignore")
                     if module_name in content:
                         paths.add(blob.path)
-                except Exception:
-                    pass
 
     async def _scan_for_symbol_references(
         self,
@@ -265,7 +266,7 @@ class DefaultRequirementPlanner:
         commit_sha: str,
         symbol_name: str,
         def_path: str | None,
-        paths: Set[str],
+        paths: set[str],
     ) -> None:
         tree_entries = self._get_all_tree_entries(repository_id, commit_sha)
         unmaterialized = [
@@ -281,19 +282,18 @@ class DefaultRequirementPlanner:
             batch = unmaterialized[i : i + batch_size]
             blobs = await self.source.get_files(repository_id, batch, commit_sha)
             for blob in blobs:
-                try:
+                # Malformed blobs are skipped; scanning is a heuristic filter
+                with suppress(Exception):
                     content = blob.content.decode("utf-8", errors="ignore")
                     if symbol_name in content:
                         paths.add(blob.path)
-                except Exception:
-                    pass
 
     async def _scan_for_event_subscribers(
         self,
         repository_id: str,
         commit_sha: str,
         event_id: EventId | int | str,
-        paths: Set[str],
+        paths: set[str],
     ) -> None:
         tree_entries = self._get_all_tree_entries(repository_id, commit_sha)
         unmaterialized = [
@@ -313,18 +313,17 @@ class DefaultRequirementPlanner:
             batch = unmaterialized[i : i + batch_size]
             blobs = await self.source.get_files(repository_id, batch, commit_sha)
             for blob in blobs:
-                try:
+                # Malformed blobs are skipped; scanning is a heuristic filter
+                with suppress(Exception):
                     content = blob.content.decode("utf-8", errors="ignore")
                     if event_str in content or "subscribe" in content or "consumer" in content:
                         paths.add(blob.path)
-                except Exception:
-                    pass
 
     async def _scan_for_entry_points(
         self,
         repository_id: str,
         commit_sha: str,
-        paths: Set[str],
+        paths: set[str],
     ) -> None:
         tree_entries = self._get_all_tree_entries(repository_id, commit_sha)
         unmaterialized = [
@@ -343,9 +342,8 @@ class DefaultRequirementPlanner:
             batch = unmaterialized[i : i + batch_size]
             blobs = await self.source.get_files(repository_id, batch, commit_sha)
             for blob in blobs:
-                try:
+                # Malformed blobs are skipped; scanning is a heuristic filter
+                with suppress(Exception):
                     content = blob.content.decode("utf-8", errors="ignore")
                     if any(kw in content for kw in ("@app.", "FastAPI", "Blueprint", "def main", "if __name__")):
                         paths.add(blob.path)
-                except Exception:
-                    pass

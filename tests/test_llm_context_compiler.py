@@ -737,7 +737,7 @@ class TestExecutionSection:
         result = compiler.compile(rc)
         assert len(result.epts) == 2
         for ep in result.epts:
-            endpoint_idx, chain_node_idxs, terminal_idx, max_depth = ep
+            endpoint_idx, chain_node_idxs, _terminal_idx, _max_depth = ep
             assert isinstance(endpoint_idx, int)
             assert isinstance(chain_node_idxs, tuple)
             assert len(chain_node_idxs) > 0
@@ -1950,10 +1950,15 @@ class TestSymbolDBIDResolution:
 
     def test_get_symbols_fallback_and_overrides(self):
         """Test get_symbols behavior on RepositoryQuery subclasses."""
-        from unittest.mock import MagicMock
-        from engine.repository.query import InMemoryRepository
-        from engine.repository.facts import RepositoryFacts, Symbol, SymbolId, FileId, SymbolKind
+        from engine.repository.facts import (
+            FileId,
+            RepositoryFacts,
+            Symbol,
+            SymbolId,
+            SymbolKind,
+        )
         from engine.repository.overlay import RepositoryOverlay, RepositoryView
+        from engine.repository.query import InMemoryRepository
 
         # Mock symbols
         sym1 = Symbol(id=SymbolId(101), name="FuncA", file_id=FileId(1), kind=SymbolKind.FUNCTION, language="python", start_line=1, end_line=5)
@@ -1990,10 +1995,17 @@ class TestSymbolDBIDResolution:
     def test_serialize_llm_context_resolves_db_ids(self):
         """Test that serialize_llm_context replaces digit strings with dotted symbol names."""
         from unittest.mock import MagicMock
-        from engine.pipeline.pipeline import Pipeline, PipelineContext
+
         from engine.llm_context.compiler import LLMContextCompiler
-        from engine.repository.facts import Symbol, SymbolId, FileId, SymbolKind, File
-        from engine.review_context.model import ReviewContext, ChangeContext, FileChange, Change, SymbolRef
+        from engine.pipeline.pipeline import Pipeline, PipelineContext
+        from engine.repository.facts import File, FileId, Symbol, SymbolId, SymbolKind
+        from engine.review_context.model import (
+            Change,
+            ChangeContext,
+            FileChange,
+            ReviewContext,
+            SymbolRef,
+        )
 
         # Mock DB
         db = MagicMock()

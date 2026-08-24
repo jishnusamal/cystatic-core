@@ -71,9 +71,6 @@ class JavaTypeExtractor(BaseExtractor):
                         )
 
         # Composition from field declarations
-        field_pattern = (
-            r"(?:private|public|protected)?\s*(?:\w+(?:<[^>]+>)?)\s+(\w+)\s*;"
-        )
         for i, line in enumerate(tree, 1):
             if self._is_inside_class(tree, i - 1):
                 field_match = re.search(

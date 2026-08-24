@@ -185,7 +185,7 @@ class ValidationCompilationPass(OperationalCompilerPass):
                 if hasattr(repo, "get_file"):
                     f = repo.get_file(s.file_id)
                     if f is not None:
-                        return f.path
+                        return str(f.path)
                 if isinstance(s.file_id, str):
                     return s.file_id
             return ""
@@ -346,7 +346,7 @@ class ValidationCompilationPass(OperationalCompilerPass):
             return "integration"
 
         # Check test file patterns for unit tests
-        for pattern, category in _TEST_FILE_PATTERNS.items():
+        for pattern in _TEST_FILE_PATTERNS:
             if (file_lower and pattern in file_lower) or pattern in name_lower:
                 return "unit"
 

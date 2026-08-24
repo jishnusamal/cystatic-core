@@ -50,21 +50,24 @@ class PythonEntrypointIndexPass(BaseIndexPass):
     ) -> None:
         """Check if a function has endpoint decorators and add entrypoint if found."""
         for dec in node.decorator_list:
-            if isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute):
-                if isinstance(dec.func.value, ast.Name):
-                    method = dec.func.attr.lower()
-                    if method in HTTP_METHODS and dec.args:
-                        route = self._get_arg_value(dec.args[0])
-                        if route:
-                            builder["entrypoints"].append(
-                                EntrypointEntry(
-                                    route=f"{method.upper()} {route}",
-                                    handler=node.name,
-                                    kind="rest_endpoint",
-                                    file=file_path,
-                                    line=node.lineno,
-                                )
+            if (
+                isinstance(dec, ast.Call)
+                and isinstance(dec.func, ast.Attribute)
+                and isinstance(dec.func.value, ast.Name)
+            ):
+                method = dec.func.attr.lower()
+                if method in HTTP_METHODS and dec.args:
+                    route = self._get_arg_value(dec.args[0])
+                    if route:
+                        builder["entrypoints"].append(
+                            EntrypointEntry(
+                                route=f"{method.upper()} {route}",
+                                handler=node.name,
+                                kind="rest_endpoint",
+                                file=file_path,
+                                line=node.lineno,
                             )
+                        )
 
     def _get_arg_value(self, node: ast.AST) -> str | None:
         """Get string value from an AST node."""

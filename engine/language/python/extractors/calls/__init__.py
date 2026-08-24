@@ -47,9 +47,8 @@ class PythonCallExtractor(BaseExtractor):
     ) -> str | None:
         """Get the ID of the function containing this call."""
         for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if self._node_contains(call_node, node):
-                    return f"python://{file_path}::{node.name}"
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and self._node_contains(call_node, node):
+                return f"python://{file_path}::{node.name}"
         return None
 
     def _get_callee_name(self, call_node: ast.Call) -> str | None:

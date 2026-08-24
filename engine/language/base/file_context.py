@@ -5,12 +5,10 @@ source path, source code, language, and metadata. No pass should
 reopen files or reparse ASTs.
 """
 
-from typing import Any, Generic, TypeVar
-
-T = TypeVar("T")
+from typing import Any
 
 
-class FileContext(Generic[T]):
+class FileContext[T]:
     """Reusable per-file context for indexing passes.
 
     Created once per file during indexing and passed to every indexing pass.

@@ -65,9 +65,6 @@ class BoundaryInvariantPass(DiscoveryCompilerPass):
             rest = getattr(api, "rest", ())
             graphql = getattr(api, "graphql", ())
             rpc = getattr(api, "rpc", ())
-            cli = getattr(api, "cli", ())
-            cron = getattr(api, "cron", ())
-            workers = getattr(api, "workers", ())
             api_endpoint_count = len(rest) + len(graphql) + len(rpc)
             api_unchanged = api_endpoint_count == 0
 

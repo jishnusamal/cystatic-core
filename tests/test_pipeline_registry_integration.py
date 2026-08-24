@@ -1,7 +1,9 @@
-import pytest
-from unittest.mock import AsyncMock
 
-from core.errors import LanguageDetectionFailed, LanguageNotSupported
+from typing import ClassVar
+
+import pytest
+
+from core.errors import LanguageDetectionFailed
 from engine.language.builtins import create_default_language_registry
 from engine.pipeline.pipeline import Pipeline
 from engine.repository.store import SQLiteRepositoryStore
@@ -23,7 +25,7 @@ async def test_python_pipeline_integration():
     registry = create_default_language_registry()
 
     class MockSnapshot:
-        files = {
+        files: ClassVar[dict[str, str]] = {
             "app.py": "def hello():\n    return 'world'\n",
             "utils.py": "def add(a, b):\n    return a + b\n"
         }
@@ -101,7 +103,7 @@ async def test_typescript_pipeline_integration():
     registry = create_default_language_registry()
 
     class MockSnapshot:
-        files = {
+        files: ClassVar[dict[str, str]] = {
             "app.ts": """
 import { chargeCard } from "./payment";
 import * as fs from "fs";
@@ -252,7 +254,7 @@ async def test_unregistered_language_pipeline_integration():
     registry = create_default_language_registry()
 
     class MockSnapshot:
-        files = {
+        files: ClassVar[dict[str, str]] = {
             "main.rs": "fn main() {}",
         }
 

@@ -1,6 +1,7 @@
 """Test suite for Issue 12: plugin and language registry boundary."""
 
 import pytest
+
 from core.errors import (
     LanguageDetectionFailed,
     LanguageNotSupported,
@@ -9,7 +10,6 @@ from core.errors import (
 from engine.language.base import (
     BaseLanguageAdapter,
     FileContext,
-    LanguagePlugin,
     LanguageSpec,
 )
 from engine.language.builtins import create_default_language_registry

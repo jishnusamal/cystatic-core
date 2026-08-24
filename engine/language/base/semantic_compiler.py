@@ -516,7 +516,7 @@ class SemanticCompiler:
 
         # Call graph stats
         call_nodes = len(
-            set(e.caller_id for e in call_edges) | set(e.callee_id for e in call_edges)
+            {e.caller_id for e in call_edges} | {e.callee_id for e in call_edges}
         )
         log("\nCall Graph:")
         log(f"  Nodes: {call_nodes}")
@@ -529,8 +529,8 @@ class SemanticCompiler:
 
         # Reference graph stats
         ref_nodes = len(
-            set(e.source_id for e in reference_edges)
-            | set(e.target_id for e in reference_edges)
+            {e.source_id for e in reference_edges}
+            | {e.target_id for e in reference_edges}
         )
         log("\nReference Graph:")
         log(f"  Nodes: {ref_nodes}")
@@ -543,7 +543,7 @@ class SemanticCompiler:
 
         # Type relationship graph stats
         type_nodes = len(
-            set(e.source_id for e in type_edges) | set(e.target_id for e in type_edges)
+            {e.source_id for e in type_edges} | {e.target_id for e in type_edges}
         )
         log("\nType Relationship Graph:")
         log(f"  Nodes: {type_nodes}")
@@ -602,9 +602,6 @@ class SemanticCompiler:
         log("\n" + "=" * 80)
         log("TOP 25 SLOWEST SEMANTIC OPERATIONS")
         log("=" * 80)
-
-        # Collect all operations with timing
-        operations = []
 
         # We'll track key operations manually since we're not using decorators
         # This is a simplified version - in production you'd use the instrumentation framework
@@ -743,36 +740,35 @@ class SemanticCompiler:
     ) -> str | None:
         """Resolve a callee name to its symbol ID using pre-built lookup indexes."""
         # Case 1: Method call on self or cls
-        if receiver in ("self", "cls"):
-            if "#" in caller_id:
-                parts = caller_id.split("#")[-1].split(".")
-                if len(parts) == 2:
-                    class_name = parts[0]
-                    class_id = f"{language}://{file_path}#{class_name}"
+        if receiver in ("self", "cls") and "#" in caller_id:
+            parts = caller_id.split("#")[-1].split(".")
+            if len(parts) == 2:
+                class_name = parts[0]
+                class_id = f"{language}://{file_path}#{class_name}"
 
-                    method_sym = class_method_map.get(
-                        (file_path, class_name, callee_name)
-                    )
-                    if method_sym:
-                        return method_sym.id
+                method_sym = class_method_map.get(
+                    (file_path, class_name, callee_name)
+                )
+                if method_sym:
+                    return method_sym.id
 
-                    queue = deque(resolved_inheritance_map.get(class_id, []))
-                    visited = {class_id}
-                    while queue:
-                        base_id = queue.popleft()
-                        if base_id in visited:
-                            continue
-                        visited.add(base_id)
+                queue = deque(resolved_inheritance_map.get(class_id, []))
+                visited = {class_id}
+                while queue:
+                    base_id = queue.popleft()
+                    if base_id in visited:
+                        continue
+                    visited.add(base_id)
 
-                        if "#" in base_id:
-                            base_uri, base_class = base_id.split("#")
-                            base_file = base_uri.split("://")[-1]
-                            method_sym = class_method_map.get(
-                                (base_file, base_class, callee_name)
-                            )
-                            if method_sym:
-                                return method_sym.id
-                            queue.extend(resolved_inheritance_map.get(base_id, []))
+                    if "#" in base_id:
+                        base_uri, base_class = base_id.split("#")
+                        base_file = base_uri.split("://")[-1]
+                        method_sym = class_method_map.get(
+                            (base_file, base_class, callee_name)
+                        )
+                        if method_sym:
+                            return method_sym.id
+                        queue.extend(resolved_inheritance_map.get(base_id, []))
 
         # Case 2: Receiver specified (e.g. object or module name)
         if receiver:

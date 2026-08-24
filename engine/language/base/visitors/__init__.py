@@ -5,14 +5,12 @@ register their handlers and the visitor calls them during traversal.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Generic, TypeVar
+from typing import Any
 
 from engine.language.base.file_context import FileContext
 
-T = TypeVar("T")
 
-
-class BaseVisitor(ABC, Generic[T]):
+class BaseVisitor[T](ABC):
     """Base class for language-specific AST visitors.
 
     A visitor walks the AST exactly once and dispatches node events

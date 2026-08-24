@@ -178,7 +178,7 @@ class TypeScriptLanguageAdapter(BaseLanguageAdapter):
                     )
                     files_parsed += 1
                     yield context
-                except Exception:
+                except Exception:  # noqa: BLE001 -- isolate per-file parse/index failures during indexing
                     files_failed += 1
                     continue
 
@@ -203,7 +203,8 @@ class TypeScriptLanguageAdapter(BaseLanguageAdapter):
 
         from core.logging import pipeline_logger
 
-        log = lambda msg: pipeline_logger.log_pipeline(msg, to_terminal=False)
+        def log(msg: str) -> None:
+            pipeline_logger.log_pipeline(msg, to_terminal=False)
 
         log(
             f"[adapter] TypeScript Files: {len(files)} total, {files_parsed} parsed, {files_skipped} skipped, {files_failed} failed"
@@ -264,7 +265,7 @@ class TypeScriptLanguageAdapter(BaseLanguageAdapter):
                 [context], language, self._visitor
             )
             return repo_index.files[0]
-        except Exception:
+        except Exception:  # noqa: BLE001 -- isolate per-file parse/index failures during indexing
             from engine.repository.model.repository_index import FileIndex
 
             return FileIndex(path=file_path, language=language)

@@ -1,7 +1,8 @@
 """TypeScript type index pass - extracts type relationships from TypeScript AST."""
 
 from typing import Any
-from tree_sitter import Tree, Node
+
+from tree_sitter import Node, Tree
 
 from engine.language.base.file_context import FileContext
 from engine.language.base.passes import BaseIndexPass
@@ -48,8 +49,7 @@ class TypeScriptTypeIndexPass(BaseIndexPass):
             if node.type == "class_declaration":
                 self._extract_relationships(node, context.path, source_bytes, builder)
 
-            for child in reversed(node.children):
-                stack.append(child)
+            stack.extend(reversed(node.children))
 
     def visit_ClassDef(
         self, node: Node, context: FileContext[Tree], builder: dict[str, Any]

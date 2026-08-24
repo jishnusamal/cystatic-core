@@ -75,6 +75,28 @@ class ChangedSymbolsPass(ChangeCompilerPass):
             context.added_symbols, context.removed_symbols
         )
 
+        # Drop symbols belonging to files excluded by FileClassificationPass
+        # (e.g. frontend TS/TSX, generated files) so they never receive
+        # semantic change analysis.
+        excluded_files = context.metadata.get("excluded_files") or set()
+        if excluded_files:
+            context.added_symbols = [
+                s for s in context.added_symbols if s.file not in excluded_files
+            ]
+            context.removed_symbols = [
+                s for s in context.removed_symbols if s.file not in excluded_files
+            ]
+            context.modified_symbols = [
+                m
+                for m in context.modified_symbols
+                if m["symbol"].file not in excluded_files
+            ]
+            context.renamed_symbols = [
+                r
+                for r in context.renamed_symbols
+                if r["new_symbol"].file not in excluded_files
+            ]
+
         return context
 
     def _symbol_changed(self, old_symbol: Symbol, new_symbol: Symbol) -> bool:
@@ -97,10 +119,7 @@ class ChangedSymbolsPass(ChangeCompilerPass):
             return True
 
         # Check if properties changed
-        if old_symbol.properties != new_symbol.properties:
-            return True
-
-        return False
+        return old_symbol.properties != new_symbol.properties
 
     def _detect_renames(self, added: list[Symbol], removed: list[Symbol]) -> list[dict]:
         """

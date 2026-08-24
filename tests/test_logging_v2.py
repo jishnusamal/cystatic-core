@@ -2,7 +2,7 @@
 
 import json
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 
@@ -11,15 +11,15 @@ from core.runtime import RunContext, generate_run_id
 
 
 def test_run_id_generation():
-    dt = datetime(2026, 7, 22, 10, 41, 55)
+    dt = datetime(2026, 7, 22, 10, 41, 55, tzinfo=UTC)
     run_id = generate_run_id(dt)
 
     # Matching run-YYYYMMDD-HHMMSS-random6 format
     assert re.match(r"^run-20260722-104155-[0-9a-f]{6}$", run_id)
 
     # Lexicographical sortability test
-    dt1 = datetime(2026, 7, 22, 10, 41, 55)
-    dt2 = datetime(2026, 7, 22, 10, 41, 56)
+    dt1 = datetime(2026, 7, 22, 10, 41, 55, tzinfo=UTC)
+    dt2 = datetime(2026, 7, 22, 10, 41, 56, tzinfo=UTC)
     id1 = generate_run_id(dt1)
     id2 = generate_run_id(dt2)
     assert id1 < id2
@@ -36,7 +36,9 @@ def test_run_context_immutability(tmp_path):
     assert ctx.log_dir.exists()
     assert ctx.log_manager is not None
 
-    with pytest.raises(Exception):
+    from dataclasses import FrozenInstanceError
+
+    with pytest.raises(FrozenInstanceError):
         ctx.run_id = "modified"  # frozen dataclass check
 
 

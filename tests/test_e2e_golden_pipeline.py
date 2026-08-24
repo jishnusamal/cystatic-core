@@ -50,7 +50,6 @@ async def test_e2e_golden_pipeline_with_facts(tmp_path):
     db_file = str(tmp_path / "golden_store.db")
     store = SQLiteRepositoryStore(db_file)
     
-    repo_name = "golden-org/golden-repo"
     base_sha = "sha-base-golden"
     head_sha = "sha-head-golden"
     
@@ -203,7 +202,7 @@ async def test_e2e_golden_pipeline_with_facts(tmp_path):
     assert context.ocm is not None
     assert context.ocm.api is not None
     assert len(context.ocm.api.rest) == 1
-    method, path, handler = context.ocm.api.rest[0]
+    method, path, _handler = context.ocm.api.rest[0]
     assert method == "POST"
     assert path == "/checkout"
     

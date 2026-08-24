@@ -1,29 +1,21 @@
-import hashlib
-import sqlite3
 from engine.repository.facts import (
-    Call,
-    CallType,
     File,
     FileId,
-    Import,
-    ImportType,
-    Reference,
-    ReferenceType,
     Symbol,
     SymbolId,
     SymbolKind,
     SymbolVisibility,
 )
-from engine.repository.store import SQLiteRepositoryStore
-from engine.repository.store.sink import PersistentFactSink
 from engine.repository.indexing.indexer import RepositoryIndexer
 from engine.repository.metrics import RepositoryMaterializationMetrics
+from engine.repository.store import SQLiteRepositoryStore
+from engine.repository.store.sink import PersistentFactSink
 
 
 def test_partial_store_metadata_recording():
     store = SQLiteRepositoryStore(":memory:")
     repo_id = store.create_repository("github", "testowner", "testrepo")
-    version_id = store.create_version(repo_id, "commit1")
+    store.create_version(repo_id, "commit1")
     commit_sha = "commit1"
 
     # Record tree

@@ -130,9 +130,8 @@ async def github_webhook(
     body = await request.body()
 
     # Verify signature
-    if webhook_secret:
-        if not await event_provider.verify(body, signature, webhook_secret):
-            raise InvalidWebhook("Invalid webhook signature")
+    if webhook_secret and not await event_provider.verify(body, signature, webhook_secret):
+        raise InvalidWebhook("Invalid webhook signature")
 
     # Parse payload
     try:
@@ -204,7 +203,8 @@ async def analyze_repository(
     profiler.log_memory("Start of request")
 
     pipeline = get_pipeline_instance()
-    registry = get_registry_instance()
+    # Ensure the integration registry is initialized
+    get_registry_instance()
 
     print("[routes] /v1/analyze called")
 
@@ -310,8 +310,8 @@ async def analyze_repository(
             print(f"[routes] Pipeline error: {context.error}")
             raise HTTPException(status_code=500, detail=str(context.error))
 
-        # Render ReviewContext
-        review_context = pipeline.render_review_context(context)
+        # Render ReviewContext (validates and renders; result unused here)
+        pipeline.render_review_context(context)
 
         # Serialize LLMContext
         llm_context = pipeline.serialize_llm_context(context)
@@ -364,9 +364,9 @@ async def analyze_repository(
                         print("\n--- REPOSITORY ANALYSIS ARTIFACTS ---")
                         print(report)
                         print("-------------------------------------\n")
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001 -- degrade gracefully at the API boundary; never fail the webhook
                         print(f"[routes] Failed to render repository artifacts: {exc}")
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- degrade gracefully at the API boundary; never fail the webhook
                 print(f"[routes] LLM briefing generation failed: {exc}")
                 response_content["llm_output"] = {
                     "generated": False,
@@ -506,10 +506,12 @@ async def _process_pr_analysis(
     import os
     import time
     import uuid
+
     import psutil
+
     from core.config import get_settings
-    from core.profile import MemoryProfiler
     from core.logging import pipeline_logger
+    from core.profile import MemoryProfiler
 
     pipeline = get_pipeline_instance()
     registry = get_registry_instance()
@@ -576,14 +578,16 @@ async def _process_pr_analysis(
                         print(
                             f"[_process_pr_analysis] LLM comment generated: model={llm_result.get('model')}, valid={llm_result.get('is_valid')}"
                         )
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 -- degrade gracefully at the API boundary; never fail the webhook
                     print(f"[_process_pr_analysis] LLM comment generation failed: {exc}")
                     # Continue with fallback
 
             # Render and print deterministic repository artifacts
             if context.ocm is not None:
                 try:
-                    from integrations.github.renderers.github_renderer import GitHubRenderer
+                    from integrations.github.renderers.github_renderer import (
+                        GitHubRenderer,
+                    )
 
                     renderer = GitHubRenderer()
                     render_context = {
@@ -606,7 +610,7 @@ async def _process_pr_analysis(
                     print("\n--- REPOSITORY ANALYSIS ARTIFACTS ---")
                     print(report)
                     print("-------------------------------------\n")
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 -- degrade gracefully at the API boundary; never fail the webhook
                     print(
                         f"[_process_pr_analysis] Failed to render repository artifacts: {exc}"
                     )
@@ -622,7 +626,7 @@ async def _process_pr_analysis(
 
             print(f"Successfully analyzed {request.repository.full_name}")
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- degrade gracefully at the API boundary; never fail the webhook
             # Log error but don't fail the webhook
             print(f"Error processing PR analysis for {request.repository.full_name}: {exc}")
             import traceback

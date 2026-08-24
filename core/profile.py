@@ -2,6 +2,7 @@ import os
 import threading
 import time
 import tracemalloc
+from contextlib import suppress
 from contextvars import ContextVar
 
 import psutil
@@ -44,7 +45,7 @@ class MemoryProfiler:
             try:
                 tracemalloc.start()
                 self.tracemalloc_started = True
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 -- diagnostics must not crash the analysis
                 pipeline_logger.log_pipeline(
                     f"[MEMORY][analysis={self.analysis_id}] Failed to start tracemalloc: {e}",
                     to_terminal=True,
@@ -55,13 +56,12 @@ class MemoryProfiler:
 
     def _monitor_rss(self):
         while not self._stop_event.is_set():
-            try:
+            # Sampling must never crash the monitoring thread
+            with suppress(Exception):
                 rss_mb = self.process.memory_info().rss / (1024 * 1024)
                 self.peak_rss = max(self.peak_rss, rss_mb)
                 if self.tracking_sub_peak and rss_mb > self.sub_peak_rss:
                     self.sub_peak_rss = rss_mb
-            except Exception:
-                pass
             time.sleep(0.005)  # sample every 5ms
 
     def start_sub_peak_tracking(self):
@@ -94,7 +94,8 @@ class MemoryProfiler:
 
         # Log tracemalloc current/peak if active
         if self.tracemalloc_started:
-            try:
+            # Tracing stats are best-effort diagnostics
+            with suppress(Exception):
                 current, peak = tracemalloc.get_traced_memory()
                 current_mb = current / (1024 * 1024)
                 peak_mb = peak / (1024 * 1024)
@@ -102,8 +103,6 @@ class MemoryProfiler:
                     f"[TRACEMALLOC][analysis={self.analysis_id}] current={current_mb:.1f} MB peak={peak_mb:.1f} MB",
                     to_terminal=True,
                 )
-            except Exception:
-                pass
 
     def log_tracemalloc_difference(self, stage: str, limit: int = 15):
         if not self.enabled or not self.tracemalloc_started:
@@ -132,7 +131,7 @@ class MemoryProfiler:
                 )
 
             pipeline_logger.log_pipeline("\n".join(report), to_terminal=True)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- diagnostics must not crash the analysis
             pipeline_logger.log_pipeline(
                 f"[TRACEMALLOC-TOP][analysis={self.analysis_id}] Error taking snapshot: {e}",
                 to_terminal=True,
@@ -144,21 +143,18 @@ class MemoryProfiler:
             self._monitor_thread.join(timeout=1.0)
 
         # Save checkpoints JSON to log directory if running under a run context
-        try:
+        # Checkpoint persistence is best-effort; never fail the shutdown path
+        with suppress(Exception):
             from core.logging import pipeline_logger
 
             ctx = pipeline_logger.current_context
             if ctx and ctx.log_manager:
                 ctx.log_manager.write_json("memory_checkpoints", self.checkpoints)
-        except Exception:
-            pass
 
         if self.tracemalloc_started:
-            try:
+            with suppress(Exception):
                 tracemalloc.stop()
                 self.tracemalloc_started = False
-            except Exception:
-                pass
         # Clear active profiler in context
         _current_profiler.set(None)
 

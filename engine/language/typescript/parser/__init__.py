@@ -1,8 +1,9 @@
 """TypeScript parser - wraps Tree-sitter TypeScript parser as a BaseParser."""
 
 from typing import Any
-from tree_sitter import Language, Parser
+
 import tree_sitter_typescript as tstypescript
+from tree_sitter import Language, Parser
 
 from engine.language.base.parser import BaseParser
 

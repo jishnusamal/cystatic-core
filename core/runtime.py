@@ -8,7 +8,7 @@ from __future__ import annotations
 import secrets
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from core.logging import LogManager
@@ -45,7 +45,7 @@ def generate_run_id(started_at: datetime | None = None) -> str:
     Example: run-20260722-104155-8c9f2a
     """
     if started_at is None:
-        started_at = datetime.now()
+        started_at = datetime.now(UTC)
     timestamp_str = started_at.strftime("%Y%m%d-%H%M%S")
     random_suffix = secrets.token_hex(3)
     return f"run-{timestamp_str}-{random_suffix}"
@@ -69,7 +69,7 @@ class RunContext:
     ) -> RunContext:
         """Create a new RunContext with an isolated log directory and LogManager."""
         if started_at is None:
-            started_at = datetime.now()
+            started_at = datetime.now(UTC)
         if run_id is None:
             run_id = generate_run_id(started_at)
         log_dir = Path(base_dir) / run_id

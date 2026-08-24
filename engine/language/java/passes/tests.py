@@ -4,7 +4,7 @@ Emits only structural test facts. No resolution, no graph construction.
 """
 
 import re
-from typing import Any
+from typing import Any, ClassVar
 
 from engine.language.base.file_context import FileContext
 from engine.language.base.passes import BaseIndexPass
@@ -18,7 +18,7 @@ class JavaTestIndexPass(BaseIndexPass):
     No semantic interpretation - just structural test discovery.
     """
 
-    ASSERTION_METHODS = {
+    ASSERTION_METHODS: ClassVar[set[str]] = {
         "assertEquals",
         "assertNotEquals",
         "assertTrue",

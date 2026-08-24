@@ -74,7 +74,7 @@ class ChangeFacts:
                 self.visibility = SymbolVisibility.PUBLIC
                 self.language = "python"
                 self.range = (1, 1)
-                self.properties = {}
+                self.properties: dict[str, Any] = {}
 
             def __hash__(self):
                 return hash(self.id)
@@ -99,7 +99,7 @@ class ChangeFacts:
                 self.visibility = SymbolVisibility.PUBLIC
                 self.language = "python"
                 self.range = (1, 1)
-                self.properties = {}
+                self.properties: dict[str, Any] = {}
 
             def __hash__(self):
                 return hash(self.id)
@@ -124,7 +124,7 @@ class ChangeFacts:
                 self.visibility = SymbolVisibility.PUBLIC
                 self.language = "python"
                 self.range = (1, 1)
-                self.properties = {}
+                self.properties: dict[str, Any] = {}
 
             def __hash__(self):
                 return hash(self.id)
@@ -149,7 +149,7 @@ class ChangeFacts:
         result = []
         for cs in self.changed_symbols:
             if cs.change_type == "MODIFIED":
-                changes_list = []
+                changes_list: list[Any] = []
                 has_any_change = False
                 for cc in self.contract_changes:
                     if cc.symbol_id == cs.symbol_id:

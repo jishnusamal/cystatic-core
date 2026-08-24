@@ -288,7 +288,7 @@ class ReviewContextCompiler:
                     )
             if hasattr(change_model, "modified_symbols"):
                 for ms in change_model.modified_symbols:
-                    sym = getattr(ms, "symbol", ms)
+                    sym = getattr(ms, "symbol", ms)  # type: ignore[arg-type]
                     changed_symbol_ids.add(
                         getattr(sym, "id", getattr(sym, "symbol_id", str(sym)))
                     )
@@ -477,7 +477,7 @@ class ReviewContextCompiler:
                     )
             if hasattr(change_model, "modified_symbols"):
                 for ms in change_model.modified_symbols:
-                    sym = getattr(ms, "symbol", ms)
+                    sym = getattr(ms, "symbol", ms)  # type: ignore[arg-type]
                     changed_symbol_ids.add(
                         str(getattr(sym, "id", getattr(sym, "symbol_id", sym)))
                     )
@@ -498,7 +498,7 @@ class ReviewContextCompiler:
             kind_val = getattr(ep_fact, "kind", None)
             kind_str = (
                 kind_val.value
-                if hasattr(kind_val, "value")
+                if kind_val is not None and hasattr(kind_val, "value")
                 else str(kind_val)
                 if kind_val
                 else ""

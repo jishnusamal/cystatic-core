@@ -42,16 +42,7 @@ from engine.review_context.model import (
 
 from .model import ENUM_REVERSE, ExecutionGraph, LLMContext, StringTable
 
-if TYPE_CHECKING:
-    from core.config import CompilerSettings
-
-# Regex for extracting file path and line range from location strings
-_LOCATION_RE = re.compile(r"^(.+?)(?::(\d+)(?:-(\d+))?)?$")
-
-
-# ---------------------------------------------------------------------------
 # Review-scope pruning (imported from review_scope_builder to avoid circularity)
-# ---------------------------------------------------------------------------
 from .review_scope_builder import (
     FRAMEWORK_MODULES,
     FRAMEWORK_NAMES,
@@ -61,6 +52,12 @@ from .review_scope_builder import (
     STD_LIBS,
     build_review_scope,
 )
+
+if TYPE_CHECKING:
+    from core.config import CompilerSettings
+
+# Regex for extracting file path and line range from location strings
+_LOCATION_RE = re.compile(r"^(.+?)(?::(\d+)(?:-(\d+))?)?$")
 
 
 def _parse_location(location: str) -> tuple[str, int, int]:
@@ -408,7 +405,7 @@ class LLMContextCompiler:
         # -----------------------------------------------------------------------
         # Step 5: Build endpoint table (retained EPs only)
         # -----------------------------------------------------------------------
-        endpoint_table = []
+        endpoint_table: list[tuple[int, int]] = []
         seen_endpoints = {}
         for ep, _ in selected_eps:
             key = (ep.method, ep.path)
@@ -514,7 +511,7 @@ class LLMContextCompiler:
         # Also update path_map in sb to use new indices (needed for get_string lookups in tests)
         new_path_map: dict[int, str] = {}
         for old_idx, path in sb.path_map.items():
-            new_idx = old_to_new.get(old_idx)
+            new_idx = old_to_new.get(old_idx, 0)
             if new_idx is not None:
                 new_path_map[new_idx] = path
 
@@ -621,29 +618,29 @@ class LLMContextCompiler:
         all_referenced = chain_symbol_ids | disc_symbol_ids
         for ep, compressed_steps in selected_eps:
             for step in compressed_steps:
-                sym = step.symbol
-                if sym and sym.id and sym.id not in symbol_id_map:
+                step_sym: Any = step.symbol
+                if step_sym and step_sym.id and step_sym.id not in symbol_id_map:
                     # Only add if referenced by a retained chain or discovery
-                    if sym.id not in all_referenced:
+                    if step_sym.id not in all_referenced:
                         continue
 
-                    file_path, _, _ = _parse_location(sym.location)
+                    file_path, _, _ = _parse_location(step_sym.location)
                     file_id = file_idx_map.get(file_path, 0)
 
                     limit = self._settings.LLM_CONTEXT_MAX_SYMBOLS_PER_FILE
                     if symbols_per_file.get(file_id, 0) >= limit:
                         continue
 
-                    derivable_name = _resolve_symbol_name_from_uri(sym.id)
-                    if sym.name == derivable_name or _is_noise_string(sym.name):
+                    derivable_name = _resolve_symbol_name_from_uri(step_sym.id)
+                    if step_sym.name == derivable_name or _is_noise_string(step_sym.name):
                         name_idx = 0
                     else:
-                        name_idx = sb.add(sym.name)
+                        name_idx = sb.add(step_sym.name)
 
                     sym_entry = (
                         file_id,
                         name_idx,
-                        _enum_id("kind", sym.kind),
+                        _enum_id("kind", step_sym.kind),
                     )
 
                     if sym_entry not in seen_tuples:
@@ -653,32 +650,32 @@ class LLMContextCompiler:
                     else:
                         idx = seen_tuples[sym_entry]
 
-                    symbol_id_map[sym.id] = idx
+                    symbol_id_map[step_sym.id] = idx
                     symbols_per_file[file_id] = symbols_per_file.get(file_id, 0) + 1
 
         # Pass 3: Remaining discovery-referenced symbols from any retained chain (even if EP was discarded)
         for ep, compressed_steps in retained_eps:
             for step in compressed_steps:
-                sym = step.symbol
+                step_sym3: Any = step.symbol
                 if (
-                    sym
-                    and sym.id
-                    and sym.id in disc_symbol_ids
-                    and sym.id not in symbol_id_map
+                    step_sym3
+                    and step_sym3.id
+                    and step_sym3.id in disc_symbol_ids
+                    and step_sym3.id not in symbol_id_map
                 ):
-                    file_path, _, _ = _parse_location(sym.location)
+                    file_path, _, _ = _parse_location(step_sym3.location)
                     file_id = file_idx_map.get(file_path, 0)
 
-                    derivable_name = _resolve_symbol_name_from_uri(sym.id)
-                    if sym.name == derivable_name or _is_noise_string(sym.name):
+                    derivable_name = _resolve_symbol_name_from_uri(step_sym3.id)
+                    if step_sym3.name == derivable_name or _is_noise_string(step_sym3.name):
                         name_idx = 0
                     else:
-                        name_idx = sb.add(sym.name)
+                        name_idx = sb.add(step_sym3.name)
 
                     sym_entry = (
                         file_id,
                         name_idx,
-                        _enum_id("kind", sym.kind),
+                        _enum_id("kind", step_sym3.kind),
                     )
 
                     if sym_entry not in seen_tuples:
@@ -688,7 +685,7 @@ class LLMContextCompiler:
                     else:
                         idx = seen_tuples[sym_entry]
 
-                    symbol_id_map[sym.id] = idx
+                    symbol_id_map[step_sym3.id] = idx
                     symbols_per_file[file_id] = symbols_per_file.get(file_id, 0) + 1
 
         return table, symbol_id_map
@@ -1006,7 +1003,7 @@ class _StringBuilder:
         if "/" in path:
             dir_part, _, file_part = path.rpartition("/")
             dir_prefix = f"{dir_part}/"
-            dir_idx = self.add(dir_prefix)
+            self.add(dir_prefix)
             file_entry = f" {file_part}"
             file_idx = self.add(file_entry)
             full_idx = file_idx  # index pointing to formatted string entry

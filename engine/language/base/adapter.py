@@ -145,9 +145,9 @@ class BaseLanguageAdapter(ABC):
 
         repo_prefix = ""
         head_files_raw = repository_input.get("files", {})
-        for cf in head_files_raw.keys():
+        for cf in head_files_raw:
             if cf is not None and os.path.isabs(cf):
-                for gf in base_graph.files.keys():
+                for gf in base_graph.files:
                     cf_norm = cf.replace("\\", "/")
                     gf_norm = gf.replace("\\", "/")
                     if (
@@ -204,7 +204,7 @@ class BaseLanguageAdapter(ABC):
         changed_files: dict[str, FileContribution | None] = {}
 
         # Added and modified files parsing with progress logs
-        to_parse = sorted(list(added_files | modified_files))
+        to_parse = sorted(added_files | modified_files)
         pipeline_logger.log_pipeline(
             f"[incremental] Parsing changed files (0/{len(to_parse)})...",
             to_terminal=True,

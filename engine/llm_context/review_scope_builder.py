@@ -207,17 +207,11 @@ def is_compiler_metadata(val: str) -> bool:
         return False
     val_lower = val.lower()
     if (
-        val_lower.startswith("unit://")
-        or val_lower.startswith("ref://")
-        or val_lower.startswith("node://")
-        or val_lower.startswith("edge://")
-        or "graph" in val_lower
+        val_lower.startswith(("unit://", "ref://", "node://", "edge://")) or "graph" in val_lower
     ):
         return True
     # Hex hashes of length >= 32
-    if len(val) >= 32 and all(c in "0123456789abcdefABCDEF" for c in val):
-        return True
-    return False
+    return bool(len(val) >= 32 and all(c in "0123456789abcdefABCDEF" for c in val))
 
 
 def classify_symbol(name: str, symbol_id: str, file_path: str, kind: str) -> str:
@@ -256,14 +250,7 @@ def classify_symbol(name: str, symbol_id: str, file_path: str, kind: str) -> str
     # 3. Test
     is_test = False
     if (
-        "/tests/" in path_lower
-        or "/test/" in path_lower
-        or path_lower.startswith("tests/")
-        or path_lower.startswith("test/")
-        or path_lower.startswith("tests\\")
-        or path_lower.startswith("test\\")
-        or "test_" in path_lower
-        or "_test.py" in path_lower
+        "/tests/" in path_lower or "/test/" in path_lower or path_lower.startswith(("tests/", "test/", "tests\\", "test\\")) or "test_" in path_lower or "_test.py" in path_lower
     ) or (
         "test_" in name_lower
         or "mock" in name_lower

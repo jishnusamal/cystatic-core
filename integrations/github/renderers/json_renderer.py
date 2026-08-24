@@ -229,7 +229,7 @@ class JSONRenderer:
             from dataclasses import asdict
 
             return asdict(dependency)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- rendering falls back to type name for non-dataclass models
             return {"type": type(dependency).__name__}
 
     def _render_data(self, data: Any) -> dict[str, Any]:
@@ -238,7 +238,7 @@ class JSONRenderer:
             from dataclasses import asdict
 
             return asdict(data)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- rendering falls back to type name for non-dataclass models
             return {"type": type(data).__name__}
 
     def _render_event(self, event: Any) -> dict[str, Any]:
@@ -247,7 +247,7 @@ class JSONRenderer:
             from dataclasses import asdict
 
             return asdict(event)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- rendering falls back to type name for non-dataclass models
             return {"type": type(event).__name__}
 
     def _render_api(self, api: Any) -> dict[str, Any]:
@@ -256,7 +256,7 @@ class JSONRenderer:
             from dataclasses import asdict
 
             return asdict(api)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- rendering falls back to type name for non-dataclass models
             return {"type": type(api).__name__}
 
     def _render_validation(self, validation: Any) -> dict[str, Any]:
@@ -265,7 +265,7 @@ class JSONRenderer:
             from dataclasses import asdict
 
             return asdict(validation)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- rendering falls back to type name for non-dataclass models
             return {"type": type(validation).__name__}
 
     def _render_metrics(self, metrics: Any) -> dict[str, Any]:
@@ -274,7 +274,7 @@ class JSONRenderer:
             from dataclasses import asdict
 
             return asdict(metrics)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- rendering falls back to type name for non-dataclass models
             return {"type": type(metrics).__name__}
 
     def _render_symbol_summary(self, symbol: Any) -> dict[str, Any]:
@@ -295,7 +295,7 @@ class JSONRenderer:
             from dataclasses import asdict
 
             return asdict(change)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- rendering falls back to type name for non-dataclass models
             return {"type": type(change).__name__}
 
     def _render_behavior_summary(self, behavior: Any) -> dict[str, Any]:

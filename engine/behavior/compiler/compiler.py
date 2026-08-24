@@ -75,20 +75,16 @@ class BehaviorCompiler:
             and hasattr(repository_delta, "base_model")
         ):
             head_model = repository_delta.head_model
-            base_model = repository_delta.base_model
         elif repository_delta is not None:
             # It's a RepositoryModel passed as repository_delta (deprecated usage)
             head_model = repository_delta
-            base_model = None
         else:
             head_model = repository_model
-            base_model = None
 
-        if repository_query is None:
-            if head_model is not None:
-                from engine.change.compiler.compiler import RepositoryModelQuery
+        if repository_query is None and head_model is not None:
+            from engine.change.compiler.compiler import RepositoryModelQuery
 
-                repository_query = RepositoryModelQuery(head_model)
+            repository_query = RepositoryModelQuery(head_model)
 
         # Calculate impact surface using bounded traversal
         impact_engine = ImpactEngine()
@@ -135,20 +131,10 @@ class BehaviorCompiler:
                     changed_ids, repository_query, capabilities
                 )
 
-        # Initialize pass context with models
-        context = BehaviorPassContext(
-            metadata={
-                "change_model": change_model,
-                "repository_model": head_model,
-                "repository_delta": repository_delta,
-                "repository_query": repository_query,
-                "impact_surface": impact_surface,
-            }
-        )
-
         # Phase 8: We no longer run the legacy passes that depend on the materialized graph.
         # Instead, we return the ImpactSurface produced by bounded traversal.
-        return impact_surface
+        assert impact_surface is not None
+        return impact_surface  # type: ignore[return-value]
 
     def _build_behavior_model(self, context: BehaviorPassContext) -> BehaviorModel:
         """

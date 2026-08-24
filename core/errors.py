@@ -6,6 +6,8 @@ All error imports throughout the codebase should reference core.errors.
 
 from __future__ import annotations
 
+from typing import Any
+
 # ─── Base errors ────────────────────────────────────────────────────────────
 
 
@@ -223,48 +225,48 @@ class CompilationTimeout(PipelineError):
 
 
 __all__ = [
-    # Base
-    "FactorError",
     # Auth
     "AuthenticationError",
-    # Repository
-    "RepositoryError",
-    "RepositoryNotFound",
-    "RepositoryAccessDenied",
-    "RepositoryNotSupported",
-    "RepositoryCompilationFailed",
-    "RepositoryNotInstalled",
-    "CommitNotFound",
-    "TreeNotFound",
-    "TreeTruncated",
-    "FileNotFound",
-    "BlobUnavailable",
     "AuthenticationFailure",
-    "RateLimitExceeded",
-    "RemoteTimeout",
-    "PartialBatchFailure",
-    # Webhook
-    "WebhookError",
-    "WebhookVerificationError",
-    "InvalidWebhook",
-    "MissingWebhookPayload",
-    # Renderer
-    "RendererError",
-    "RenderingError",
-    "RendererFailed",
-    "JSONSerializationFailed",
-    # Pipeline
-    "PipelineError",
-    "PipelineExecutionError",
-    # Diff
-    "DiffFetchFailed",
-    "InvalidDiff",
-    # Language
-    "LanguageNotSupported",
-    "LanguageDetectionFailed",
-    "LanguageRegistrationError",
+    "BlobUnavailable",
     # Cache
     "CacheReadFailed",
     "CacheWriteFailed",
+    "CommitNotFound",
     "CompilationTimeout",
+    # Diff
+    "DiffFetchFailed",
+    # Base
+    "FactorError",
+    "FileNotFound",
+    "InvalidDiff",
+    "InvalidWebhook",
+    "JSONSerializationFailed",
+    "LanguageDetectionFailed",
+    # Language
+    "LanguageNotSupported",
+    "LanguageRegistrationError",
+    "MissingWebhookPayload",
+    "PartialBatchFailure",
+    # Pipeline
+    "PipelineError",
+    "PipelineExecutionError",
+    "RateLimitExceeded",
+    "RemoteTimeout",
+    # Renderer
+    "RendererError",
+    "RendererFailed",
+    "RenderingError",
+    "RepositoryAccessDenied",
+    "RepositoryCompilationFailed",
+    # Repository
+    "RepositoryError",
+    "RepositoryNotFound",
+    "RepositoryNotInstalled",
+    "RepositoryNotSupported",
+    "TreeNotFound",
+    "TreeTruncated",
+    # Webhook
+    "WebhookError",
+    "WebhookVerificationError",
 ]

@@ -2,7 +2,7 @@
 
 import sys
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from .evidence import Evidence, FileLocation
 
@@ -88,13 +88,13 @@ class CallGraph:
     def outgoing(self) -> dict[str, tuple[CallEdge, ...]]:
         if "outgoing" not in self._indexes:
             self._indexes["outgoing"] = self._build_outgoing()
-        return self._indexes["outgoing"]
+        return cast(dict[str, tuple[CallEdge, ...]], self._indexes["outgoing"])
 
     @property
     def incoming(self) -> dict[str, tuple[CallEdge, ...]]:
         if "incoming" not in self._indexes:
             self._indexes["incoming"] = self._build_incoming()
-        return self._indexes["incoming"]
+        return cast(dict[str, tuple[CallEdge, ...]], self._indexes["incoming"])
 
     @property
     def _outgoing(self) -> dict[str, tuple[CallEdge, ...]]:
@@ -185,13 +185,13 @@ class ReferenceGraph:
     def outgoing(self) -> dict[str, tuple[ReferenceEdge, ...]]:
         if "outgoing" not in self._indexes:
             self._indexes["outgoing"] = self._build_outgoing()
-        return self._indexes["outgoing"]
+        return cast(dict[str, tuple[ReferenceEdge, ...]], self._indexes["outgoing"])
 
     @property
     def incoming(self) -> dict[str, tuple[ReferenceEdge, ...]]:
         if "incoming" not in self._indexes:
             self._indexes["incoming"] = self._build_incoming()
-        return self._indexes["incoming"]
+        return cast(dict[str, tuple[ReferenceEdge, ...]], self._indexes["incoming"])
 
     @property
     def _outgoing(self) -> dict[str, tuple[ReferenceEdge, ...]]:
@@ -284,13 +284,13 @@ class TypeRelationshipGraph:
     def outgoing(self) -> dict[str, tuple[TypeRelationshipEdge, ...]]:
         if "outgoing" not in self._indexes:
             self._indexes["outgoing"] = self._build_outgoing()
-        return self._indexes["outgoing"]
+        return cast(dict[str, tuple[TypeRelationshipEdge, ...]], self._indexes["outgoing"])
 
     @property
     def incoming(self) -> dict[str, tuple[TypeRelationshipEdge, ...]]:
         if "incoming" not in self._indexes:
             self._indexes["incoming"] = self._build_incoming()
-        return self._indexes["incoming"]
+        return cast(dict[str, tuple[TypeRelationshipEdge, ...]], self._indexes["incoming"])
 
     @property
     def _outgoing(self) -> dict[str, tuple[TypeRelationshipEdge, ...]]:

@@ -1,15 +1,15 @@
 from dataclasses import dataclass
-from typing import Union
-from engine.repository.query import SymbolId, FileId, EventId
+
+from engine.repository.query import EventId, FileId, SymbolId
+
 
 @dataclass(frozen=True)
 class ResolutionRequirement:
     """Base class for all repository resolution requirements."""
-    pass
 
 @dataclass(frozen=True)
 class FileResolutionRequirement(ResolutionRequirement):
-    file_id: Union[FileId, str]  # Can be integer ID or path string
+    file_id: FileId | str  # Can be integer ID or path string
     query_type: str = "file"  # "file", "importers", "symbols"
 
 @dataclass(frozen=True)

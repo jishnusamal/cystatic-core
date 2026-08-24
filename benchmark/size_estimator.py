@@ -2,7 +2,7 @@ import sys
 from typing import Any
 
 
-def get_retained_size(obj: Any, seen: set[int] = None) -> int:
+def get_retained_size(obj: Any, seen: set[int] | None = None) -> int:
     """Recursively calculates the size of a Python object, including referenced objects.
     Avoids infinite loops by tracking seen object IDs.
     """

@@ -1,7 +1,7 @@
 """Python event extractor - detects event publish, emit, dispatch, and send operations."""
 
 import ast
-from typing import Any
+from typing import Any, ClassVar
 
 from engine.language.base import BaseExtractor
 
@@ -20,7 +20,7 @@ class PythonEventExtractor(BaseExtractor):
     framework, file, line.
     """
 
-    EVENT_METHODS = {
+    EVENT_METHODS: ClassVar[dict[str, str]] = {
         "send": "send",
         "send_robust": "send",
         "publish": "publish",
@@ -31,7 +31,7 @@ class PythonEventExtractor(BaseExtractor):
         "fire": "emit",
     }
 
-    FRAMEWORK_PATTERNS = {
+    FRAMEWORK_PATTERNS: ClassVar[dict[str, set[str]]] = {
         "django": {"django.dispatch", "django.core.signals"},
         "fastapi": {"fastapi"},
         "celery": {"celery"},
@@ -106,19 +106,20 @@ class PythonEventExtractor(BaseExtractor):
 
         # Check for keyword argument 'event' or 'signal'
         for kw in node.keywords:
-            if kw.arg in ("event", "signal", "name", "type"):
-                if isinstance(kw.value, ast.Constant):
-                    return str(kw.value.value)
+            if kw.arg in ("event", "signal", "name", "type") and isinstance(kw.value, ast.Constant):
+                return str(kw.value.value)
 
         # Check for attribute access like SomeEvent.send()
         if isinstance(node.func, ast.Attribute):
             if isinstance(node.func.value, ast.Name):
                 # The object name could be the event (e.g., order_created.send())
                 return node.func.value.id
-            elif isinstance(node.func.value, ast.Attribute):
+            elif (
+                isinstance(node.func.value, ast.Attribute)
+                and isinstance(node.func.value.value, ast.Name)
+            ):
                 # Chain like signals.order_created.send()
-                if isinstance(node.func.value.value, ast.Name):
-                    return f"{node.func.value.value.id}.{node.func.value.attr}"
+                return f"{node.func.value.value.id}.{node.func.value.attr}"
 
         return ""
 

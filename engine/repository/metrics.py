@@ -32,6 +32,20 @@ class RepositoryMaterializationMetrics:
     reason: str = ""
 
     # ------------------------------------------------------------------
+    # File role classification observability
+    #
+    # Populated by the materializer when FileClassifier/AnalysisPolicy
+    # exclude files from analysis before any remote fetch occurs.
+    # Kinds are stored as plain strings so this module stays decoupled
+    # from the classification model.
+    # ------------------------------------------------------------------
+
+    eligible_files: int = 0
+    excluded_files: int = 0
+    excluded_frontend_files: int = 0
+    classification_counts: dict[str, int] = field(default_factory=dict)
+
+    # ------------------------------------------------------------------
     # Phase 11 — Resolution budget observability
     #
     # These fields are populated by the resolver after each resolution
@@ -104,6 +118,16 @@ class RepositoryMaterializationMetrics:
 
         self._materialized_paths.add(path)
         self.materialized_bytes += size
+
+    def record_classification(self, kind: str) -> None:
+        """Count a file-role classification by kind string (e.g. 'frontend')."""
+        self.classification_counts[kind] = self.classification_counts.get(kind, 0) + 1
+
+    def record_excluded_file(self, *, path: str, kind: str) -> None:
+        """Record a file excluded from analysis/materialization by policy."""
+        self.excluded_files += 1
+        if kind == "frontend":
+            self.excluded_frontend_files += 1
 
     def record_resolution_outcome(self, outcome: Any) -> None:
         """Populate budget observability fields from a ResolutionOutcome.
@@ -194,6 +218,11 @@ class RepositoryMaterializationMetrics:
             "remote_requests": self.remote_requests,
             "duration": round(self.duration, 3),
             "reason": self.reason,
+            # File role classification observability
+            "eligible_files": self.eligible_files,
+            "excluded_files": self.excluded_files,
+            "excluded_frontend_files": self.excluded_frontend_files,
+            "classification_counts": dict(self.classification_counts),
             # Phase 11 budget observability
             "resolution_budget": self.resolution_budget,
             "resolution_usage": self.resolution_usage,

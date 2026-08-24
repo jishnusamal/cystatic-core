@@ -1,6 +1,8 @@
 import datetime
 import sqlite3
-from typing import Any, Sequence
+from collections.abc import Sequence
+from contextlib import suppress
+from typing import Any
 
 from engine.repository.model.repository_model import EntryPoint, EntryPointKind
 from engine.repository.query.types import (
@@ -20,6 +22,7 @@ from engine.repository.query.types import (
     FileId,
     Import,
     ImportType,
+    QueryResult,
     Reference,
     ReferenceType,
     ResourceId,
@@ -41,7 +44,6 @@ from .store import (
     MaterializationStats,
     RepositoryStore,
 )
-from engine.repository.query.types import QueryResult
 
 
 class SQLiteRepositoryStore(RepositoryStore):
@@ -66,8 +68,8 @@ class SQLiteRepositoryStore(RepositoryStore):
             self.conn.executescript(CREATE_TABLES_SQL)
             self.conn.executescript(CREATE_INDEXES_SQL)
 
-        # Migration logic
-        try:
+        # Migration logic; a failed backpopulate leaves the schema usable
+        with suppress(Exception):
             cur = self.conn.cursor()
             cur.execute("SELECT COUNT(*) FROM files")
             has_files = cur.fetchone()[0] > 0
@@ -82,8 +84,6 @@ class SQLiteRepositoryStore(RepositoryStore):
                         "FROM files f",
                         (datetime.datetime.now(datetime.UTC).isoformat(),)
                     )
-        except Exception:
-            pass
 
         self.repository_id: str | None = None
         self.version_id: str | None = None
@@ -652,9 +652,8 @@ class SQLiteRepositoryStore(RepositoryStore):
                 if fid in files_in_current:
                     if files_in_current[fid] == "active":
                         active_files.add(fid)
-                elif fid in files_in_parent:
-                    if files_in_parent[fid] == "active":
-                        active_files.add(fid)
+                elif fid in files_in_parent and files_in_parent[fid] == "active":
+                    active_files.add(fid)
 
         final_resolved = {
             sid: vid

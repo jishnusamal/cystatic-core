@@ -9,6 +9,7 @@ Architecture:
 
 from .adapter import BaseLanguageAdapter
 from .capabilities import LanguageCapabilities
+from .extractor import BaseExtractor
 from .file_context import FileContext
 from .index_compiler import IndexCompiler
 from .parser import BaseParser
@@ -18,13 +19,14 @@ from .semantic_compiler import SemanticCompiler
 from .spec import LanguageSpec
 
 __all__ = [
+    "BaseExtractor",
     "BaseIndexPass",
     "BaseLanguageAdapter",
     "BaseParser",
     "FileContext",
     "IndexCompiler",
+    "LanguageCapabilities",
     "LanguagePlugin",
     "LanguageSpec",
     "SemanticCompiler",
-    "LanguageCapabilities",
 ]

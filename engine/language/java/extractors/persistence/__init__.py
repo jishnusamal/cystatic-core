@@ -43,8 +43,7 @@ class JavaPersistenceExtractor(BaseExtractor):
 
         # Detect if this is a Spring Data repository interface
         if re.search(r"(?:extends\s+\w*Repository|@Repository)", content):
-            for repo in self._extract_repositories(content, file_path):
-                constructs.append(repo)
+            constructs.extend(self._extract_repositories(content, file_path))
 
         return constructs
 
@@ -70,7 +69,6 @@ class JavaPersistenceExtractor(BaseExtractor):
         relationships = []
 
         # Find class body
-        class_start = class_match.start()
         brace_depth = 0
         in_class = False
 
@@ -89,7 +87,6 @@ class JavaPersistenceExtractor(BaseExtractor):
                 break
 
             # Check for @Column or @JoinColumn annotations
-            is_column = "@Column" in line_stripped
             is_join = any(
                 ann in line_stripped
                 for ann in [
@@ -177,7 +174,7 @@ class JavaPersistenceExtractor(BaseExtractor):
         for match in re.finditer(repo_pattern, content):
             interface_name = match.group(1)
             repo_type = match.group(2)
-            entity_type = match.group(3) if match.lastindex >= 3 else ""
+            entity_type = match.group(3) if match.lastindex is not None and match.lastindex >= 3 else ""
 
             symbol_id = f"java://{file_path}#{interface_name}"
 

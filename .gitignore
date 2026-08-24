@@ -12,3 +12,4 @@ logs/
 *.db*
 *.db
 *.log
+.freebuff/

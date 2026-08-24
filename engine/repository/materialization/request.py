@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True)
 class MaterializationRequest:
     """Immutable request representing files to materialize for a repository commit."""

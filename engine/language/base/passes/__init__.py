@@ -4,7 +4,6 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from engine.language.base.file_context import FileContext
-from engine.repository.model.repository_index import FileIndex
 
 
 class BaseIndexPass(ABC):

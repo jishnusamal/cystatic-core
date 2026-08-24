@@ -75,7 +75,7 @@ class _ModelCompiler:
 
         # Build name index ONCE for O(1) lookups - CRITICAL for performance
         name_to_symbols: dict[str, list[Symbol]] = {}
-        for sym_id, symbol in symbol_index.items():
+        for symbol in symbol_index.values():
             name_to_symbols.setdefault(symbol.name, []).append(symbol)
 
         # Pass 2: Reference Resolution (imports)
@@ -346,10 +346,7 @@ class _ModelCompiler:
             return False
 
         symbol_file = symbol.file
-        if module and module in symbol_file:
-            return True
-
-        return False
+        return bool(module and module in symbol_file)
 
     def _process_call(
         self,

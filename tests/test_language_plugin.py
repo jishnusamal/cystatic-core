@@ -1,8 +1,9 @@
-from engine.language.base import LanguagePlugin, LanguageSpec, BaseLanguageAdapter
-from engine.language.python.plugin import PythonPlugin
-from engine.language.python.adapter import PythonLanguageAdapter
-from engine.language.java.plugin import JavaPlugin
+from engine.language.base import BaseLanguageAdapter, LanguagePlugin, LanguageSpec
 from engine.language.java.adapter import JavaLanguageAdapter
+from engine.language.java.plugin import JavaPlugin
+from engine.language.python.adapter import PythonLanguageAdapter
+from engine.language.python.plugin import PythonPlugin
+from engine.language.typescript.adapter import TypeScriptLanguageAdapter
 from engine.language.typescript.plugin import TypeScriptPlugin
 
 
@@ -63,9 +64,6 @@ def test_typescript_plugin_spec():
     assert plugin.spec.id == "typescript"
     assert plugin.spec.extensions == frozenset({".ts", ".tsx", ".mts", ".cts"})
     assert isinstance(plugin.spec, LanguageSpec)
-
-
-from engine.language.typescript.adapter import TypeScriptLanguageAdapter
 
 
 def test_typescript_plugin_creates_adapter():

@@ -4,15 +4,23 @@ import gc
 import os
 import time
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any
 
 from core.logging import pipeline_logger
+from engine.change.passes.file_classification import (
+    DEFAULT_ANALYSIS_POLICY,
+    AnalysisPolicy,
+    FileClassification,
+    FileClassifier,
+    detect_language,
+)
 from engine.language.base import FileContext
 from engine.repository.indexing.indexer import RepositoryIndexer
 from engine.repository.metrics import RepositoryMaterializationMetrics
 from engine.repository.store import RepositoryStore
-from integrations.base import RepositoryProvider, RepositoryBlob
-from .budget import MaterializationBudget, MaterializationBudgetExceeded
+from integrations.base import RepositoryProvider
+
+from .budget import MaterializationBudget
 from .request import MaterializationRequest
 
 
@@ -25,14 +33,17 @@ class MaterializationResult:
     failed_paths: tuple[str, ...]
     bytes_fetched: int
     facts_generated: int
+    # Paths excluded from analysis by file-role classification. Distinct from
+    # failed paths: excluded ≠ missing ≠ failed materialization.
+    excluded_paths: tuple[str, ...] = ()
+    excluded_classifications: dict[str, str] | None = None
 
 
 def normalize_path(path: str) -> str:
     """Normalize file path to POSIX-style relative to repository root."""
     p = path.replace("\\", "/")
     normalized = os.path.normpath(p).replace("\\", "/")
-    if normalized.startswith("./"):
-        normalized = normalized[2:]
+    normalized = normalized.removeprefix("./")
     if normalized == "." or normalized == "":
         normalized = ""
     return normalized
@@ -49,6 +60,8 @@ class RepositoryMaterializer:
         budget: MaterializationBudget,
         metrics: RepositoryMaterializationMetrics,
         materialization_batch_size: int = 100,
+        classifier: FileClassifier | None = None,
+        policy: AnalysisPolicy | None = None,
     ) -> None:
         self.source = source
         self.store = store
@@ -56,6 +69,10 @@ class RepositoryMaterializer:
         self.budget = budget
         self.metrics = metrics
         self.materialization_batch_size = materialization_batch_size
+        # Reuses the same classification the ChangeCompiler applies, so files
+        # analysis would ignore are never fetched from the remote provider.
+        self.classifier = classifier or FileClassifier()
+        self.policy = policy or DEFAULT_ANALYSIS_POLICY
 
     def _emit_event(self, event: str, **kwargs: Any) -> None:
         """Emit a structured event to the profiling/logging system."""
@@ -93,7 +110,7 @@ class RepositoryMaterializer:
         try:
             # 2. Normalize and deduplicate requested paths
             normalized_paths = tuple(
-                sorted(list(set(normalize_path(p) for p in request.paths if p)))
+                sorted({normalize_path(p) for p in request.paths if p})
             )
             self.metrics.requested_files = len(request.paths)
             self.metrics.deduplicated_files = len(normalized_paths)
@@ -105,9 +122,9 @@ class RepositoryMaterializer:
             # Dynamically bind the indexer sink to the requested version
             if hasattr(self.indexer, "sink") and self.indexer.sink:
                 if hasattr(self.indexer.sink, "repository_id"):
-                    self.indexer.sink.repository_id = request.repository_id
+                    self.indexer.sink.repository_id = request.repository_id  # type: ignore[union-attr]
                 if hasattr(self.indexer.sink, "version_id"):
-                    self.indexer.sink.version_id = version_id
+                    self.indexer.sink.version_id = version_id  # type: ignore[union-attr]
 
             # 3. Query repository tree entries to validate paths and get expected info
             tree_entries = self.store.get_tree_entries(
@@ -138,6 +155,41 @@ class RepositoryMaterializer:
                     to_materialize.append((path, expected_sha, expected_size))
 
             self.metrics.already_materialized_files = len(already_materialized)
+
+            # 3.5 File role classification — reuse ChangeCompiler's eligibility
+            #     policy BEFORE any remote fetch so excluded files (e.g.
+            #     frontend TS/TSX, generated files) never cost network I/O or
+            #     materialization budget.
+            excluded_paths = []
+            excluded_classifications: dict[str, str] = {}
+            eligible_to_materialize = []
+            for path, expected_sha, expected_size in to_materialize:
+                classification: FileClassification = self.classifier.classify(path)
+                self.metrics.record_classification(classification.kind.value)
+                if not self.policy.should_materialize(
+                    classification, detect_language(path)
+                ):
+                    excluded_paths.append(path)
+                    excluded_classifications[path] = classification.kind.value
+                    self.metrics.record_excluded_file(
+                        path=path, kind=classification.kind.value
+                    )
+                    # Persist the exclusion explicitly: excluded ≠ missing ≠ failed.
+                    assert expected_sha is not None
+                    self.store.record_materialization(
+                        request.repository_id,
+                        request.commit_sha,
+                        path,
+                        expected_sha,
+                        "excluded",
+                    )
+                else:
+                    eligible_to_materialize.append((path, expected_sha, expected_size))
+
+            to_materialize = eligible_to_materialize
+            self.metrics.eligible_files = (
+                len(already_materialized) + len(to_materialize)
+            )
 
             # 4. Budget is enforced pre-materialization by RepositoryResolver.
             #    The materializer receives only batches that have already passed
@@ -229,7 +281,7 @@ class RepositoryMaterializer:
                         materialized_paths.append(file_path)
                         indexed_in_batch += 1
                         self.metrics.record_file(path=file_path, size=len(blob.content))
-                    except Exception:
+                    except Exception:  # noqa: BLE001 -- indexer records failed state and rolls back
                         # Indexer already records failed state in DB and rolls back
                         failed_paths.append(file_path)
 
@@ -269,6 +321,7 @@ class RepositoryMaterializer:
                 fetched=self.metrics.files_fetched,
                 indexed=len(materialized_paths),
                 bytes=bytes_fetched,
+                excluded=len(excluded_paths),
                 duration=duration,
             )
 
@@ -279,6 +332,8 @@ class RepositoryMaterializer:
                 failed_paths=tuple(failed_paths),
                 bytes_fetched=bytes_fetched,
                 facts_generated=self.metrics.facts_generated - facts_generated_before,
+                excluded_paths=tuple(sorted(excluded_paths)),
+                excluded_classifications=excluded_classifications,
             )
 
         except Exception as e:
@@ -293,4 +348,4 @@ class RepositoryMaterializer:
                 error=str(e),
                 duration=duration,
             )
-            raise e
+            raise

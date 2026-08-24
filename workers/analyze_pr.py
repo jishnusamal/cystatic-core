@@ -133,7 +133,7 @@ async def _process_pr_analysis(
                 llm_comment = llm_result.get("comment")
                 if llm_comment:
                     destination["llm_comment"] = llm_comment
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- worker task isolation; failure logged for the delivery
                 print(f"[analyze_pr] LLM comment generation failed: {exc}")
 
         # Render and print deterministic repository artifacts
@@ -156,9 +156,10 @@ async def _process_pr_analysis(
                 print("\n--- REPOSITORY ANALYSIS ARTIFACTS ---")
                 print(report)
                 print("-------------------------------------\n")
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- worker task isolation; failure logged for the delivery
                 print(f"[analyze_pr] Failed to render repository artifacts: {exc}")
 
+        assert context.ocm is not None
         await output_provider.publish(context.ocm, destination)
         print(f"Successfully analyzed {repo_full_name} PR#{pr_number}")
 

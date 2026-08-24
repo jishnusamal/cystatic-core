@@ -1,20 +1,30 @@
-import pytest
 from unittest.mock import MagicMock
 
-from core.runtime import PREVENT_LEGACY_ARCHITECTURE
+import pytest
+
 from core.config import get_compiler_settings
-from models import (
-    RepositoryReference, PullRequestReference, DiffSnapshot,
-    AnalysisTrigger, AnalysisRequest
-)
-from models.core import DiffFile, DiffHunk
+from core.runtime import PREVENT_LEGACY_ARCHITECTURE
 from engine.pipeline.pipeline import Pipeline
 from engine.repository.store import SQLiteRepositoryStore
-from engine.repository.facts import (
-    File, FileId, Symbol, SymbolId, Call, CallType, SymbolKind, TestRelationship
+from integrations.base import (
+    RepositoryBlob,
+    RepositoryCommit,
+    RepositoryProvider,
+    RepositoryTreeEntry,
 )
-from engine.repository.facts.test import TestRelationshipType
-from integrations.base import RepositoryProvider, RepositoryCommit, RepositoryTreeEntry, RepositoryBlob
+from models import (
+    AnalysisRequest,
+    AnalysisTrigger,
+    DiffSnapshot,
+    PullRequestReference,
+    RepositoryReference,
+)
+from models.core import DiffFile, DiffHunk
+
+
+class UnexpectedProviderCall(Exception):
+    """Raised when a test mock provider method is invoked that should never be called."""
+
 
 class MockLazyProvider(RepositoryProvider):
     def __init__(self, files_dict=None, tree_entries=None):
@@ -27,11 +37,11 @@ class MockLazyProvider(RepositoryProvider):
 
     async def fetch_repository(self, repo_ref):
         self.fetch_repository_called = True
-        raise Exception("Should not call fetch_repository")
+        raise UnexpectedProviderCall("Should not call fetch_repository")
 
     async def fetch_repository_at_sha(self, repo_ref, sha):
         self.fetch_repository_at_sha_called = True
-        raise Exception("Should not call fetch_repository_at_sha")
+        raise UnexpectedProviderCall("Should not call fetch_repository_at_sha")
 
     async def fetch_diff(self, repo_ref, base_sha, head_sha):
         return MagicMock()
@@ -57,7 +67,7 @@ class MockLazyProvider(RepositoryProvider):
         if path in self.files_dict:
             sha, content = self.files_dict[path]
             return RepositoryBlob(path=path, sha=sha, size=len(content), content=content)
-        raise Exception(f"File {path} not found")
+        raise UnexpectedProviderCall(f"File {path} not found")
 
     async def get_files(self, repository, paths, ref):
         self.get_files_called_count += 1

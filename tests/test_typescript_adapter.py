@@ -1,9 +1,9 @@
 """Tests for the TypeScript Language Adapter."""
 
 import pytest
+
 from engine.language.typescript.adapter import TypeScriptLanguageAdapter
 from engine.language.typescript.plugin import TypeScriptPlugin
-from engine.language.base import BaseLanguageAdapter
 
 
 @pytest.fixture

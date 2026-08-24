@@ -247,9 +247,8 @@ class ChangeClassificationPass(ChangeCompilerPass):
         new_imports = {s.id: s for s in new_model.symbols if s.kind == s.kind.IMPORT}
 
         # Find added imports
-        for import_id in new_imports:
+        for import_id, new_import in new_imports.items():
             if import_id not in old_imports:
-                new_import = new_imports[import_id]
                 changed_imports.append(
                     {
                         "file": new_import.file,
@@ -260,9 +259,8 @@ class ChangeClassificationPass(ChangeCompilerPass):
                 )
 
         # Find removed imports
-        for import_id in old_imports:
+        for import_id, old_import in old_imports.items():
             if import_id not in new_imports:
-                old_import = old_imports[import_id]
                 changed_imports.append(
                     {
                         "file": old_import.file,
@@ -273,9 +271,8 @@ class ChangeClassificationPass(ChangeCompilerPass):
                 )
 
         # Find modified imports
-        for import_id in old_imports:
+        for import_id, old_import in old_imports.items():
             if import_id in new_imports:
-                old_import = old_imports[import_id]
                 new_import = new_imports[import_id]
 
                 if (

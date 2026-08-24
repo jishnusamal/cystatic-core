@@ -8,17 +8,18 @@
 from __future__ import annotations
 
 import ast
-import importlib
-import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from engine.repository.materialization.budget import BudgetExceededReason, ResolutionUsage
-from engine.repository.materialization.full_index import FallbackResult, FullIndexFallback
+from engine.repository.materialization.budget import (
+    ResolutionUsage,
+)
+from engine.repository.materialization.full_index import (
+    FullIndexFallback,
+)
 from engine.repository.resolver.outcome import ResolutionOutcome
-
 
 # ---------------------------------------------------------------------------
 # §19 — Compiler opacity
@@ -63,7 +64,7 @@ def _file_contains_any(path: Path, symbols: list[str]) -> list[str]:
     try:
         source = path.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(path))
-    except Exception:
+    except Exception:  # noqa: BLE001 -- unparsable files are skipped in architecture scan
         return []
 
     found = []
@@ -76,11 +77,10 @@ def _file_contains_any(path: Path, symbols: list[str]) -> list[str]:
             for alias in node.names:
                 if any(s in alias.name for s in symbols):
                     found.append(alias.name)
-        elif isinstance(node, ast.ImportFrom):
-            if node.names:
-                for alias in node.names:
-                    if alias.name in symbols:
-                        found.append(alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.names:
+            for alias in node.names:
+                if alias.name in symbols:
+                    found.append(alias.name)
     return list(set(found))
 
 
@@ -114,8 +114,8 @@ class TestNoInfiniteFallbackLoop:
     """After successful full indexing, _resolve_if_needed must not re-enter resolver."""
 
     def _make_view_with_complete_store(self):
-        from engine.repository.overlay.view import RepositoryView
         from engine.repository.overlay.overlay import RepositoryOverlay
+        from engine.repository.overlay.view import RepositoryView
         from engine.repository.store import SQLiteRepositoryStore
 
         store = SQLiteRepositoryStore(":memory:")
@@ -180,8 +180,8 @@ class TestFallbackStateIsolation:
     @patch("core.config.get_compiler_settings")
     def test_two_different_repos_are_independent(self, mock_settings):
         mock_settings.return_value.ENABLE_LAZY_REPOSITORY_RESOLUTION = True
-        from engine.repository.overlay.view import RepositoryView
         from engine.repository.overlay.overlay import RepositoryOverlay
+        from engine.repository.overlay.view import RepositoryView
         from engine.repository.store import SQLiteRepositoryStore
 
         # Request A — triggers fallback → store A becomes complete

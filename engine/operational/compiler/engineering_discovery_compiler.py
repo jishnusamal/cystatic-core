@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import cast
 
 from engine.behavior.model import BehaviorModel
+from engine.behavior.model.execution import ExecutionUnit
 from engine.change.model import ChangeModel, RepositoryDelta
 from engine.operational.model import EngineeringDiscoveryModel, OperationalChangeModel
 from engine.repository.model import RepositoryModel
@@ -215,7 +216,7 @@ class EngineeringDiscoveryCompiler:
         entry_points = getattr(behavior, "entry_points", ())
         terminal_points = getattr(behavior, "terminal_points", ())
         shared_executions = getattr(behavior, "shared_executions", ())
-        reachable_units = getattr(behavior, "reachable_units", frozenset())
+        reachable_units: tuple[ExecutionUnit, ...] = getattr(behavior, "reachable_units", ())
         execution_depth = getattr(behavior, "execution_depth", 0)
 
         execution_units = (

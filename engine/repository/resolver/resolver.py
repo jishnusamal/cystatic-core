@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import math
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Sequence
+from typing import Any
 
 from core.logging import pipeline_logger
 from engine.repository.materialization.budget import (
-    BudgetExceededReason,
     ResolutionBudget,
     ResolutionUsage,
 )
@@ -228,7 +228,7 @@ class RepositoryResolver:
             # ----------------------------------------------------------------
             # 3. Plan candidate paths
             # ----------------------------------------------------------------
-            candidate_requests = await self.planner.plan(
+            candidate_requests: tuple[MaterializationRequest, ...] = await self.planner.plan(
                 repository_id, commit_sha, current_reqs
             )
 
@@ -238,8 +238,8 @@ class RepositoryResolver:
             missing_paths: set[str] = set()
             size_by_path: dict[str, int] = {}
 
-            for req in candidate_requests:
-                for p in req.paths:
+            for mat_req in candidate_requests:
+                for p in mat_req.paths:
                     if not self.store.is_materialized(repository_id, commit_sha, p):
                         missing_paths.add(p)
 

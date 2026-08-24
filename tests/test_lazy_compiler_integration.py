@@ -1,25 +1,32 @@
-import pytest
-from unittest.mock import MagicMock, AsyncMock
-import asyncio
 import traceback
+from unittest.mock import AsyncMock, MagicMock
 
-from core.runtime import PREVENT_LEGACY_ARCHITECTURE
+import pytest
+
 from core.config import get_compiler_settings
-from models import (
-    RepositoryReference, PullRequestReference, DiffSnapshot,
-    AnalysisTrigger, AnalysisRequest
-)
-from models.core import DiffFile, DiffHunk
+from core.runtime import PREVENT_LEGACY_ARCHITECTURE
 from engine.pipeline.pipeline import Pipeline
-from engine.repository.store import SQLiteRepositoryStore
-from engine.repository.facts import (
-    File, FileId, Symbol, SymbolId, Call, CallType, SymbolKind, TestRelationship
-)
-from engine.repository.facts.test import TestRelationshipType
-from integrations.base import RepositoryProvider, RepositoryCommit, RepositoryTreeEntry, RepositoryBlob
-from engine.change.compiler import ChangeCompiler
 from engine.repository.indexing.indexer import RepositoryIndexer
 from engine.repository.overlay.view import RepositoryView
+from engine.repository.store import SQLiteRepositoryStore
+from integrations.base import (
+    RepositoryBlob,
+    RepositoryCommit,
+    RepositoryProvider,
+    RepositoryTreeEntry,
+)
+from models import (
+    AnalysisRequest,
+    AnalysisTrigger,
+    DiffSnapshot,
+    PullRequestReference,
+    RepositoryReference,
+)
+from models.core import DiffFile, DiffHunk
+
+
+class UnexpectedProviderCall(Exception):
+    """Raised when a test mock provider method is invoked that should never be called."""
 
 
 class TrackingMockLazyProvider(RepositoryProvider):
@@ -33,11 +40,11 @@ class TrackingMockLazyProvider(RepositoryProvider):
 
     async def fetch_repository(self, repo_ref):
         self.fetch_repository_called = True
-        raise Exception("Should not call fetch_repository")
+        raise UnexpectedProviderCall("Should not call fetch_repository")
 
     async def fetch_repository_at_sha(self, repo_ref, sha):
         self.fetch_repository_at_sha_called = True
-        raise Exception("Should not call fetch_repository_at_sha")
+        raise UnexpectedProviderCall("Should not call fetch_repository_at_sha")
 
     async def fetch_diff(self, repo_ref, base_sha, head_sha):
         return MagicMock()
@@ -71,7 +78,7 @@ class TrackingMockLazyProvider(RepositoryProvider):
         if path in self.base_files:
             sha, content = self.base_files[path]
             return RepositoryBlob(path=path, sha=sha, size=len(content), content=content)
-        raise Exception(f"File {path} not found")
+        raise UnexpectedProviderCall(f"File {path} not found")
 
     async def get_files(self, repository, paths, ref):
         files = self.head_files if (ref == "head_commit_1" or ref == "head123") else self.base_files
@@ -108,7 +115,7 @@ def wrap_indexer_index_files():
         except Exception as e:
             print("\nINDEX FILES EXCEPTION:", e)
             traceback.print_exc()
-            raise e
+            raise
     RepositoryIndexer.index_files = debug_index_files
 
     original_get_symbols_in_file = SQLiteRepositoryStore.get_symbols_in_file
@@ -143,7 +150,7 @@ def wrap_indexer_index_files():
         except Exception as e:
             print("\nDEBUG: _lazy_compile_facts_and_view raised exception:", e)
             traceback.print_exc()
-            raise e
+            raise
     Pipeline._lazy_compile_facts_and_view = debug_lazy_compile
 
     yield
@@ -524,7 +531,7 @@ async def test_lazy_resolver_overlay_precedence():
         # that querying symbols via the view returns the overlay version, not the base version.
         overlay_sym_names = {s.name for s in res.facts}
         assert "overlay_func" in overlay_sym_names, f"Expected overlay_func in {overlay_sym_names}"
-        assert "base_func" not in overlay_sym_names, f"base_func should not appear (overlay should take precedence)"
+        assert "base_func" not in overlay_sym_names, "base_func should not appear (overlay should take precedence)"
 
     finally:
         settings.ENABLE_LAZY_REPOSITORY_RESOLUTION = old_flag

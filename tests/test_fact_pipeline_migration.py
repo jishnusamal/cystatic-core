@@ -70,7 +70,6 @@ async def test_production_pipeline_fact_architecture(tmp_path):
     db_file = str(tmp_path / "test_store.db")
     store = SQLiteRepositoryStore(db_file)
 
-    repo_name = "test-org/test-repo"
     base_sha = "sha-base-123"
     head_sha = "sha-head-456"
 

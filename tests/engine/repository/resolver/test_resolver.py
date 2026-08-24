@@ -1,23 +1,19 @@
-import pytest
-from unittest.mock import MagicMock
 
-from engine.repository.facts import (
-    File, FileId, Symbol, SymbolId, Call, CallType, SymbolKind
-)
-from engine.repository.store import SQLiteRepositoryStore
-from engine.repository.store.sink import PersistentFactSink
+import pytest
+
 from engine.repository.indexing.indexer import RepositoryIndexer
-from engine.repository.metrics import RepositoryMaterializationMetrics
 from engine.repository.materialization.budget import MaterializationBudget
 from engine.repository.materialization.materializer import RepositoryMaterializer
-from engine.repository.overlay import RepositoryOverlay, RepositoryView
-
 from engine.repository.materialization.request import MaterializationRequest
+from engine.repository.metrics import RepositoryMaterializationMetrics
+from engine.repository.overlay import RepositoryOverlay, RepositoryView
 from engine.repository.resolver.resolver import RepositoryResolver
-from engine.repository.resolver.requirements import (
-    SymbolResolutionRequirement, FileResolutionRequirement
+from engine.repository.store import SQLiteRepositoryStore
+from engine.repository.store.sink import PersistentFactSink
+from tests.engine.repository.materialization.test_materializer import (
+    MockRepositoryProvider,
 )
-from tests.engine.repository.materialization.test_materializer import MockRepositoryProvider
+
 
 @pytest.mark.asyncio
 async def test_lazy_resolver_callees():

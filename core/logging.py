@@ -9,11 +9,15 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 import traceback
+from collections.abc import Generator
+from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, TextIO, TypeVar
+from types import TracebackType
+from typing import Any, Self, TextIO, TypeVar
 
 T = TypeVar("T")
 
@@ -44,7 +48,8 @@ class LogManager:
         ]
         for name in log_files:
             file_path = self.log_dir / name
-            self._handles[name] = open(
+            # Handles live for the LogManager lifetime; a context manager would close them early
+            self._handles[name] = open(  # noqa: SIM115
                 file_path,
                 "a",
                 encoding="utf-8",
@@ -158,16 +163,20 @@ class LogManager:
         """Flush and close all open log file handles."""
         for handle in self._handles.values():
             if not handle.closed:
-                try:
+                # Closing must never fail the shutdown path
+                with suppress(Exception):
                     handle.flush()
                     handle.close()
-                except Exception:
-                    pass
 
-    def __enter__(self) -> LogManager:
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         self.close()
 
 
@@ -344,7 +353,7 @@ class PipelineLogger:
             log_dir = ctx.log_dir
             mgr = ctx.log_manager
         else:
-            run_id = f"run-{datetime.now().strftime('%Y%m%d-%H%M%S')}-fallback"
+            run_id = f"run-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-fallback"
             log_dir = Path("logs") / run_id
             log_dir.mkdir(parents=True, exist_ok=True)
             mgr = LogManager(log_dir, run_id)
@@ -364,7 +373,7 @@ class PipelineLogger:
         mgr.write_json("call_resolution.json", self.call_resolutions)
 
         print(f"\nDetailed profile written to:\n\n{log_dir}/\n")
-        return log_dir
+        return Path(log_dir)
 
 
 # Singleton logger instance used across the pipeline
@@ -372,11 +381,6 @@ pipeline_logger = PipelineLogger()
 
 
 # ─── Timer ───────────────────────────────────────────────────────────────────
-
-
-import time
-from collections.abc import Generator
-from contextlib import contextmanager
 
 
 class Timer:

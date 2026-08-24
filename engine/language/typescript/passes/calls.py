@@ -1,7 +1,8 @@
 """TypeScript call index pass - extracts function calls from TypeScript AST."""
 
 from typing import Any
-from tree_sitter import Tree, Node
+
+from tree_sitter import Node, Tree
 
 from engine.language.base.file_context import FileContext
 from engine.language.base.passes import BaseIndexPass
@@ -94,8 +95,7 @@ class TypeScriptCallIndexPass(BaseIndexPass):
             if node.type == "call_expression":
                 self._add_call(node, context.path, source_bytes, builder)
 
-            for child in reversed(node.children):
-                stack.append(child)
+            stack.extend(reversed(node.children))
 
     def visit_Call(
         self, node: Node, context: FileContext[Tree], builder: dict[str, Any]
@@ -114,8 +114,7 @@ class TypeScriptCallIndexPass(BaseIndexPass):
             curr = stack.pop()
             if curr.type == "call_expression":
                 self._add_call(curr, context.path, source_bytes, builder)
-            for child in reversed(curr.children):
-                stack.append(child)
+            stack.extend(reversed(curr.children))
 
     def _add_call(
         self, node: Node, file_path: str, source_bytes: bytes, builder: dict[str, Any]

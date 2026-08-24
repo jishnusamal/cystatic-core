@@ -16,6 +16,7 @@ Everything is directly traceable to repository evidence. No inference.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from engine.operational.compiler.passes.base import (
     OperationalCompilerPass,
@@ -158,7 +159,7 @@ class DependencyCompilationPass(OperationalCompilerPass):
                 if hasattr(repo, "get_file"):
                     f = repo.get_file(s.file_id)
                     if f is not None:
-                        return f.path
+                        return str(f.path)
                 if isinstance(s.file_id, str):
                     return s.file_id
             return ""

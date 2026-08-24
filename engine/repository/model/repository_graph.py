@@ -128,78 +128,91 @@ class RepositoryGraph:
     def symbol_to_callers(self) -> dict[str, set[str]]:
         if self._indexes.symbol_to_callers is None:
             self._materialize_reverse_indexes()
+        assert self._indexes.symbol_to_callers is not None
         return self._indexes.symbol_to_callers
 
     @property
     def symbol_to_importers(self) -> dict[str, set[str]]:
         if self._indexes.symbol_to_importers is None:
             self._materialize_reverse_indexes()
+        assert self._indexes.symbol_to_importers is not None
         return self._indexes.symbol_to_importers
 
     @property
     def unresolved_symbol_to_waiting_files(self) -> dict[str, set[str]]:
         if self._indexes.unresolved_symbol_to_waiting_files is None:
             self._materialize_unresolved_waiting_files()
+        assert self._indexes.unresolved_symbol_to_waiting_files is not None
         return self._indexes.unresolved_symbol_to_waiting_files
 
     @property
     def file_to_call_edges(self) -> dict[str, list[Any]]:
         if self._indexes.file_to_call_edges is None:
             self._materialize_reverse_indexes()
+        assert self._indexes.file_to_call_edges is not None
         return self._indexes.file_to_call_edges
 
     @property
     def file_to_reference_edges(self) -> dict[str, list[Any]]:
         if self._indexes.file_to_reference_edges is None:
             self._materialize_reverse_indexes()
+        assert self._indexes.file_to_reference_edges is not None
         return self._indexes.file_to_reference_edges
 
     @property
     def file_to_type_edges(self) -> dict[str, list[Any]]:
         if self._indexes.file_to_type_edges is None:
             self._materialize_reverse_indexes()
+        assert self._indexes.file_to_type_edges is not None
         return self._indexes.file_to_type_edges
 
     @property
     def file_to_entry_points(self) -> dict[str, list[Any]]:
         if self._indexes.file_to_entry_points is None:
             self._materialize_reverse_indexes()
+        assert self._indexes.file_to_entry_points is not None
         return self._indexes.file_to_entry_points
 
     @property
     def file_to_async_entry_points(self) -> dict[str, list[Any]]:
         if self._indexes.file_to_async_entry_points is None:
             self._materialize_reverse_indexes()
+        assert self._indexes.file_to_async_entry_points is not None
         return self._indexes.file_to_async_entry_points
 
     @property
     def file_to_persistence(self) -> dict[str, list[Any]]:
         if self._indexes.file_to_persistence is None:
             self._materialize_reverse_indexes()
+        assert self._indexes.file_to_persistence is not None
         return self._indexes.file_to_persistence
 
     @property
     def file_to_methods(self) -> dict[str, list[Any]]:
         if self._indexes.file_to_methods is None:
             self._materialize_reverse_indexes()
+        assert self._indexes.file_to_methods is not None
         return self._indexes.file_to_methods
 
     @property
     def file_to_events(self) -> dict[str, list[Any]]:
         if self._indexes.file_to_events is None:
             self._materialize_reverse_indexes()
+        assert self._indexes.file_to_events is not None
         return self._indexes.file_to_events
 
     @property
     def file_to_tests(self) -> dict[str, list[Any]]:
         if self._indexes.file_to_tests is None:
             self._materialize_reverse_indexes()
+        assert self._indexes.file_to_tests is not None
         return self._indexes.file_to_tests
 
     @property
     def file_to_configs(self) -> dict[str, list[Any]]:
         if self._indexes.file_to_configs is None:
             self._materialize_reverse_indexes()
+        assert self._indexes.file_to_configs is not None
         return self._indexes.file_to_configs
 
     # Semantic abstraction APIs

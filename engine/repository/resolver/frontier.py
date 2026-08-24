@@ -1,7 +1,9 @@
 from dataclasses import dataclass, field
-from typing import Set
-from .requirements import ResolutionRequirement
+
 from engine.repository.query import SymbolId
+
+from .requirements import ResolutionRequirement
+
 
 @dataclass
 class ResolutionFrontier:
@@ -12,9 +14,9 @@ class ResolutionFrontier:
         paths: Repository paths discovered as candidates for resolving the frontier.
         unresolved: Symbols whose required facts are not currently complete.
     """
-    symbols: Set[SymbolId] = field(default_factory=set)
-    paths: Set[str] = field(default_factory=set)
-    unresolved: Set[ResolutionRequirement] = field(default_factory=set)
+    symbols: set[SymbolId] = field(default_factory=set)
+    paths: set[str] = field(default_factory=set)
+    unresolved: set[ResolutionRequirement] = field(default_factory=set)
 
     def add_symbol(self, symbol: SymbolId) -> None:
         self.symbols.add(symbol)

@@ -201,7 +201,7 @@ class RepositoryFacts:
         if res is not None:
             return res
         for f in self.files:
-            if f.path == file_id:
+            if f.path == str(file_id):
                 return f
         return None
 
