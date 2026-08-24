@@ -1,4 +1,5 @@
 import gc
+from contextlib import suppress
 from typing import Any
 from zlib import adler32
 
@@ -143,7 +144,7 @@ class RepositoryIndexer:
                     self._symbol_fqn_map[SymbolId(sym_id)] = fqn
                     if sym_id >= self._next_symbol_id:
                         self._next_symbol_id = sym_id + 1
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- cache hydration is best-effort; maps are rebuilt on demand
                 pass
 
         # 2. Check if the sink is InMemoryFactSink (backed by in-memory lists)
@@ -172,7 +173,7 @@ class RepositoryIndexer:
                     self._symbol_fqn_map[s.id] = fqn
                     if int(s.id) >= self._next_symbol_id:
                         self._next_symbol_id = int(s.id) + 1
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- cache hydration is best-effort; maps are rebuilt on demand
                 pass
 
     def _get_cached_facts(self, conn, blob_sha: str) -> list[dict] | None:
@@ -193,27 +194,25 @@ class RepositoryIndexer:
                     return []  # Cache hit, but empty list of facts
                 return None
             return [{"fact_type": r["fact_type"], "payload": r["fact_payload"]} for r in rows]
-        except Exception:
+        except Exception:  # noqa: BLE001 -- cache hydration/lookup is best-effort; maps are rebuilt on demand
             return None
 
     def _save_cached_facts(self, conn, blob_sha: str, serialized_facts: list[dict]) -> None:
-        try:
-            with conn:
-                # Check if already cached
-                cur = conn.cursor()
-                cur.execute("SELECT 1 FROM blob_fact_cache WHERE blob_sha = ? LIMIT 1", (blob_sha,))
-                if cur.fetchone():
-                    return
-                
-                # Insert facts
-                for i, sf in enumerate(serialized_facts):
-                    cur.execute(
-                        "INSERT OR IGNORE INTO blob_fact_cache (blob_sha, fact_type, fact_identity, fact_payload) "
-                        "VALUES (?, ?, ?, ?)",
-                        (blob_sha, sf["fact_type"], str(i), sf["payload"]),
-                    )
-        except Exception:
-            pass
+        # Cache write failures must never fail indexing
+        with suppress(Exception), conn:
+            # Check if already cached
+            cur = conn.cursor()
+            cur.execute("SELECT 1 FROM blob_fact_cache WHERE blob_sha = ? LIMIT 1", (blob_sha,))
+            if cur.fetchone():
+                return
+
+            # Insert facts
+            for i, sf in enumerate(serialized_facts):
+                cur.execute(
+                    "INSERT OR IGNORE INTO blob_fact_cache (blob_sha, fact_type, fact_identity, fact_payload) "
+                    "VALUES (?, ?, ?, ?)",
+                    (blob_sha, sf["fact_type"], str(i), sf["payload"]),
+                )
 
     def _serialize_captured_fact(self, name: str, args: tuple) -> dict:
         fact = args[0]
@@ -297,13 +296,32 @@ class RepositoryIndexer:
 
     def _deserialize_and_emit_fact(self, fact_type: str, payload_str: str) -> None:
         import json
+
         from engine.repository.facts import (
-            Symbol, Call, Reference, Import, TypeRelationship, Endpoint,
-            DatabaseRelationship, EventPublication, EventSubscription, TestRelationship,
-            SymbolKind, SymbolVisibility, CallType, ReferenceType, ImportType,
-            TypeRelationshipType, EndpointMethod, DatabaseRelationshipType,
-            EventPublicationType, EventSubscriptionType, TestRelationshipType,
-            SymbolId, FileId, EndpointId, ResourceId, EventId
+            Call,
+            CallType,
+            DatabaseRelationship,
+            DatabaseRelationshipType,
+            Endpoint,
+            EndpointId,
+            EndpointMethod,
+            EventId,
+            EventPublication,
+            EventPublicationType,
+            EventSubscription,
+            EventSubscriptionType,
+            Import,
+            ImportType,
+            Reference,
+            ReferenceType,
+            ResourceId,
+            Symbol,
+            SymbolKind,
+            SymbolVisibility,
+            TestRelationship,
+            TestRelationshipType,
+            TypeRelationship,
+            TypeRelationshipType,
         )
 
         d = json.loads(payload_str)
@@ -399,8 +417,9 @@ class RepositoryIndexer:
         Arbitrary batch-oriented indexing of files independently.
         Supports incremental indexing by syncing mappings with the sink before processing.
         """
-        import os
         import hashlib
+        import os
+
         from engine.language.builtins import create_default_language_registry
 
         # Sync existing mappings from sink to prevent ID collisions
@@ -543,12 +562,14 @@ class RepositoryIndexer:
                         )
 
                 self.sink.flush()
-            except Exception as e:
+            except Exception:
                 if hasattr(self.sink, "rollback"):
                     self.sink.rollback()
                 # Record materialization as failed if possible
                 if has_db:
-                    try:
+                    # Failure recording is best-effort; the original error is
+                    # re-raised below regardless of its outcome
+                    with suppress(Exception):
                         self.sink.store.record_materialization(
                             self.sink.repository_id,
                             self.sink.version_id.split("@")[-1],
@@ -559,9 +580,7 @@ class RepositoryIndexer:
                         # We must commit the failed status
                         if hasattr(self.sink, "store") and hasattr(self.sink.store, "conn"):
                             self.sink.store.conn.commit()
-                    except Exception:
-                        pass
-                raise e
+                raise
             finally:
                 if "file_index" in locals():
                     del file_index

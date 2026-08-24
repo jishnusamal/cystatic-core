@@ -4,30 +4,31 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from collections.abc import Sequence
+from typing import Any
+
 import requests
-from typing import Any, Sequence
 
 from core.errors import (
-    RepositoryAccessDenied,
-    RepositoryNotFound,
-    CommitNotFound,
-    TreeNotFound,
-    TreeTruncated,
-    FileNotFound,
-    BlobUnavailable,
     AuthenticationFailure,
+    CommitNotFound,
+    FileNotFound,
+    PartialBatchFailure,
     RateLimitExceeded,
     RemoteTimeout,
-    PartialBatchFailure,
+    RepositoryAccessDenied,
     RepositoryError,
+    RepositoryNotFound,
+    TreeNotFound,
+    TreeTruncated,
 )
 from github import GithubException
 from integrations.base import (
-    RepositoryProvider,
-    RepositoryCommit,
-    RepositoryTreeEntry,
-    RepositoryBlob,
     RepositoryAcquisitionMode,
+    RepositoryBlob,
+    RepositoryCommit,
+    RepositoryProvider,
+    RepositoryTreeEntry,
 )
 from integrations.github.auth import GitHubAppAuth
 from integrations.github.client import GitHubClient
@@ -46,26 +47,28 @@ def _map_github_error(
 ) -> Exception:
     if isinstance(exc, (requests.Timeout, requests.ConnectTimeout)):
         return RemoteTimeout(f"Timeout: {context_msg} ({exc})")
-    if isinstance(exc, requests.RequestException):
-        if exc.response is not None:
-            status_code = exc.response.status_code
-            if status_code == 429:
+    if isinstance(exc, requests.RequestException) and exc.response is not None:
+        status_code = exc.response.status_code
+        if status_code == 429:
+            return RateLimitExceeded(f"Rate limit exceeded: {context_msg}")
+        if status_code == 403:
+            headers = exc.response.headers
+            if (
+                headers.get("X-RateLimit-Remaining") == "0"
+                or "rate limit" in exc.response.text.lower()
+            ):
                 return RateLimitExceeded(f"Rate limit exceeded: {context_msg}")
-            if status_code == 403:
-                headers = exc.response.headers
-                if headers.get("X-RateLimit-Remaining") == "0" or "rate limit" in exc.response.text.lower():
-                    return RateLimitExceeded(f"Rate limit exceeded: {context_msg}")
-                return AuthenticationFailure(f"Forbidden/Access denied: {context_msg}")
-            if status_code == 401:
-                return AuthenticationFailure(f"Unauthorized: {context_msg}")
-            if status_code == 404:
-                if "commit" in context_msg.lower():
-                    return CommitNotFound(f"Commit not found: {context_msg}")
-                if "tree" in context_msg.lower():
-                    return TreeNotFound(f"Tree not found: {context_msg}")
-                if "blob" in context_msg.lower() or "file" in context_msg.lower():
-                    return FileNotFound(f"File/Blob not found: {context_msg}")
-                return RepositoryNotFound(f"Not found: {context_msg}")
+            return AuthenticationFailure(f"Forbidden/Access denied: {context_msg}")
+        if status_code == 401:
+            return AuthenticationFailure(f"Unauthorized: {context_msg}")
+        if status_code == 404:
+            if "commit" in context_msg.lower():
+                return CommitNotFound(f"Commit not found: {context_msg}")
+            if "tree" in context_msg.lower():
+                return TreeNotFound(f"Tree not found: {context_msg}")
+            if "blob" in context_msg.lower() or "file" in context_msg.lower():
+                return FileNotFound(f"File/Blob not found: {context_msg}")
+            return RepositoryNotFound(f"Not found: {context_msg}")
     return RepositoryError(f"Error: {context_msg} ({exc})")
 
 
@@ -474,7 +477,6 @@ class GitHubRepositoryProvider(RepositoryProvider):
         Returns:
             File content as string
         """
-        import base64
         from urllib.parse import quote
 
         client = self._get_client()
@@ -609,7 +611,7 @@ class GitHubRepositoryProvider(RepositoryProvider):
                 message=commit_data.get("commit", {}).get("message"),
                 author=commit_data.get("commit", {}).get("author", {}).get("name"),
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- mapped into a domain error via _map_github_error
             raise _map_github_error(exc, f"fetch commit {sha} for {repository}")
         finally:
             client.close()
@@ -619,7 +621,6 @@ class GitHubRepositoryProvider(RepositoryProvider):
         repository: str,
         sha: str,
     ) -> Sequence[RepositoryTreeEntry]:
-        from core.errors import TreeTruncated
         repo_ref = RepositoryReference.from_full_name(provider="github", full_name=repository)
         client = self._get_client()
         try:
@@ -662,7 +663,6 @@ class GitHubRepositoryProvider(RepositoryProvider):
         path: str,
         ref: str,
     ) -> RepositoryBlob:
-        import base64
         from urllib.parse import quote
         
         repo_ref = RepositoryReference.from_full_name(provider="github", full_name=repository)
@@ -716,17 +716,17 @@ class GitHubRepositoryProvider(RepositoryProvider):
         paths: Sequence[str],
         ref: str,
     ) -> Sequence[RepositoryBlob]:
-        import asyncio
         import base64
+
         from core.config import get_settings
-        from core.errors import PartialBatchFailure, FileNotFound
+        from core.errors import FileNotFound
         
         repo_ref = RepositoryReference.from_full_name(provider="github", full_name=repository)
-        unique_paths = sorted(list(set(paths)))
+        unique_paths = sorted(set(paths))
         
         try:
             tree_entries = await self.get_tree(repository, ref)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- mapped into a domain error via _map_github_error
             failures = {p: exc for p in unique_paths}
             raise PartialBatchFailure(successes=[], failures=failures)
             
@@ -764,7 +764,7 @@ class GitHubRepositoryProvider(RepositoryProvider):
         async def fetch_blob_safe(path: str, sha: str, size: int) -> RepositoryBlob | Exception:
             try:
                 return await fetch_blob(path, sha, size)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- mapped into a domain error via _map_github_error
                 return _map_github_error(exc, f"fetch blob {sha} for path {path}")
                 
         tasks = []

@@ -11,20 +11,22 @@ Tests the fallback flow end-to-end:
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock, patch
 
-from engine.repository.materialization.budget import BudgetExceededReason, ResolutionUsage
+from engine.repository.indexing.indexer import RepositoryIndexer
+from engine.repository.materialization.budget import (
+    BudgetExceededReason,
+    ResolutionUsage,
+)
 from engine.repository.materialization.full_index import FullIndexFallback
 from engine.repository.overlay import RepositoryOverlay, RepositoryView
 from engine.repository.resolver.outcome import ResolutionOutcome
 from engine.repository.resolver.requirements import FileResolutionRequirement
 from engine.repository.store import SQLiteRepositoryStore
 from engine.repository.store.sink import PersistentFactSink
-from engine.repository.indexing.indexer import RepositoryIndexer
-
-from tests.engine.repository.materialization.test_materializer import MockRepositoryProvider
-
+from tests.engine.repository.materialization.test_materializer import (
+    MockRepositoryProvider,
+)
 
 # ---------------------------------------------------------------------------
 # Fixture: 5-file chain repository
@@ -101,7 +103,7 @@ class TestLazyFullEquivalence:
         mock_settings.return_value.ENABLE_LAZY_REPOSITORY_RESOLUTION = True
         store, repo_id, commit_sha, version_id = _make_chain_store()
         source = _make_source()
-        view, mock_resolver, fallback = _make_view_with_mocked_exhausted_resolver(
+        view, mock_resolver, _fallback = _make_view_with_mocked_exhausted_resolver(
             store, repo_id, commit_sha, version_id, source
         )
         incomplete_result = MagicMock()

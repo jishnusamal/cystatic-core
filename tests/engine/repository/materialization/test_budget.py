@@ -1,8 +1,7 @@
-import pytest
 from engine.repository.materialization.budget import (
     MaterializationBudget,
-    MaterializationBudgetExceeded,
 )
+
 
 def test_materialization_budget_creation():
     budget = MaterializationBudget(

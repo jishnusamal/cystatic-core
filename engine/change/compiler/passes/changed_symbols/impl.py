@@ -119,10 +119,7 @@ class ChangedSymbolsPass(ChangeCompilerPass):
             return True
 
         # Check if properties changed
-        if old_symbol.properties != new_symbol.properties:
-            return True
-
-        return False
+        return old_symbol.properties != new_symbol.properties
 
     def _detect_renames(self, added: list[Symbol], removed: list[Symbol]) -> list[dict]:
         """

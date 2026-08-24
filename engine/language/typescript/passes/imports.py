@@ -1,7 +1,8 @@
 """TypeScript import index pass - extracts import statements from TypeScript AST."""
 
 from typing import Any
-from tree_sitter import Tree, Node
+
+from tree_sitter import Node, Tree
 
 from engine.language.base.file_context import FileContext
 from engine.language.base.passes import BaseIndexPass
@@ -83,8 +84,7 @@ class TypeScriptImportIndexPass(BaseIndexPass):
             if node.type == "import_statement":
                 self._add_import(node, context.path, source_bytes, builder)
 
-            for child in reversed(node.children):
-                stack.append(child)
+            stack.extend(reversed(node.children))
 
     def visit_Import(
         self, node: Node, context: FileContext[Tree], builder: dict[str, Any]

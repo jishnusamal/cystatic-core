@@ -55,8 +55,8 @@ class PythonTestIndexPass(BaseIndexPass):
                 framework="pytest",
                 file=context.path,
                 line=node.lineno,
-                fixtures=tuple(),
-                assertions=tuple(),
+                fixtures=(),
+                assertions=(),
             )
             builder["tests"].append(test)
 
@@ -70,19 +70,20 @@ class PythonTestIndexPass(BaseIndexPass):
 
         test_methods = []
         for child in node.body:
-            if isinstance(child, ast.FunctionDef):
-                if child.name.startswith("test_") or child.name.startswith("test"):
-                    test_methods.append(
-                        TestEntry(
-                            name=child.name,
-                            kind="method",
-                            framework=framework,
-                            file=context.path,
-                            line=child.lineno,
-                            fixtures=tuple(),
-                            assertions=tuple(),
-                        )
+            if isinstance(child, ast.FunctionDef) and (
+                child.name.startswith("test_") or child.name.startswith("test")
+            ):
+                test_methods.append(
+                    TestEntry(
+                        name=child.name,
+                        kind="method",
+                        framework=framework,
+                        file=context.path,
+                        line=child.lineno,
+                        fixtures=(),
+                        assertions=(),
                     )
+                )
 
         builder["tests"].append(
             TestEntry(
@@ -157,21 +158,22 @@ class PythonTestIndexPass(BaseIndexPass):
 
         test_methods = []
         for child in node.body:
-            if isinstance(child, ast.FunctionDef):
-                if child.name.startswith("test_") or child.name.startswith("test"):
-                    used_fixtures = self._find_used_fixtures(child, fixtures)
-                    assertions = self._find_assertions(child)
-                    test_methods.append(
-                        TestEntry(
-                            name=child.name,
-                            kind="method",
-                            framework=framework,
-                            file=file_path,
-                            line=child.lineno,
-                            fixtures=tuple(used_fixtures),
-                            assertions=tuple(assertions),
-                        )
+            if isinstance(child, ast.FunctionDef) and (
+                child.name.startswith("test_") or child.name.startswith("test")
+            ):
+                used_fixtures = self._find_used_fixtures(child, fixtures)
+                assertions = self._find_assertions(child)
+                test_methods.append(
+                    TestEntry(
+                        name=child.name,
+                        kind="method",
+                        framework=framework,
+                        file=file_path,
+                        line=child.lineno,
+                        fixtures=tuple(used_fixtures),
+                        assertions=tuple(assertions),
                     )
+                )
 
         return TestEntry(
             name=node.name,
@@ -211,14 +213,12 @@ class PythonTestIndexPass(BaseIndexPass):
         """Get decorator names from a function."""
         decorators = []
         for dec in node.decorator_list:
-            if isinstance(dec, ast.Attribute):
-                if isinstance(dec.value, ast.Name):
-                    decorators.append(f"{dec.value.id}.{dec.attr}")
+            if isinstance(dec, ast.Attribute) and isinstance(dec.value, ast.Name):
+                decorators.append(f"{dec.value.id}.{dec.attr}")
             elif isinstance(dec, ast.Name):
                 decorators.append(dec.id)
-            elif isinstance(dec, ast.Call):
-                if isinstance(dec.func, ast.Name):
-                    decorators.append(dec.func.id)
+            elif isinstance(dec, ast.Call) and isinstance(dec.func, ast.Name):
+                decorators.append(dec.func.id)
         return decorators
 
     def _find_used_fixtures(
@@ -237,23 +237,22 @@ class PythonTestIndexPass(BaseIndexPass):
         """Find assertion types used in a test function."""
         assertions = set()
         for child in ast.walk(node):
-            if isinstance(child, ast.Call):
-                if isinstance(child.func, ast.Attribute):
-                    name = child.func.attr
-                    if name.startswith("assert") or name in (
-                        "assertEqual",
-                        "assertTrue",
-                        "assertFalse",
-                        "assertIs",
-                        "assertIsNot",
-                        "assertIsNone",
-                        "assertIsNotNone",
-                        "assertIn",
-                        "assertNotIn",
-                        "assertRaises",
-                        "assertGreater",
-                        "assertLess",
-                        "fail",
-                    ):
-                        assertions.add(name)
+            if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute):
+                name = child.func.attr
+                if name.startswith("assert") or name in (
+                    "assertEqual",
+                    "assertTrue",
+                    "assertFalse",
+                    "assertIs",
+                    "assertIsNot",
+                    "assertIsNone",
+                    "assertIsNotNone",
+                    "assertIn",
+                    "assertNotIn",
+                    "assertRaises",
+                    "assertGreater",
+                    "assertLess",
+                    "fail",
+                ):
+                    assertions.add(name)
         return list(assertions)

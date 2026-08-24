@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 
 import pytest
-
 from engine.language.model import (
     CallGraph,
     ReferenceGraph,
@@ -61,9 +60,9 @@ class TestHelper:
         """Create a test repository model."""
         return RepositoryModel(
             symbols=frozenset(symbols),
-            call_graph=CallGraph(edges=tuple()),
-            reference_graph=ReferenceGraph(edges=tuple()),
-            entry_points=tuple(),
+            call_graph=CallGraph(edges=()),
+            reference_graph=ReferenceGraph(edges=()),
+            entry_points=(),
         )
 
 

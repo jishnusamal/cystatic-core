@@ -1,9 +1,8 @@
 """TypeScript language plugin implementation."""
 
 from engine.language.base.adapter import BaseLanguageAdapter
-from engine.language.base.spec import LanguageSpec
 from engine.language.base.capabilities import LanguageCapabilities
-from core.errors import LanguageNotSupported
+from engine.language.base.spec import LanguageSpec
 
 
 class TypeScriptPlugin:

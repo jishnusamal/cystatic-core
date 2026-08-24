@@ -1,5 +1,7 @@
 from collections import defaultdict
+from contextlib import suppress
 
+from core.config import get_compiler_settings
 from engine.repository.facts import (
     Call,
     DatabaseRelationship,
@@ -19,7 +21,6 @@ from engine.repository.facts import (
 from engine.repository.model.repository_model import EntryPoint, EntryPointKind
 from engine.repository.overlay.overlay import RepositoryOverlay
 from engine.repository.query import QueryResult, RepositoryQuery
-from core.config import get_compiler_settings
 
 
 class RepositoryView(RepositoryQuery):
@@ -117,7 +118,6 @@ class RepositoryView(RepositoryQuery):
 
     def _resolve_if_needed(self, result, requirement) -> bool:
         # Respect the global lazy‑resolution feature flag
-        from core.config import get_compiler_settings
         if not get_compiler_settings().ENABLE_LAZY_REPOSITORY_RESOLUTION:
             return False
         if requirement in self._resolved_requirements:
@@ -215,10 +215,9 @@ class RepositoryView(RepositoryQuery):
                 repo_id = self.repository_id or ""
                 version_id = ""
                 if hasattr(self.base, "_get_context"):
-                    try:
+                    # Context lookup is best-effort; empty version_id is a valid fallback
+                    with suppress(Exception):
                         _, version_id = self.base._get_context()
-                    except Exception:
-                        pass
                 cur.execute(
                     "SELECT id FROM symbols WHERE name = ? AND repository_id = ? AND version_id = ? LIMIT 1",
                     (name, repo_id, version_id),
@@ -228,7 +227,9 @@ class RepositoryView(RepositoryQuery):
                     return SymbolId(row[0])
 
                 # Trigger resolution!
-                from engine.repository.resolver.requirements import SymbolResolutionRequirement
+                from engine.repository.resolver.requirements import (
+                    SymbolResolutionRequirement,
+                )
                 req = SymbolResolutionRequirement(unresolved_id, "symbols")
                 if self.resolver is None:
                     return unresolved_id
@@ -252,13 +253,10 @@ class RepositoryView(RepositoryQuery):
         if symbol_id in self.overlay.removed_symbols:
             return True
         base_sym = self.base.get_symbol(symbol_id)
-        if base_sym is not None:
-            if (
-                base_sym.file_id in self.overlay.modified_files
-                or base_sym.file_id in self.overlay.removed_files
-            ):
-                return True
-        return False
+        return base_sym is not None and (
+            base_sym.file_id in self.overlay.modified_files
+            or base_sym.file_id in self.overlay.removed_files
+        )
 
     def get_symbol(self, symbol_id: SymbolId) -> Symbol | None:
         symbol_id = self._normalize_symbol_id(symbol_id)
@@ -284,13 +282,10 @@ class RepositoryView(RepositoryQuery):
         if symbol_id in self.overlay.added_symbols or symbol_id in self.overlay.removed_symbols:
             return True
         base_sym = self.base.get_symbol(symbol_id)
-        if base_sym is not None:
-            if (
-                base_sym.file_id in self.overlay.modified_files
-                or base_sym.file_id in self.overlay.removed_files
-            ):
-                return True
-        return False
+        return base_sym is not None and (
+            base_sym.file_id in self.overlay.modified_files
+            or base_sym.file_id in self.overlay.removed_files
+        )
 
     def get_symbols(self, symbol_ids: list[SymbolId]) -> QueryResult[Symbol]:
         added_syms = []

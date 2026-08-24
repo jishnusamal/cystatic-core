@@ -4,7 +4,7 @@ Emits only raw persistence facts. No resolution, no symbol matching.
 """
 
 import ast
-from typing import Any
+from typing import Any, ClassVar
 
 from engine.language.base.file_context import FileContext
 from engine.language.base.passes import BaseIndexPass
@@ -22,7 +22,7 @@ class PythonPersistenceIndexPass(BaseIndexPass):
     """
 
     # SQLAlchemy base class patterns
-    SA_BASES = {"declarative_base", "Base", "Model"}
+    SA_BASES: ClassVar[set[str]] = {"declarative_base", "Base", "Model"}
     DJANGO_BASE = "models.Model"
 
     def process(self, context: FileContext, builder: dict[str, Any]) -> None:
@@ -111,21 +111,25 @@ class PythonPersistenceIndexPass(BaseIndexPass):
     def _extract_table_name(self, node: ast.ClassDef) -> str:
         """Extract the table/collection name from a model class."""
         for child in node.body:
-            if isinstance(child, ast.Assign):
+            if (
+                isinstance(child, ast.Assign)
+                and isinstance(child.value, ast.Constant)
+            ):
                 for target in child.targets:
                     if isinstance(target, ast.Name) and target.id in (
                         "__tablename__",
                         "Meta",
                     ):
-                        if isinstance(child.value, ast.Constant):
-                            return str(child.value.value)
+                        return str(child.value.value)
             if isinstance(child, ast.ClassDef) and child.name == "Meta":
                 for meta_child in child.body:
-                    if isinstance(meta_child, ast.Assign):
+                    if (
+                        isinstance(meta_child, ast.Assign)
+                        and isinstance(meta_child.value, ast.Constant)
+                    ):
                         for target in meta_child.targets:
                             if isinstance(target, ast.Name) and target.id == "db_table":
-                                if isinstance(meta_child.value, ast.Constant):
-                                    return str(meta_child.value.value)
+                                return str(meta_child.value.value)
         return ""
 
     def _extract_field(

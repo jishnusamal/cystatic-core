@@ -50,7 +50,6 @@ from engine.repository.materialization.budget import BudgetExceededReason
 from engine.repository.store import RepositoryStore
 from integrations.base import RepositoryProvider
 
-
 # ---------------------------------------------------------------------------
 # Result type
 # ---------------------------------------------------------------------------
@@ -365,7 +364,7 @@ class FullIndexFallback:
                 fallback_reason=reason_str,
             )
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- fallback failure is recorded; caller decides how to proceed
             fallback_duration_s = time.perf_counter() - fallback_start
             error_msg = str(exc)
             self._log(
@@ -407,7 +406,7 @@ class FullIndexFallback:
                 (repository_id, commit_sha),
             )
             return [row[0] for row in cur.fetchall()]
-        except Exception:
+        except Exception:  # noqa: BLE001 -- fallback failure is recorded; caller decides how to proceed
             return []
 
     def _log(self, event: str, **kwargs: Any) -> None:

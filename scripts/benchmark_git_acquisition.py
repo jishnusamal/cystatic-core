@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from integrations.base import RepositoryAcquisitionMode
 from integrations.github.repositories import GitHubRepositoryProvider
 
+
 async def main():
     # Use cystatichq/cystatic-core as the benchmark target
     repo = "cystatichq/cystatic-core"
@@ -33,7 +34,7 @@ async def main():
         tree = await provider.get_tree(repo, commit_sha)
         total_entries = len(tree)
         files_count = len([e for e in tree if e.type == "blob"])
-        print(f"\nTree:")
+        print("\nTree:")
         print(f"  entries: {total_entries:,}")
         print(f"  files: {files_count:,}")
         
@@ -44,19 +45,19 @@ async def main():
             # Take a small batch of actual files from the tree for testing
             paths_to_fetch = [e.path for e in tree if e.type == "blob"][:10]
             
-        print(f"\nRequested:")
+        print("\nRequested:")
         print(f"  files: {len(paths_to_fetch)}")
         
         blobs = await provider.get_files(repo, paths_to_fetch, commit_sha)
         total_bytes = sum(len(b.content) for b in blobs)
         
-        print(f"\nRetrieved:")
+        print("\nRetrieved:")
         print(f"  files: {len(blobs)}")
         print(f"  bytes: {total_bytes / (1024 * 1024):.6f} MB ({total_bytes:,} bytes)")
         print("\nZIP:")
         print("  NOT USED")
         
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- benchmark script reports and exits
         print(f"\nError running benchmark: {e}")
         print("\nNote: Make sure GITHUB_ACCESS_TOKEN is set in your environment if you hit rate limits/access denied.")
 

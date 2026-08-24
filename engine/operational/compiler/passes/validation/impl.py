@@ -346,7 +346,7 @@ class ValidationCompilationPass(OperationalCompilerPass):
             return "integration"
 
         # Check test file patterns for unit tests
-        for pattern, category in _TEST_FILE_PATTERNS.items():
+        for pattern in _TEST_FILE_PATTERNS:
             if (file_lower and pattern in file_lower) or pattern in name_lower:
                 return "unit"
 

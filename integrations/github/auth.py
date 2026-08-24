@@ -58,7 +58,6 @@ class GitHubAppAuth:
                 return token
 
         # Generate new token
-        jwt_token = self.generate_jwt()
         github = Github(auth=Auth.AppAuth(self.app_id, self.private_key))
 
         try:

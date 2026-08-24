@@ -4,12 +4,12 @@ import gc
 import os
 import time
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any
 
 from core.logging import pipeline_logger
 from engine.change.passes.file_classification import (
-    AnalysisPolicy,
     DEFAULT_ANALYSIS_POLICY,
+    AnalysisPolicy,
     FileClassification,
     FileClassifier,
     detect_language,
@@ -18,8 +18,9 @@ from engine.language.base import FileContext
 from engine.repository.indexing.indexer import RepositoryIndexer
 from engine.repository.metrics import RepositoryMaterializationMetrics
 from engine.repository.store import RepositoryStore
-from integrations.base import RepositoryProvider, RepositoryBlob
-from .budget import MaterializationBudget, MaterializationBudgetExceeded
+from integrations.base import RepositoryProvider
+
+from .budget import MaterializationBudget
 from .request import MaterializationRequest
 
 
@@ -42,8 +43,7 @@ def normalize_path(path: str) -> str:
     """Normalize file path to POSIX-style relative to repository root."""
     p = path.replace("\\", "/")
     normalized = os.path.normpath(p).replace("\\", "/")
-    if normalized.startswith("./"):
-        normalized = normalized[2:]
+    normalized = normalized.removeprefix("./")
     if normalized == "." or normalized == "":
         normalized = ""
     return normalized
@@ -110,7 +110,7 @@ class RepositoryMaterializer:
         try:
             # 2. Normalize and deduplicate requested paths
             normalized_paths = tuple(
-                sorted(list(set(normalize_path(p) for p in request.paths if p)))
+                sorted({normalize_path(p) for p in request.paths if p})
             )
             self.metrics.requested_files = len(request.paths)
             self.metrics.deduplicated_files = len(normalized_paths)
@@ -280,7 +280,7 @@ class RepositoryMaterializer:
                         materialized_paths.append(file_path)
                         indexed_in_batch += 1
                         self.metrics.record_file(path=file_path, size=len(blob.content))
-                    except Exception:
+                    except Exception:  # noqa: BLE001 -- indexer records failed state and rolls back
                         # Indexer already records failed state in DB and rolls back
                         failed_paths.append(file_path)
 
@@ -347,4 +347,4 @@ class RepositoryMaterializer:
                 error=str(e),
                 duration=duration,
             )
-            raise e
+            raise

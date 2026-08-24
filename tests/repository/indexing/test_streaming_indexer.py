@@ -93,8 +93,7 @@ def test_fact_count_and_relationship_equivalence(test_files):
     old_files_map = {f.path: f for f in old_index.files}
     new_files_map = {f.path: f for f in new_index.files}
 
-    for path in old_files_map:
-        old_f = old_files_map[path]
+    for path, old_f in old_files_map.items():
         new_f = new_files_map[path]
 
         # Assert symbols equivalence
@@ -121,10 +120,11 @@ def test_incremental_batch_equivalence():
     where the same repository/version is involved.
     We test both InMemoryFactSink and PersistentFactSink (with SQLite store).
     """
-    import tempfile
     import os
-    from engine.repository.store.sqlite import SQLiteRepositoryStore
+    import tempfile
+
     from engine.repository.store.sink import PersistentFactSink
+    from engine.repository.store.sqlite import SQLiteRepositoryStore
 
     test_files = {
         "module_a.py": """

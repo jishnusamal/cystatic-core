@@ -1,6 +1,7 @@
 """Language specification metadata."""
 
 from dataclasses import dataclass, field
+
 from .capabilities import LanguageCapabilities
 
 

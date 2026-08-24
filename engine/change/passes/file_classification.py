@@ -72,13 +72,7 @@ def is_analyzable(
     if classification.kind == FileKind.GENERATED:
         return False
 
-    if (
-        classification.kind == FileKind.FRONTEND
-        and language in FRONTEND_EXCLUDED_LANGUAGES
-    ):
-        return False
-
-    return True
+    return not (classification.kind == FileKind.FRONTEND and language in FRONTEND_EXCLUDED_LANGUAGES)
 
 
 @dataclass(frozen=True)
@@ -102,12 +96,7 @@ class AnalysisPolicy:
         if self.exclude_generated and classification.kind == FileKind.GENERATED:
             return False
 
-        if classification.kind == FileKind.FRONTEND and (
-            language in self.excluded_frontend_languages
-        ):
-            return False
-
-        return True
+        return not (classification.kind == FileKind.FRONTEND and language in self.excluded_frontend_languages)
 
     def should_materialize(
         self,
@@ -306,7 +295,7 @@ class FileClassifier:
             return FileClassification(
                 kind=FileKind.BACKEND,
                 confidence=0.8,
-                reason=f"path segment '{sorted(dirs & _BACKEND_PATH_SEGMENTS)[0]}/'",
+                reason=f"path segment '{min(dirs & _BACKEND_PATH_SEGMENTS)}/'",
             )
 
         # 5. Shared path signals.
@@ -314,7 +303,7 @@ class FileClassifier:
             return FileClassification(
                 kind=FileKind.SHARED,
                 confidence=0.75,
-                reason=f"path segment '{sorted(dirs & _SHARED_PATH_SEGMENTS)[0]}/'",
+                reason=f"path segment '{min(dirs & _SHARED_PATH_SEGMENTS)}/'",
             )
 
         # 6. Migration / infrastructure / docs / config signals.
@@ -358,7 +347,7 @@ class FileClassifier:
             return FileClassification(
                 kind=FileKind.GENERATED,
                 confidence=0.95,
-                reason=f"generated path segment '{sorted(hit)[0]}/'",
+                reason=f"generated path segment '{min(hit)}/'",
             )
         for suffix in _GENERATED_FILENAME_SUFFIXES:
             if filename.endswith(suffix):
@@ -386,7 +375,7 @@ class FileClassifier:
             return FileClassification(
                 kind=FileKind.TEST,
                 confidence=0.9,
-                reason=f"test path segment '{sorted(hit)[0]}/'",
+                reason=f"test path segment '{min(hit)}/'",
             )
         if filename in _TEST_FIXTURE_FILENAMES:
             return FileClassification(
@@ -419,14 +408,14 @@ class FileClassifier:
             return FileClassification(
                 kind=FileKind.FRONTEND,
                 confidence=0.8,
-                reason=f"frontend path segment '{sorted(top)[0]}/'",
+                reason=f"frontend path segment '{min(top)}/'",
             )
         deep = dirs & _FRONTEND_DEEP_SEGMENTS
         if deep:
             return FileClassification(
                 kind=FileKind.FRONTEND,
                 confidence=0.8,
-                reason=f"frontend path segment '{sorted(deep)[0]}/'",
+                reason=f"frontend path segment '{min(deep)}/'",
             )
         return None
 
@@ -438,7 +427,7 @@ class FileClassifier:
             return FileClassification(
                 kind=FileKind.MIGRATION,
                 confidence=0.8,
-                reason=f"migration path segment '{sorted(hit)[0]}/'",
+                reason=f"migration path segment '{min(hit)}/'",
             )
         if ext == ".sql" and filename[:1].upper() == "V" and "__" in stem_part(filename):
             return FileClassification(
@@ -456,7 +445,7 @@ class FileClassifier:
             return FileClassification(
                 kind=FileKind.INFRASTRUCTURE,
                 confidence=0.8,
-                reason=f"infrastructure path segment '{sorted(hit)[0]}/'",
+                reason=f"infrastructure path segment '{min(hit)}/'",
             )
         if ext in _INFRASTRUCTURE_EXTENSIONS or filename in _INFRASTRUCTURE_FILENAMES:
             return FileClassification(
@@ -478,7 +467,7 @@ class FileClassifier:
             return FileClassification(
                 kind=FileKind.DOCS,
                 confidence=0.9,
-                reason=f"docs path segment '{sorted(hit)[0]}/'",
+                reason=f"docs path segment '{min(hit)}/'",
             )
         if ext in _DOCS_EXTENSIONS:
             return FileClassification(

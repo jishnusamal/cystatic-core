@@ -1,27 +1,21 @@
-import pytest
-from unittest.mock import MagicMock
-import json
 import base64
+import json
+from unittest.mock import MagicMock
+
+import pytest
 import requests
 
+from core.errors import (
+    CommitNotFound,
+    FileNotFound,
+    PartialBatchFailure,
+    TreeTruncated,
+)
 from integrations.base import (
-    RepositoryCommit,
-    RepositoryTreeEntry,
-    RepositoryBlob,
     RepositoryAcquisitionMode,
 )
 from integrations.github.repositories import GitHubRepositoryProvider
-from core.errors import (
-    CommitNotFound,
-    TreeNotFound,
-    TreeTruncated,
-    FileNotFound,
-    BlobUnavailable,
-    AuthenticationFailure,
-    RateLimitExceeded,
-    RemoteTimeout,
-    PartialBatchFailure,
-)
+
 
 def make_mock_response(status_code, json_data=None, text_content=None, headers=None):
     res = MagicMock(spec=requests.Response)
@@ -46,19 +40,16 @@ def make_mock_response(status_code, json_data=None, text_content=None, headers=N
 
 def make_mock_router(commit_data=None, tree_data=None, blob_responses=None, file_meta_response=None):
     def route_get(path, **kwargs):
-        if "commits/" in path:
-            if commit_data is not None:
-                return make_mock_response(200, json_data=commit_data)
-        if "git/trees/" in path:
-            if tree_data is not None:
-                return make_mock_response(200, json_data=tree_data)
+        if "commits/" in path and commit_data is not None:
+            return make_mock_response(200, json_data=commit_data)
+        if "git/trees/" in path and tree_data is not None:
+            return make_mock_response(200, json_data=tree_data)
         if "git/blobs/" in path:
             sha = path.split("/")[-1]
             if blob_responses and sha in blob_responses:
                 return make_mock_response(200, json_data=blob_responses[sha])
-        if "contents/" in path:
-            if file_meta_response is not None:
-                return make_mock_response(200, json_data=file_meta_response)
+        if "contents/" in path and file_meta_response is not None:
+            return make_mock_response(200, json_data=file_meta_response)
         return make_mock_response(404)
     return route_get
 

@@ -157,7 +157,7 @@ class JavaLanguageAdapter(BaseLanguageAdapter):
                         ast=lines,
                         language=language,
                     )
-                except Exception:
+                except Exception:  # noqa: BLE001, S112 -- isolate per-file parse/index failures during indexing
                     continue
 
         return self._index_compiler.compile(generate_contexts(), language)
@@ -179,7 +179,7 @@ class JavaLanguageAdapter(BaseLanguageAdapter):
             )
             repo_index = self._index_compiler.compile([context], language)
             return repo_index.files[0]
-        except Exception:
+        except Exception:  # noqa: BLE001 -- isolate per-file parse/index failures during indexing
             from engine.repository.model.repository_index import FileIndex
 
             return FileIndex(path=file_path, language=language)

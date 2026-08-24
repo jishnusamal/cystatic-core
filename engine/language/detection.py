@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 
 from core.errors import LanguageDetectionFailed, LanguageNotSupported
 from engine.language.base import FileContext, LanguageSpec
-from engine.language.registry import LanguageRegistry
 from engine.language.builtins import create_default_language_registry
+from engine.language.registry import LanguageRegistry
 
 if TYPE_CHECKING:
     from engine.language.base import BaseLanguageAdapter

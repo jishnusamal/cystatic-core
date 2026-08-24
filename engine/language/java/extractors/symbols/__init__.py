@@ -29,12 +29,10 @@ class JavaSymbolExtractor(BaseExtractor):
         content = "\n".join(tree)
 
         # Extract classes
-        for cls in self._extract_classes(content, tree):
-            symbols.append(cls)
+        symbols.extend(self._extract_classes(content, tree))
 
         # Extract top-level functions (outside classes)
-        for func in self._extract_functions(content, tree):
-            symbols.append(func)
+        symbols.extend(self._extract_functions(content, tree))
 
         return symbols
 

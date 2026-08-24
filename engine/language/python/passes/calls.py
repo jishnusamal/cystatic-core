@@ -26,7 +26,6 @@ class PythonCallIndexPass(BaseIndexPass):
 
     def process(self, context: FileContext, builder: dict[str, Any]) -> None:
         """Extract calls from a Python file context (legacy mode)."""
-        inst = get_instrumentation()
         tree = context.ast
         file_path = context.path
 
@@ -90,9 +89,8 @@ class PythonCallIndexPass(BaseIndexPass):
     def _get_caller_name(self, call_node: ast.Call, tree: ast.AST) -> str | None:
         """Get the name of the function containing this call (legacy O(n*m) implementation)."""
         for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if self._node_contains(call_node, node):
-                    return node.name
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and self._node_contains(call_node, node):
+                return node.name
         return None
 
     def _get_caller_name_optimized(

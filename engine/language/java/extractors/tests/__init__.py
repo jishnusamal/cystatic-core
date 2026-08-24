@@ -1,7 +1,7 @@
 """Java test extractor - discovers test classes, methods, and fixtures."""
 
 import re
-from typing import Any
+from typing import Any, ClassVar
 
 from engine.language.base import BaseExtractor
 
@@ -20,7 +20,7 @@ class JavaTestExtractor(BaseExtractor):
     file, line, fixtures, assertions.
     """
 
-    JUNIT4_ANNOTATIONS = {
+    JUNIT4_ANNOTATIONS: ClassVar[set[str]] = {
         "@Test",
         "@Before",
         "@After",
@@ -28,7 +28,7 @@ class JavaTestExtractor(BaseExtractor):
         "@AfterClass",
         "@Ignore",
     }
-    JUNIT5_ANNOTATIONS = {
+    JUNIT5_ANNOTATIONS: ClassVar[set[str]] = {
         "@Test",
         "@BeforeEach",
         "@AfterEach",
@@ -37,7 +37,7 @@ class JavaTestExtractor(BaseExtractor):
         "@Disabled",
         "@ParameterizedTest",
     }
-    TESTNG_ANNOTATIONS = {
+    TESTNG_ANNOTATIONS: ClassVar[set[str]] = {
         "@Test",
         "@BeforeMethod",
         "@AfterMethod",
@@ -47,7 +47,7 @@ class JavaTestExtractor(BaseExtractor):
         "@AfterSuite",
     }
 
-    ASSERTION_METHODS = {
+    ASSERTION_METHODS: ClassVar[set[str]] = {
         "assertEquals",
         "assertNotEquals",
         "assertTrue",

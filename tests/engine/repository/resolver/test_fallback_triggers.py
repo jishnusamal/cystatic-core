@@ -9,8 +9,7 @@ Tests §18 (partial): fallback disabled via ResolutionConfig.
 
 from __future__ import annotations
 
-import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 from engine.repository.materialization.budget import (
     BudgetExceededReason,
@@ -18,10 +17,12 @@ from engine.repository.materialization.budget import (
     ResolutionConfig,
     ResolutionUsage,
 )
-from engine.repository.materialization.full_index import FallbackResult, FullIndexFallback
+from engine.repository.materialization.full_index import (
+    FallbackResult,
+    FullIndexFallback,
+)
 from engine.repository.resolver.context import ResolutionContext
 from engine.repository.resolver.outcome import ResolutionOutcome
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -138,8 +139,8 @@ class TestShouldFallback:
     """Unit tests for RepositoryView._should_fallback."""
 
     def _make_view(self, fallback=None, config=None):
-        from engine.repository.overlay.view import RepositoryView
         from engine.repository.overlay.overlay import RepositoryOverlay
+        from engine.repository.overlay.view import RepositoryView
         base = MagicMock()
         base.repository_id = "github/owner/repo"
         base.version_id = "github/owner/repo@abc123"
@@ -174,8 +175,8 @@ class TestShouldFallback:
 
 class TestIsStoreComplete:
     def _make_view(self, complete: bool):
-        from engine.repository.overlay.view import RepositoryView
         from engine.repository.overlay.overlay import RepositoryOverlay
+        from engine.repository.overlay.view import RepositoryView
         base = MagicMock()
         base.repository_id = "github/owner/repo"
         base.version_id = "github/owner/repo@abc123"
@@ -192,8 +193,8 @@ class TestIsStoreComplete:
         assert view._is_store_complete() is False
 
     def test_store_without_method(self):
-        from engine.repository.overlay.view import RepositoryView
         from engine.repository.overlay.overlay import RepositoryOverlay
+        from engine.repository.overlay.view import RepositoryView
         base = MagicMock(spec=[])  # no methods
         base.repository_id = "github/owner/repo"
         base.version_id = "github/owner/repo@abc123"
@@ -209,8 +210,8 @@ class TestIsStoreComplete:
 
 class TestTriggerFullIndexFallback:
     def _make_view(self, fallback):
-        from engine.repository.overlay.view import RepositoryView
         from engine.repository.overlay.overlay import RepositoryOverlay
+        from engine.repository.overlay.view import RepositoryView
         base = MagicMock()
         base.repository_id = "github/owner/repo"
         base.version_id = "github/owner/repo@abc123"
@@ -239,7 +240,7 @@ class TestTriggerFullIndexFallback:
     def test_fallback_run_called_with_correct_args(self):
         fb = make_fallback()
         view = self._make_view(fb)
-        usage = ResolutionUsage(files=480)
+        ResolutionUsage(files=480)
         outcome = make_outcome(BudgetExceededReason.MAX_FILES, files=480)
         view._trigger_full_index_fallback(outcome)
         fb.run.assert_called_once_with(
@@ -260,8 +261,8 @@ class TestPerThresholdFallbackTrigger:
 
     def _setup(self, reason: BudgetExceededReason, **usage_kwargs):
         """Return (view, mock_fallback) pre-configured for the given reason."""
-        from engine.repository.overlay.view import RepositoryView
         from engine.repository.overlay.overlay import RepositoryOverlay
+        from engine.repository.overlay.view import RepositoryView
         from engine.repository.store import SQLiteRepositoryStore
 
         store = SQLiteRepositoryStore(":memory:")
@@ -292,7 +293,7 @@ class TestPerThresholdFallbackTrigger:
     @patch("core.config.get_compiler_settings")
     def test_max_files_triggers_fallback(self, mock_settings):
         mock_settings.return_value.ENABLE_LAZY_REPOSITORY_RESOLUTION = True
-        view, fb, store, repo_id, commit_sha = self._setup(
+        view, fb, _store, _repo_id, _commit_sha = self._setup(
             BudgetExceededReason.MAX_FILES, files=490
         )
         incomplete_result = MagicMock()
@@ -362,8 +363,8 @@ class TestPerThresholdFallbackTrigger:
     @patch("core.config.get_compiler_settings")
     def test_fallback_not_triggered_when_within_budget(self, mock_settings):
         """Successful lazy resolution must NOT invoke the fallback."""
-        from engine.repository.overlay.view import RepositoryView
         from engine.repository.overlay.overlay import RepositoryOverlay
+        from engine.repository.overlay.view import RepositoryView
         from engine.repository.store import SQLiteRepositoryStore
 
         mock_settings.return_value.ENABLE_LAZY_REPOSITORY_RESOLUTION = True
@@ -399,8 +400,8 @@ class TestPerThresholdFallbackTrigger:
     @patch("core.config.get_compiler_settings")
     def test_fallback_disabled_by_config(self, mock_settings):
         """When enable_full_index_fallback=False, budget exceeded must NOT invoke fallback."""
-        from engine.repository.overlay.view import RepositoryView
         from engine.repository.overlay.overlay import RepositoryOverlay
+        from engine.repository.overlay.view import RepositoryView
         from engine.repository.store import SQLiteRepositoryStore
 
         mock_settings.return_value.ENABLE_LAZY_REPOSITORY_RESOLUTION = True

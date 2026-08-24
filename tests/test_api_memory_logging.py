@@ -1,9 +1,10 @@
 """Unit tests for request and task memory logging middleware and wrappers."""
 
 from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
 from api.main import app
 from api.routes.github import _process_pr_analysis
 from core.logging import pipeline_logger

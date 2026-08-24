@@ -5,7 +5,7 @@ Its responsibility is to ensure different language representations of the same
 concept produce identical RepositoryModel entities.
 """
 
-from typing import Any
+from typing import Any, ClassVar
 
 
 class NormalizationStage:
@@ -24,7 +24,7 @@ class NormalizationStage:
     """
 
     # Maps from language-specific framework names to normalized identifiers
-    ENTRY_POINT_FRAMEWORK_MAP = {
+    ENTRY_POINT_FRAMEWORK_MAP: ClassVar[dict[str, str]] = {
         # Python
         "fastapi": "rest_endpoint",
         "flask": "rest_endpoint",
@@ -49,7 +49,7 @@ class NormalizationStage:
         "spring-jms": "worker_entry",
     }
 
-    TEST_FRAMEWORK_MAP = {
+    TEST_FRAMEWORK_MAP: ClassVar[dict[str, str]] = {
         "pytest": "pytest",
         "unittest": "unittest",
         "junit": "junit",
@@ -59,7 +59,7 @@ class NormalizationStage:
         "cucumber": "cucumber",
     }
 
-    PERSISTENCE_FRAMEWORK_MAP = {
+    PERSISTENCE_FRAMEWORK_MAP: ClassVar[dict[str, str]] = {
         "sqlalchemy": "sqlalchemy",
         "django": "django_orm",
         "tortoise": "tortoise_orm",

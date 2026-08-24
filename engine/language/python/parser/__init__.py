@@ -1,7 +1,6 @@
 """Python parser - wraps Python's built-in ast module as a BaseParser."""
 
 import ast
-from typing import Any
 
 from engine.language.base.parser import BaseParser
 

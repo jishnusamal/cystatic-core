@@ -1,7 +1,7 @@
 """Java event extractor - detects event publish, emit, dispatch, and send operations."""
 
 import re
-from typing import Any
+from typing import Any, ClassVar
 
 from engine.language.base import BaseExtractor
 
@@ -21,7 +21,7 @@ class JavaEventExtractor(BaseExtractor):
     framework, file, line.
     """
 
-    EVENT_PATTERNS = [
+    EVENT_PATTERNS: ClassVar[list[tuple[str, str, str]]] = [
         (r"(\w+)\.publishEvent\s*\(", "publish", "spring"),
         (r"(\w+)\.send\s*\(", "send", "generic"),
         (r"(\w+)\.convertAndSend\s*\(", "send", "spring"),
@@ -32,7 +32,7 @@ class JavaEventExtractor(BaseExtractor):
         (r"(\w+)\.trigger\s*\(", "dispatch", "generic"),
     ]
 
-    FRAMEWORK_DETECT = {
+    FRAMEWORK_DETECT: ClassVar[dict[str, str]] = {
         "kafkaTemplate": "kafka",
         "rabbitTemplate": "rabbitmq",
         "jmsTemplate": "jms",

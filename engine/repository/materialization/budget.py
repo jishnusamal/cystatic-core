@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
-
 # ---------------------------------------------------------------------------
 # Limits (immutable, request-scoped)
 # ---------------------------------------------------------------------------
@@ -167,7 +166,6 @@ class MaterializationBudgetExceeded(Exception):
     not break during the transition period.
     """
 
-    pass
 
 
 # ---------------------------------------------------------------------------

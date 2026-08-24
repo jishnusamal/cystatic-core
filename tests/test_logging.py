@@ -100,7 +100,7 @@ async def test_pipeline_logging():
     assert os.path.exists(os.path.join(log_dir, "call_resolution.json"))
 
     # Verify contents
-    with open(os.path.join(log_dir, "pipeline.log"), "r") as f:
+    with open(os.path.join(log_dir, "pipeline.log"), "r") as f:  # noqa: ASYNC230 -- test verification read
         pipeline_log = f.read()
         assert "[pipeline]" in pipeline_log
         assert "Factor Analysis" in pipeline_log

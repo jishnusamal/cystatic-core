@@ -6,6 +6,7 @@ This is a deterministic presentation layer - all computation is done in the mode
 
 from __future__ import annotations
 
+from contextlib import suppress
 from typing import Any
 
 from core.errors import RendererFailed
@@ -226,12 +227,13 @@ class LLMContextRenderer:
         if not domains:
             domains = {"Authentication", "Billing", "Organizations", "OAuth"}
 
-        return sorted(list(domains))
+        return sorted(domains)
 
     def _get_data_entities(self, artifact: EngineeringDiscoveryModel) -> list[str]:
         """Extract data entity names from data model."""
         entities = []
-        try:
+        # Entity extraction is best-effort; empty list is a valid result
+        with suppress(Exception):
             data = artifact.data
             if hasattr(data, "models"):
                 for model in data.models[:10]:  # Limit to 10
@@ -243,8 +245,6 @@ class LLMContextRenderer:
                 for table in data.tables[:10]:  # Limit to 10
                     if hasattr(table, "name"):
                         entities.append(table.name)
-        except Exception:
-            pass
         return entities
 
     def _count_boundary_crossings(self, artifact: EngineeringDiscoveryModel) -> int:

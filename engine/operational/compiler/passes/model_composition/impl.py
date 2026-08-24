@@ -34,9 +34,7 @@ class ModelCompositionPass(OperationalCompilerPass):
             return False
         if context.change_model is None:
             return False
-        if context.behavior_model is None:
-            return False
-        return True
+        return context.behavior_model is not None
 
     def run(self, context: OperationalPassContext) -> OperationalPassContext:
         """

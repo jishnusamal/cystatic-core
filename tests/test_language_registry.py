@@ -1,16 +1,19 @@
-import pytest
 from typing import Any
 
+import pytest
 
-from core.errors import LanguageDetectionFailed, LanguageNotSupported, LanguageRegistrationError
+from core.errors import (
+    LanguageDetectionFailed,
+    LanguageNotSupported,
+    LanguageRegistrationError,
+)
 from engine.language.base import BaseLanguageAdapter, FileContext, LanguageSpec
-from engine.language.python.plugin import PythonPlugin
-from engine.language.python.adapter import PythonLanguageAdapter
-from engine.language.java.plugin import JavaPlugin
-from engine.language.java.adapter import JavaLanguageAdapter
-from engine.language.registry import LanguageRegistry
 from engine.language.builtins import create_default_language_registry
 from engine.language.detection import LanguageDetector
+from engine.language.java.plugin import JavaPlugin
+from engine.language.python.adapter import PythonLanguageAdapter
+from engine.language.python.plugin import PythonPlugin
+from engine.language.registry import LanguageRegistry
 
 
 class MockPlugin:

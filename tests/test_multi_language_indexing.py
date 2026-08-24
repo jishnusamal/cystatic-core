@@ -1,10 +1,11 @@
-import pytest
-import tempfile
 import os
-from engine.repository.store.sqlite import SQLiteRepositoryStore
-from engine.repository.store.sink import PersistentFactSink
-from engine.repository.indexing.indexer import RepositoryIndexer
+import tempfile
+
 from engine.language.builtins import create_default_language_registry
+from engine.repository.indexing.indexer import RepositoryIndexer
+from engine.repository.store.sink import PersistentFactSink
+from engine.repository.store.sqlite import SQLiteRepositoryStore
+
 
 def test_multi_language_indexing():
     with tempfile.TemporaryDirectory() as tmpdir:

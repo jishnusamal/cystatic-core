@@ -1,7 +1,5 @@
 """Java parser - splits Java source into lines for regex-based extraction."""
 
-from typing import Any
-
 from engine.language.base.parser import BaseParser
 
 

@@ -86,7 +86,7 @@ def test_invalidation():
     # Test 5 — Invalidation
     graph = RepositoryGraph()
     # Materialize symbol_to_callers initially
-    callers1 = graph.symbol_to_callers
+    _ = graph.symbol_to_callers
     assert graph._indexes.symbol_to_callers is not None
 
     # Invalidate / patch graph simulation
@@ -94,7 +94,7 @@ def test_invalidation():
     assert graph._indexes.symbol_to_callers is None
 
     # Query again (materialize new index)
-    callers2 = graph.symbol_to_callers
+    _ = graph.symbol_to_callers
     assert graph._indexes.symbol_to_callers is not None
 
 
@@ -139,7 +139,7 @@ def test_performance_guard():
     )
 
     t0 = time.perf_counter()
-    inc_graph = adapter.compile_incremental(base_graph, {"files": head_source_files})
+    adapter.compile_incremental(base_graph, {"files": head_source_files})
     duration = time.perf_counter() - t0
 
     # Ensure incremental compile duration is well within threshold (e.g. < 1.0 second)

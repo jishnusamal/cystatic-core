@@ -1,6 +1,7 @@
 """TypeScript import extractor stub."""
 
 from typing import Any
+
 from engine.language.base import BaseExtractor
 
 

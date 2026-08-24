@@ -6,6 +6,7 @@ import os
 import pickle
 import sys
 import time
+from contextlib import suppress
 from typing import Any
 
 import psutil
@@ -63,11 +64,12 @@ class DiagnosticProfiler:
 
         # Also check for dictionary objects that look like files dict
         for obj in gc.get_objects():
+            # Heuristic scan over live objects; malformed objects are skipped
             if isinstance(obj, dict) and len(obj) > 0:
-                try:
+                with suppress(Exception):
                     # check if it looks like a files dictionary: string keys, string values, and keys ending in code extensions
                     sample_keys = list(obj.keys())[:3]
-                    if all(
+                    looks_like_files_dict = all(
                         isinstance(k, str)
                         and any(
                             k.endswith(ext)
@@ -82,14 +84,12 @@ class DiagnosticProfiler:
                             ]
                         )
                         for k in sample_keys
-                    ):
-                        # check values are strings
-                        if all(isinstance(obj[k], str) for k in list(obj.keys())[:3]):
-                            for content in obj.values():
-                                if isinstance(content, str):
-                                    source_strings.add(content)
-                except Exception:
-                    pass
+                    )
+                    # check values are strings
+                    if looks_like_files_dict and all(isinstance(obj[k], str) for k in list(obj.keys())[:3]):
+                        for content in obj.values():
+                            if isinstance(content, str):
+                                source_strings.add(content)
 
         total_files = len(source_strings)
         total_bytes = sum(len(s.encode("utf-8")) for s in source_strings)
@@ -320,7 +320,7 @@ class DiagnosticProfiler:
                         repo_ref, file_path, head_sha
                     )
                     changed_files_dict[file_path] = content
-                except Exception:
+                except Exception:  # noqa: BLE001 -- profiling must survive individual failures
                     changed_files_dict[file_path] = None
 
         self.record_checkpoint("RSS after head source load")
@@ -447,7 +447,7 @@ class DiagnosticProfiler:
                 pr_number=str(pr_number),
                 language="python",
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- profiling must survive individual failures
             print(f"[DIAGNOSTIC] LLM request skipped/failed: {e}")
         self.record_checkpoint("after LLM request")
 
@@ -477,10 +477,6 @@ class DiagnosticProfiler:
         before_cleanup_rss = self.get_rss()
 
         # Delete large objects
-        if "snapshot" in locals():
-            del snapshot
-        if "asts" in locals():
-            del asts
         if "base_graph" in locals():
             del base_graph
         if "patched_graph" in locals():
@@ -503,7 +499,7 @@ class DiagnosticProfiler:
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         repo_lower = repo_name.split("/")[-1].lower()
         output_file = f"profiling/phase2/{repo_lower}_{timestamp}.json"
-        with open(output_file, "w") as f:
+        with open(output_file, "w") as f:  # noqa: ASYNC230 -- one-shot profiling script
             json.dump(
                 {
                     "pr_url": self.pr_url,
@@ -517,7 +513,7 @@ class DiagnosticProfiler:
 
         # Also write to base file for latest results convenience
         base_output_file = f"profiling/phase2/{repo_lower}.json"
-        with open(base_output_file, "w") as f:
+        with open(base_output_file, "w") as f:  # noqa: ASYNC230 -- one-shot profiling script
             json.dump(
                 {
                     "pr_url": self.pr_url,

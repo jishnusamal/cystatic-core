@@ -1006,7 +1006,7 @@ class _StringBuilder:
         if "/" in path:
             dir_part, _, file_part = path.rpartition("/")
             dir_prefix = f"{dir_part}/"
-            dir_idx = self.add(dir_prefix)
+            self.add(dir_prefix)
             file_entry = f" {file_part}"
             file_idx = self.add(file_entry)
             full_idx = file_idx  # index pointing to formatted string entry

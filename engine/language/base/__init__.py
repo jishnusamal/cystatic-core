@@ -23,8 +23,8 @@ __all__ = [
     "BaseParser",
     "FileContext",
     "IndexCompiler",
+    "LanguageCapabilities",
     "LanguagePlugin",
     "LanguageSpec",
     "SemanticCompiler",
-    "LanguageCapabilities",
 ]

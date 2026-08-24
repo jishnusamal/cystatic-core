@@ -35,19 +35,18 @@ class PythonEntrypointExtractor(BaseExtractor):
                     # Check if this is a decorator call like @router.post("/route")
                     if isinstance(dec, ast.Call) and isinstance(
                         dec.func, ast.Attribute
-                    ):
-                        if isinstance(dec.func.value, ast.Name):
-                            method = dec.func.attr.lower()
-                            if method in HTTP_METHODS and dec.args:
-                                route = self._get_arg_value(dec.args[0])
-                                if route:
-                                    endpoints.append(
-                                        {
-                                            "method": method.upper(),
-                                            "route": route,
-                                            "handler": node.name,
-                                        }
-                                    )
+                    ) and isinstance(dec.func.value, ast.Name):
+                        method = dec.func.attr.lower()
+                        if method in HTTP_METHODS and dec.args:
+                            route = self._get_arg_value(dec.args[0])
+                            if route:
+                                endpoints.append(
+                                    {
+                                        "method": method.upper(),
+                                        "route": route,
+                                        "handler": node.name,
+                                    }
+                                )
 
         return endpoints
 

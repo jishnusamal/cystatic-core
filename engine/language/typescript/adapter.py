@@ -178,7 +178,7 @@ class TypeScriptLanguageAdapter(BaseLanguageAdapter):
                     )
                     files_parsed += 1
                     yield context
-                except Exception:
+                except Exception:  # noqa: BLE001 -- isolate per-file parse/index failures during indexing
                     files_failed += 1
                     continue
 
@@ -264,7 +264,7 @@ class TypeScriptLanguageAdapter(BaseLanguageAdapter):
                 [context], language, self._visitor
             )
             return repo_index.files[0]
-        except Exception:
+        except Exception:  # noqa: BLE001 -- isolate per-file parse/index failures during indexing
             from engine.repository.model.repository_index import FileIndex
 
             return FileIndex(path=file_path, language=language)

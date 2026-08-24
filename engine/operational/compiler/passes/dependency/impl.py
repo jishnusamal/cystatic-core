@@ -16,6 +16,7 @@ Everything is directly traceable to repository evidence. No inference.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from engine.operational.compiler.passes.base import (
     OperationalCompilerPass,

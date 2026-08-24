@@ -1,4 +1,3 @@
-from typing import Any, Generic, TypeVar
 from dataclasses import dataclass
 
 from engine.repository.facts import (
@@ -31,11 +30,9 @@ from engine.repository.facts import (
     TypeRelationshipType,
 )
 
-T = TypeVar("T")
-
 
 @dataclass(frozen=True)
-class QueryResult(Generic[T]):
+class QueryResult[T]:
     """
     Wrapper for repository query results that couples the facts found with
     a completeness flag indicating if the relevant repository scope has been fully materialized.
@@ -53,7 +50,7 @@ class QueryResult(Generic[T]):
     def __getitem__(self, index):
         return self.facts[index]
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, QueryResult):
             return self.facts == other.facts and self.complete == other.complete
         if isinstance(other, (tuple, list)):
@@ -78,6 +75,7 @@ __all__ = [
     "FileId",
     "Import",
     "ImportType",
+    "QueryResult",
     "Reference",
     "ReferenceType",
     "ResourceId",
@@ -89,6 +87,5 @@ __all__ = [
     "TestRelationshipType",
     "TypeRelationship",
     "TypeRelationshipType",
-    "QueryResult",
 ]
 

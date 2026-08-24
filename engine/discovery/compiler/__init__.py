@@ -26,18 +26,11 @@ Every pass:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 
 from engine.operational.model import OperationalChangeModel
 
-from ..model import (
-    Discovery,
-    DiscoveryFact,
-    DiscoveryKind,
-    DiscoveryModel,
-    DiscoveryReference,
-)
+from ..model import DiscoveryModel
 from .passes.base import DiscoveryCompilerPass, DiscoveryPassContext
 from .passes.boundary_crossing import BoundaryCrossingPass
 from .passes.deep_execution import DeepExecutionPass

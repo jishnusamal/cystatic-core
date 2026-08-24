@@ -51,7 +51,6 @@ class HiddenRelationshipPass(DiscoveryCompilerPass):
         # For each behavior, show how many entry points reach it
         entry_points = getattr(behavior, "entry_points", ())
         behaviors = getattr(behavior, "behaviors", ())
-        reachable_units = getattr(behavior, "reachable_units", ())
         execution_chains = getattr(behavior, "execution_chains", ())
 
         # Build a map: behavior_id -> list of entry point routes

@@ -4,7 +4,7 @@ Emits only structural event facts. No resolution, no graph construction.
 """
 
 import re
-from typing import Any
+from typing import Any, ClassVar
 
 from engine.language.base.file_context import FileContext
 from engine.language.base.passes import BaseIndexPass
@@ -18,7 +18,7 @@ class JavaEventIndexPass(BaseIndexPass):
     No resolution of what symbols are involved - that's semantic compilation.
     """
 
-    EVENT_PATTERNS = [
+    EVENT_PATTERNS: ClassVar[list[tuple[str, str, str]]] = [
         (r"(\w+)\.publishEvent\s*\(", "publish", "spring"),
         (r"(\w+)\.send\s*\(", "send", "generic"),
         (r"(\w+)\.convertAndSend\s*\(", "send", "spring"),
@@ -29,7 +29,7 @@ class JavaEventIndexPass(BaseIndexPass):
         (r"(\w+)\.trigger\s*\(", "dispatch", "generic"),
     ]
 
-    FRAMEWORK_DETECT = {
+    FRAMEWORK_DETECT: ClassVar[dict[str, str]] = {
         "kafkaTemplate": "kafka",
         "rabbitTemplate": "rabbitmq",
         "jmsTemplate": "jms",

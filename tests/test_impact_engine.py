@@ -142,7 +142,7 @@ def test_impact_engine_basic():
     assert "python://test.py::C" in surface.affected_symbols
 
     assert len(surface.affected_endpoints) == 1
-    assert list(surface.affected_endpoints)[0].handler_id == "python://test.py::A"
+    assert next(iter(surface.affected_endpoints)).handler_id == "python://test.py::A"
 
     assert len(surface.affected_events) == 1
-    assert list(surface.affected_events)[0].symbol_id == "python://test.py::C"
+    assert next(iter(surface.affected_events)).symbol_id == "python://test.py::C"

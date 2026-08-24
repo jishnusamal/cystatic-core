@@ -8,8 +8,8 @@ never reach semantic change analysis.
 from typing import Any
 
 from engine.change.passes.file_classification import (
-    AnalysisPolicy,
     DEFAULT_ANALYSIS_POLICY,
+    AnalysisPolicy,
     FileClassification,
     FileClassifier,
     detect_language,

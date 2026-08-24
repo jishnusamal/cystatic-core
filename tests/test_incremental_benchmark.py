@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import time
+
 import pytest
 
 from engine.language.python.adapter import PythonLanguageAdapter
-from engine.repository.facts import File, FileId, Symbol, SymbolId
+from engine.repository.facts import File
 from engine.repository.indexing.indexer import RepositoryIndexer
 from engine.repository.indexing.sink import InMemoryFactSink
 from engine.repository.overlay import RepositoryOverlay, RepositoryView
@@ -161,7 +162,7 @@ class TestIncrementalBenchmark:
         base_indexer.index_repository({"files": repo_files}, adapter)
         base_facts = base_sink.build_facts()
         base_query = InMemoryRepository(base_facts)
-        base_build_duration = time.perf_counter() - t0
+        time.perf_counter() - t0
 
         # Modify N files
         head_files = dict(repo_files)
@@ -329,8 +330,8 @@ def new_feature_handler():
         inc_view = RepositoryView(base_query, overlay)
 
         # Verify
-        inc_syms, inc_calls, inc_refs = extract_view_fqns(inc_view, base_indexer, head_indexer)
-        full_syms, full_calls, full_refs = extract_full_fqns(full_facts, full_indexer)
+        inc_syms, inc_calls, _inc_refs = extract_view_fqns(inc_view, base_indexer, head_indexer)
+        full_syms, full_calls, _full_refs = extract_full_fqns(full_facts, full_indexer)
 
         assert inc_syms == full_syms
         assert inc_calls == full_calls
@@ -382,8 +383,8 @@ def new_feature_handler():
         head_indexer._next_symbol_id = base_indexer._next_symbol_id
 
         # Verify
-        inc_syms, inc_calls, inc_refs = extract_view_fqns(inc_view, base_indexer, head_indexer)
-        full_syms, full_calls, full_refs = extract_full_fqns(full_facts, full_indexer)
+        inc_syms, inc_calls, _inc_refs = extract_view_fqns(inc_view, base_indexer, head_indexer)
+        full_syms, full_calls, _full_refs = extract_full_fqns(full_facts, full_indexer)
 
         assert inc_syms == full_syms
         assert inc_calls == full_calls
@@ -457,8 +458,8 @@ def new_feature_handler():
         inc_view = RepositoryView(base_query, overlay)
 
         # Verify
-        inc_syms, inc_calls, inc_refs = extract_view_fqns(inc_view, base_indexer, head_indexer)
-        full_syms, full_calls, full_refs = extract_full_fqns(full_facts, full_indexer)
+        inc_syms, inc_calls, _inc_refs = extract_view_fqns(inc_view, base_indexer, head_indexer)
+        full_syms, full_calls, _full_refs = extract_full_fqns(full_facts, full_indexer)
 
         assert inc_syms == full_syms
         assert inc_calls == full_calls

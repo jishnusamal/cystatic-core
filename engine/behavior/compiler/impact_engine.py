@@ -49,7 +49,7 @@ class ImpactEngine:
             (str(sid), 0) for sid in changed_symbol_ids
         )
 
-        affected_symbols: set[str] = set(str(sid) for sid in changed_symbol_ids)
+        affected_symbols: set[str] = {str(sid) for sid in changed_symbol_ids}
 
         # We need to map symbol_id -> EntryPoint (if they are an entry point)
         # However, RepositoryQuery.get_entry_points() gives us all of them.

@@ -8,9 +8,11 @@ Initially filesystem-based, designed for future database replacement.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import pickle
 from abc import ABC, abstractmethod
+from contextlib import suppress
 from pathlib import Path
 
 from engine.repository.model import RepositoryGraph, RepositoryModel
@@ -132,21 +134,24 @@ class FilesystemRepositoryStore(RepositoryStore):
         """
         cache_path = self._get_cache_path(repository, ref)
 
-        if not cache_path.exists():
+        if not await asyncio.to_thread(cache_path.exists):
             return None
 
-        try:
-            with open(cache_path, "rb") as f:
-                model = pickle.load(f)
+        def _load() -> RepositoryModel | RepositoryGraph | None:
+            try:
+                with open(cache_path, "rb") as f:
+                    model = pickle.load(f)
 
-            # Validate that we got a RepositoryModel or RepositoryGraph
-            if not isinstance(model, (RepositoryModel, RepositoryGraph)):
+                # Validate that we got a RepositoryModel or RepositoryGraph
+                if not isinstance(model, (RepositoryModel, RepositoryGraph)):
+                    return None
+
+                return model
+            except Exception:  # noqa: BLE001 -- a corrupt cache entry is treated as a miss
+                # If we can't load the cache, treat it as a miss
                 return None
 
-            return model
-        except Exception:
-            # If we can't load the cache, treat it as a miss
-            return None
+        return await asyncio.to_thread(_load)
 
     async def save(
         self, repository: str, ref: str, model: RepositoryModel | RepositoryGraph
@@ -162,19 +167,23 @@ class FilesystemRepositoryStore(RepositoryStore):
         cache_path = self._get_cache_path(repository, ref)
 
         # Ensure parent directory exists
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(cache_path.parent.mkdir, parents=True, exist_ok=True)
 
         # Write atomically using a temporary file
         temp_path = cache_path.with_suffix(".tmp")
-        try:
+
+        def _save() -> None:
             with open(temp_path, "wb") as f:
                 pickle.dump(model, f, protocol=pickle.HIGHEST_PROTOCOL)
             temp_path.replace(cache_path)
-        except Exception as exc:
+
+        try:
+            await asyncio.to_thread(_save)
+        except Exception:
             # Clean up temp file if it exists
             if temp_path.exists():
                 temp_path.unlink()
-            raise exc
+            raise
 
     async def exists(self, repository: str, ref: str) -> bool:
         """
@@ -210,10 +219,9 @@ class FilesystemRepositoryStore(RepositoryStore):
             # This is inefficient but acceptable for the initial implementation
             prefix = hashlib.sha256(f"{repository}:".encode()).hexdigest()
             for cache_file in self.cache_dir.glob(f"{prefix}*.pkl"):
-                try:
+                # Already-missing files are fine; invalidation is best-effort
+                with suppress(OSError):
                     cache_file.unlink()
-                except Exception:
-                    pass
 
     async def cleanup(self, max_age_days: int = 7) -> int:
         """
@@ -231,12 +239,11 @@ class FilesystemRepositoryStore(RepositoryStore):
         removed = 0
 
         for cache_file in self.cache_dir.glob("*.pkl"):
-            try:
+            # Files vanishing mid-scan are fine; cleanup is best-effort
+            with suppress(OSError):
                 if cache_file.stat().st_mtime < cutoff_time:
                     cache_file.unlink()
                     removed += 1
-            except Exception:
-                pass
 
         return removed
 

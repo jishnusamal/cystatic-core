@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import math
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Sequence
+from typing import Any
 
 from core.logging import pipeline_logger
 from engine.repository.materialization.budget import (
-    BudgetExceededReason,
     ResolutionBudget,
     ResolutionUsage,
 )

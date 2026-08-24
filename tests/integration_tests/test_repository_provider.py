@@ -1,10 +1,12 @@
 import pytest
+
 from integrations.base import (
+    RepositoryAcquisitionMode,
+    RepositoryBlob,
     RepositoryCommit,
     RepositoryTreeEntry,
-    RepositoryBlob,
-    RepositoryAcquisitionMode,
 )
+
 
 def test_repository_models():
     commit = RepositoryCommit(sha="sha", repository="owner/repo", message="msg", author="auth")

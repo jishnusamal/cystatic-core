@@ -50,7 +50,7 @@ class ResolutionOutcome:
     # ------------------------------------------------------------------
 
     @classmethod
-    def success(cls, rounds: int, usage: ResolutionUsage) -> "ResolutionOutcome":
+    def success(cls, rounds: int, usage: ResolutionUsage) -> ResolutionOutcome:
         """Create a successful (within-budget) outcome."""
         return cls(complete=True, rounds=rounds, usage=usage)
 
@@ -60,7 +60,7 @@ class ResolutionOutcome:
         reason: BudgetExceededReason,
         rounds: int,
         usage: ResolutionUsage,
-    ) -> "ResolutionOutcome":
+    ) -> ResolutionOutcome:
         """Create a budget-exceeded outcome for Phase 12 to consume."""
         return cls(
             complete=False,

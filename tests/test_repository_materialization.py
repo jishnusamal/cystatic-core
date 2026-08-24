@@ -6,21 +6,21 @@ consume materialization budget, and are represented explicitly (excluded ≠
 missing ≠ failed).
 """
 
-import pytest
 from unittest.mock import MagicMock
 
-from engine.repository.store import SQLiteRepositoryStore
-from engine.repository.store.sink import PersistentFactSink
-from engine.repository.indexing.indexer import RepositoryIndexer
-from engine.repository.metrics import RepositoryMaterializationMetrics
-from integrations.base import RepositoryProvider, RepositoryBlob
+import pytest
 
+from engine.repository.indexing.indexer import RepositoryIndexer
 from engine.repository.materialization.budget import MaterializationBudget
-from engine.repository.materialization.request import MaterializationRequest
 from engine.repository.materialization.materializer import (
     MaterializationResult,
     RepositoryMaterializer,
 )
+from engine.repository.materialization.request import MaterializationRequest
+from engine.repository.metrics import RepositoryMaterializationMetrics
+from engine.repository.store import SQLiteRepositoryStore
+from engine.repository.store.sink import PersistentFactSink
+from integrations.base import RepositoryBlob, RepositoryProvider
 
 
 class MockRepositoryProvider(RepositoryProvider):
@@ -121,7 +121,7 @@ class TestExcludedFilesAreNotFetched:
             "backend/api.py": ("sha_api", b"def handler():\n    pass\n"),
             "shared/types.ts": ("sha_types", b"export interface User { id: string }"),
         }
-        store, source, materializer, metrics, repo_id, commit_sha = materializer_env(files)
+        store, source, materializer, _metrics, repo_id, commit_sha = materializer_env(files)
 
         result = await materializer.materialize(
             MaterializationRequest(
@@ -153,7 +153,7 @@ class TestExcludedFilesAreNotFetched:
         files = {
             "src/components/Card.tsx": ("sha_card", b"export const Card = () => null;"),
         }
-        store, source, materializer, metrics, repo_id, commit_sha = materializer_env(files)
+        store, _source, materializer, _metrics, repo_id, commit_sha = materializer_env(files)
 
         result = await materializer.materialize(
             MaterializationRequest(repo_id, commit_sha, ("src/components/Card.tsx",), "t")
@@ -170,7 +170,7 @@ class TestExcludedFilesAreNotFetched:
             "generated/schema_pb2.py": ("sha_pb2", b"# Generated code\n"),
             "server/main.py": ("sha_main", b"def main():\n    pass\n"),
         }
-        store, source, materializer, metrics, repo_id, commit_sha = materializer_env(files)
+        _store, source, materializer, _metrics, repo_id, commit_sha = materializer_env(files)
 
         result = await materializer.materialize(
             MaterializationRequest(
@@ -193,7 +193,7 @@ class TestExcludedFilesAreNotFetched:
             {"path": "services/core.py", "size": 22, "blob_sha": "sha_core", "type": "blob"},
             # missing.py intentionally absent from the tree
         ]
-        store, source, materializer, metrics, repo_id, commit_sha = materializer_env(
+        _store, _source, materializer, _metrics, repo_id, commit_sha = materializer_env(
             files, tree=tree
         )
 
@@ -219,7 +219,7 @@ class TestBudgetInteraction:
             "frontend/Hero.tsx": ("sha_hero", b"export const Hero = () => null;"),
             "workers/job.py": ("sha_job", b"def job():\n    pass\n"),
         }
-        store, source, materializer, metrics, repo_id, commit_sha = materializer_env(
+        _store, _source, materializer, metrics, repo_id, commit_sha = materializer_env(
             files, max_files=1
         )
 
@@ -239,7 +239,7 @@ class TestBudgetInteraction:
             "web/App.jsx": ("sha_app", b"export default App;"),
             "__generated__/types.tsx": ("sha_gen", b"// generated"),
         }
-        store, source, materializer, metrics, repo_id, commit_sha = materializer_env(files)
+        _store, source, materializer, metrics, repo_id, commit_sha = materializer_env(files)
 
         result = await materializer.materialize(
             MaterializationRequest(
@@ -264,7 +264,7 @@ class TestClassificationMetrics:
             "shared/types.ts": ("sha_d", b"export type X = 1;"),
             "unknown_util.ts": ("sha_e", b"export const u = 3;"),
         }
-        store, source, materializer, metrics, repo_id, commit_sha = materializer_env(files)
+        _store, _source, materializer, metrics, repo_id, commit_sha = materializer_env(files)
 
         await materializer.materialize(
             MaterializationRequest(

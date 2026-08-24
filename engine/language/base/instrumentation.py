@@ -6,6 +6,7 @@ Provides detailed timing, counting, and hotspot analysis for compiler passes.
 import time
 import tracemalloc
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass, field
 from functools import wraps
 from typing import Any, TypeVar
@@ -56,11 +57,11 @@ class PassInstrumentation:
     def start(self):
         """Start instrumentation."""
         self.start_time = time.perf_counter()
-        try:
+        # tracemalloc may be unavailable or already active; instrumentation
+        # must degrade gracefully instead of failing the pass
+        with suppress(Exception):
             tracemalloc.start()
             self.tracemalloc_enabled = True
-        except Exception:
-            pass
 
     def stop(self):
         """Stop instrumentation."""
@@ -132,7 +133,7 @@ class PassInstrumentation:
             return
 
         stats = self.get_pass_stats(pass_name)
-        current, peak = tracemalloc.get_traced_memory()
+        _, peak = tracemalloc.get_traced_memory()
         stats.memory_peak = max(stats.memory_peak, peak)
 
     def record_objects_emitted(self, pass_name: str, count: int):
@@ -418,7 +419,7 @@ class PassInstrumentation:
 
         # Collect all methods across passes
         all_methods = []
-        for pass_name, pass_stats in self.pass_stats.items():
+        for pass_stats in self.pass_stats.values():
             for method_name, method_stats in pass_stats.method_stats.items():
                 all_methods.append((method_name, method_stats.total_time))
             # Also check internal operations

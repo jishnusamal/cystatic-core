@@ -1,7 +1,8 @@
 import dataclasses
+
 import pytest
 
-from engine.language.base import LanguageSpec, LanguageCapabilities
+from engine.language.base import LanguageCapabilities, LanguageSpec
 
 
 def test_language_spec_basic_construction():

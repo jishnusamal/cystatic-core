@@ -191,12 +191,11 @@ async def run_pr_analysis_direct(pr_url: str):
         snapshot = await repository_provider.fetch_repository_at_sha(repo_ref, base_sha)
         file_count = len(snapshot.files)
         source_bytes = sum(len(content) for content in snapshot.files.values())
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- benchmarking must survive individual PR failures
         print(f"Failed to fetch base snapshot: {e}")
 
     wall_clock_start = time.perf_counter()
     context = None
-    llm_comment = None
 
     try:
         # Run pipeline
@@ -214,7 +213,7 @@ async def run_pr_analysis_direct(pr_url: str):
         profiler.log_memory("before LLM request")
 
         # Call LLM
-        llm_result = pipeline.generate_llm_comment(
+        pipeline.generate_llm_comment(
             context,
             repository=repo_name,
             pr_number=str(pr_number),
@@ -223,8 +222,6 @@ async def run_pr_analysis_direct(pr_url: str):
 
         # Checkpoint: after LLM request
         profiler.log_memory("after LLM request")
-
-        llm_comment = llm_result.get("comment")
 
     finally:
         wall_clock_duration = time.perf_counter() - wall_clock_start
@@ -238,7 +235,7 @@ async def run_pr_analysis_direct(pr_url: str):
             if context.repository_view:
                 try:
                     symbol_count, call_edge_count, ref_edge_count = get_view_metrics(context.repository_view)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 -- benchmarking must survive individual PR failures
                     print(f"Failed to extract metrics from RepositoryView: {e}")
             elif context.head_repository_model:
                 if context.head_repository_model.symbols:
@@ -291,7 +288,7 @@ async def run_all():
             res = await run_pr_analysis_direct(pr)
             if res:
                 results[pr] = res
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- benchmarking must survive individual PR failures
             print(f"Failed to benchmark {pr}: {e}")
             import traceback
 
@@ -301,10 +298,10 @@ async def run_all():
     os.makedirs("logs", exist_ok=True)
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     json_path = f"logs/memory_benchmark_results_{timestamp}.json"
-    with open(json_path, "w") as f:
+    with open(json_path, "w") as f:  # noqa: ASYNC230 -- one-shot benchmark script
         json.dump(results, f, indent=2)
     # Also write to base file for latest results convenience
-    with open("logs/memory_benchmark_results.json", "w") as f:
+    with open("logs/memory_benchmark_results.json", "w") as f:  # noqa: ASYNC230 -- one-shot script
         json.dump(results, f, indent=2)
 
     print(
@@ -336,7 +333,7 @@ def generate_markdown_report(results):
     )
     lines.append("|---|---|---|---|---|---|---|---|")
 
-    for pr, res in results.items():
+    for res in results.values():
         lines.append(
             f"| {res['repo_name']} | {res['file_count']} | {res['source_bytes']} | {res['symbol_count']} | "
             f"{res['call_edge_count']} | {res['ref_edge_count']} | {res['wall_clock_duration']:.2f} | {res['peak_rss_overall']:.1f} |"
@@ -347,7 +344,7 @@ def generate_markdown_report(results):
     lines.append("## Checkpoint Details (RSS / Peak RSS in MB)")
     lines.append("")
 
-    for pr, res in results.items():
+    for res in results.values():
         lines.append(f"### {res['repo_name']} (PR #{res['pr_number']})")
         lines.append("")
         lines.append("| Checkpoint | Current RSS (MB) | Peak RSS (MB) |")

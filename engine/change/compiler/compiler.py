@@ -2,7 +2,6 @@
 
 from typing import Any
 
-
 from engine.change.compiler.passes import (
     ChangeClassificationPass,
     ChangedSymbolsPass,
@@ -15,14 +14,14 @@ from engine.change.model import (
 )
 from engine.change.model.repository_comparison import RepositoryComparison
 from engine.change.passes.file_classification import (
-    AnalysisPolicy,
     DEFAULT_ANALYSIS_POLICY,
+    AnalysisPolicy,
     FileClassification,
     FileClassifier,
     detect_language,
 )
 from engine.repository.facts import Call, FileId, Import, Reference, SymbolId
-from engine.repository.query import RepositoryQuery, QueryResult
+from engine.repository.query import QueryResult, RepositoryQuery
 
 
 class RepositoryModelQuery(RepositoryQuery):
@@ -112,7 +111,7 @@ class RepositoryModelQuery(RepositoryQuery):
             method_str = symbol.properties.get("http_method", "GET")
             try:
                 method = EndpointMethod(method_str)
-            except Exception:
+            except ValueError:
                 method = EndpointMethod.ANY
             return QueryResult(
                 (

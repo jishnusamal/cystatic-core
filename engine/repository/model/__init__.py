@@ -51,59 +51,59 @@ from .symbol import Symbol, SymbolKind, SymbolVisibility
 from .tests import TestDefinition, TestFixture, TestFramework
 
 __all__ = [
-    # Symbol
-    "Symbol",
-    "SymbolKind",
-    "SymbolVisibility",
-    # Evidence
-    "Evidence",
-    "FileLocation",
-    "SymbolReference",
-    "CallReference",
-    "ImportReference",
     "AnnotationReference",
+    "AsyncEntryPoint",
     # Graphs
     "CallEdge",
+    "CallEntry",
     "CallGraph",
-    "ReferenceEdge",
-    "ReferenceGraph",
-    "TypeRelationshipEdge",
-    "TypeRelationshipGraph",
-    # Repository Model
-    "RepositoryModel",
+    "CallReference",
+    "ConfigEntry",
+    "ConfigReferenceKind",
+    # Configuration
+    "ConfigurationReference",
     "EntryPoint",
     "EntryPointKind",
-    "AsyncEntryPoint",
+    "EntrypointEntry",
+    # Events
+    "EventConstruct",
+    "EventEntry",
+    "EventOperationKind",
+    # Evidence
+    "Evidence",
+    # Incremental Compilation Graph
+    "FileContribution",
+    "FileIndex",
+    "FileLocation",
+    "ImportEntry",
+    "ImportReference",
+    "PersistenceEntry",
     # Persistence
     "PersistenceModel",
     "PersistenceModelKind",
-    "RepositoryMethod",
-    "RepositoryMethodKind",
-    # Events
-    "EventConstruct",
-    "EventOperationKind",
-    # Tests
-    "TestDefinition",
-    "TestFramework",
-    "TestFixture",
-    # Configuration
-    "ConfigurationReference",
-    "ConfigReferenceKind",
+    "RawReference",
+    "ReferenceEdge",
+    "ReferenceGraph",
+    "RepositoryGraph",
     # Repository Index (IR)
     "RepositoryIndex",
-    "FileIndex",
-    "SymbolEntry",
-    "ImportEntry",
-    "RawReference",
-    "CallEntry",
-    "EntrypointEntry",
-    "TypeRelationshipEntry",
-    "PersistenceEntry",
+    "RepositoryMethod",
     "RepositoryMethodEntry",
-    "EventEntry",
+    "RepositoryMethodKind",
+    # Repository Model
+    "RepositoryModel",
+    # Symbol
+    "Symbol",
+    "SymbolEntry",
+    "SymbolKind",
+    "SymbolReference",
+    "SymbolVisibility",
+    # Tests
+    "TestDefinition",
     "TestEntry",
-    "ConfigEntry",
-    # Incremental Compilation Graph
-    "FileContribution",
-    "RepositoryGraph",
+    "TestFixture",
+    "TestFramework",
+    "TypeRelationshipEdge",
+    "TypeRelationshipEntry",
+    "TypeRelationshipGraph",
 ]

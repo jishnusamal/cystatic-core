@@ -1,6 +1,7 @@
 from abc import abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any
 
 from engine.repository.query import RepositoryQuery
 

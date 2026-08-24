@@ -58,9 +58,6 @@ class FactsToIndexAdapter:
         """Convert RepositoryFacts to RepositoryIndex."""
         file_indices: list[FileIndex] = []
 
-        # Create symbol lookup mapping
-        symbol_map = {s.id: s for s in facts.symbols}
-
         for file_fact in facts.files:
             file_path = file_fact.path
             file_id = file_fact.id

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
 import tiktoken
@@ -25,8 +26,8 @@ from core.runtime import PREVENT_LEGACY_ARCHITECTURE
 from engine.behavior.compiler import BehaviorCompiler
 from engine.change.compiler import ChangeCompiler
 from engine.change.model.repository_comparison import RepositoryComparison
-from engine.language.detection import LanguageDetector
 from engine.language.base import FileContext
+from engine.language.detection import LanguageDetector
 from engine.language.registry import LanguageRegistry
 from engine.llm_context.compiler import LLMContextCompiler
 from engine.operational.compiler import (
@@ -60,6 +61,7 @@ def print(*args, **kwargs):
 
 
 if TYPE_CHECKING:
+    from engine.repository.model import RepositoryGraph
     from integrations.base import (
         OutputProvider,
         RepositoryProvider,
@@ -136,13 +138,13 @@ class Pipeline:
         Returns:
             PipelineContext with all results
         """
-        from datetime import datetime
+        from datetime import UTC, datetime
 
         from core.logging import pipeline_logger
         from core.runtime import RunContext
         from engine.language.base.instrumentation import get_instrumentation
 
-        started_at = datetime.now()
+        started_at = datetime.now(UTC)
         run_context = RunContext.create(started_at=started_at)
         pipeline_logger.start_run(run_context)
         pipeline_start_time = time.perf_counter()
@@ -275,7 +277,6 @@ class Pipeline:
                 profiler.log_memory("After Operational Compiler")
 
             # Step 6: Engineering Discovery Compilation
-            discovery_start = time.perf_counter()
             with timer.timed("Engineering Discovery Compilation"):
                 print("[pipeline] Step 6: Engineering discovery model compilation")
                 if context.ocm is not None:
@@ -284,12 +285,10 @@ class Pipeline:
                     print("[pipeline] Step 6: ocm is None, skipping engineering discovery compilation.")
                 print("[pipeline] Step 6 done")
                 timer.print_progress()
-            discovery_time = time.perf_counter() - discovery_start
             if profiler:
                 profiler.log_memory("After Engineering Discovery Compiler")
 
             # Step 7: Discovery IR Compilation
-            discovery_ir_start = time.perf_counter()
             with timer.timed("Discovery IR Compilation"):
                 print("[pipeline] Step 7: Discovery IR compilation")
                 if context.edm is not None:
@@ -298,7 +297,6 @@ class Pipeline:
                     print("[pipeline] Step 7: edm is None, skipping discovery IR compilation.")
                 print("[pipeline] Step 7 done")
                 timer.print_progress()
-            discovery_ir_time = time.perf_counter() - discovery_ir_start
             if profiler:
                 profiler.log_memory("After Discovery IR Compiler")
 
@@ -359,7 +357,8 @@ class Pipeline:
             if metrics.repository_files == 0 and context.base_query is not None:
                 base_files_count = 0
                 if hasattr(context.base_query, "conn"):
-                    try:
+                    # Counting is best-effort; fall through to the facts-based count
+                    with suppress(Exception):
                         cur = context.base_query.conn.cursor()
                         repo_id_ctx, version_id_ctx = context.base_query._get_context()
                         cur.execute(
@@ -369,8 +368,6 @@ class Pipeline:
                         row = cur.fetchone()
                         if row:
                             base_files_count = row["count"]
-                    except Exception:
-                        pass
                 elif hasattr(context.base_query, "_facts"):
                     base_files_count = len(context.base_query._facts.files)
                 
@@ -424,7 +421,7 @@ class Pipeline:
                 summary_data = {
                     "run_id": run_context.run_id,
                     "started_at": run_context.started_at.isoformat(),
-                    "completed_at": datetime.now().isoformat(),
+                    "completed_at": datetime.now(UTC).isoformat(),
                     "repository": repo_name,
                     "pr": pr_num,
                     "total_time_seconds": round(
@@ -567,7 +564,7 @@ class Pipeline:
                             request.repository, file_path, head_sha
                         )
                         return file_path, content
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001 -- stage-level fallback keeps the pipeline running
                         print(
                             f"[pipeline] File {file_path} not found at head (assumed deleted): {exc}"
                         )
@@ -673,19 +670,32 @@ class Pipeline:
         only indexes changed files from head, and attaches RepositoryResolver.
         """
         import time
+
         from core.logging import pipeline_logger
-        from engine.repository.indexing import RepositoryIndexer
-        from engine.repository.store import PersistentFactSink, SQLiteRepositoryStore
-        from engine.repository.materialization.request import MaterializationRequest
-        from engine.repository.materialization.budget import MaterializationBudget
-        from engine.repository.materialization.materializer import RepositoryMaterializer
-        from engine.repository.resolver.resolver import RepositoryResolver
-        from engine.repository.overlay import RepositoryOverlay, RepositoryView
         from engine.repository.facts import (
-            File, FileId, Symbol, SymbolId, Call, Reference, Import,
-            TypeRelationship, Endpoint, DatabaseRelationship,
-            EventPublication, EventSubscription, TestRelationship
+            Call,
+            DatabaseRelationship,
+            Endpoint,
+            EventPublication,
+            EventSubscription,
+            File,
+            FileId,
+            Import,
+            Reference,
+            Symbol,
+            SymbolId,
+            TestRelationship,
+            TypeRelationship,
         )
+        from engine.repository.indexing import RepositoryIndexer
+        from engine.repository.materialization.budget import MaterializationBudget
+        from engine.repository.materialization.materializer import (
+            RepositoryMaterializer,
+        )
+        from engine.repository.materialization.request import MaterializationRequest
+        from engine.repository.overlay import RepositoryOverlay, RepositoryView
+        from engine.repository.resolver.resolver import RepositoryResolver
+        from engine.repository.store import PersistentFactSink
 
         if self.repository_provider is None:
             raise RepositoryNotInstalled(
@@ -713,11 +723,6 @@ class Pipeline:
 
         full_name = request.repository.full_name
         provider = getattr(request.repository, "provider", "github") or "github"
-        repo_id = (
-            f"{provider}/{full_name}"
-            if not full_name.startswith(f"{provider}/")
-            else full_name
-        )
 
         # Ensure we have base_query (which is SQLiteRepositoryStore)
         actual_repo_id = self.repository_store.create_repository(
@@ -733,9 +738,9 @@ class Pipeline:
         base_query = self.repository_store
         context.base_query = base_query
 
-        # 2. Fetch base commit metadata
+        # 2. Fetch base commit metadata (validates the base commit exists)
         t0 = time.perf_counter()
-        commit_meta = await self.repository_provider.get_commit(request.repository.full_name, base_sha)
+        await self.repository_provider.get_commit(request.repository.full_name, base_sha)
         repository_metadata_duration += (time.perf_counter() - t0) * 1000.0
 
         # 3. Fetch base repository tree metadata
@@ -774,7 +779,7 @@ class Pipeline:
                 try:
                     spec = detector.detect(file_contexts)
                     language = spec.id
-                except Exception:
+                except Exception:  # noqa: BLE001 -- stage-level fallback keeps the pipeline running
                     language = "python"
             else:
                 language = "python"
@@ -844,13 +849,12 @@ class Pipeline:
                     "SELECT id FROM files WHERE repository_id = ? AND version_id = ? AND path = ?",
                     (actual_repo_id, actual_version_id, file_path),
                 )
-                if not cur.fetchone():
-                    if file_path in base_tree_paths:
-                        cur.execute(
-                            "INSERT INTO files (repository_id, version_id, id, path, language, state) VALUES (?, ?, ?, ?, ?, ?)",
-                            (actual_repo_id, actual_version_id, next_id, file_path, language, "active"),
-                        )
-                        next_id += 1
+                if not cur.fetchone() and file_path in base_tree_paths:
+                    cur.execute(
+                        "INSERT INTO files (repository_id, version_id, id, path, language, state) VALUES (?, ?, ?, ?, ?, ?)",
+                        (actual_repo_id, actual_version_id, next_id, file_path, language, "active"),
+                    )
+                    next_id += 1
             conn.commit()
 
         # 5. Fetch changed file blobs & index them
@@ -1194,7 +1198,7 @@ class Pipeline:
                 try:
                     await self._lazy_compile_facts_and_view(context, request)
                     return
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 -- stage-level fallback keeps the pipeline running
                     print(f"[pipeline] Lazy repository compilation failed: {exc}. Falling back to eager compilation.")
             else:
                 print("[pipeline] Repository provider does not support lazy metadata APIs or is a mock. Falling back to eager compilation.")
@@ -1252,7 +1256,8 @@ class Pipeline:
             ):
                 for candidate_id in possible_repo_ids:
                     candidate_version = f"{candidate_id}@{base_sha}"
-                    try:
+                    # Try each candidate id; miss falls through to the next one
+                    with suppress(Exception):
                         self.repository_store.set_version_context(
                             candidate_id, candidate_version
                         )
@@ -1263,8 +1268,6 @@ class Pipeline:
                             f"[pipeline] Loaded base facts for {candidate_version} from RepositoryStore"
                         )
                         break
-                    except Exception:
-                        pass
 
             # If not in persistent store, fetch on-demand or use base snapshot from context
             if base_query is None:
@@ -1284,7 +1287,7 @@ class Pipeline:
                         )
                         acq_duration = (time.perf_counter() - acq_start) * 1000
                         context.repository_materialization.repository_acquisition_ms += acq_duration
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001 -- stage-level fallback keeps the pipeline running
                         print(
                             f"[pipeline] Failed to fetch repository at base SHA {base_sha}: {exc}"
                         )
@@ -1357,7 +1360,7 @@ class Pipeline:
                             print(
                                 f"[pipeline] Successfully indexed base facts for {actual_version_id} into RepositoryStore"
                             )
-                        except Exception as exc:
+                        except Exception as exc:  # noqa: BLE001 -- stage-level fallback keeps the pipeline running
                             print(
                                 f"[pipeline] Failed to persist facts to RepositoryStore: {exc}, falling back to InMemoryRepository"
                             )
@@ -1395,7 +1398,8 @@ class Pipeline:
             language = context.language
             if language is None and base_query is not None:
                 if hasattr(base_query, "conn"):
-                    try:
+                    # Language detection is best-effort; defaults are applied below
+                    with suppress(Exception):
                         cur = base_query.conn.cursor()
                         repo_id, version_id = base_query._get_context()
                         cur.execute(
@@ -1405,15 +1409,11 @@ class Pipeline:
                         row = cur.fetchone()
                         if row:
                             language = row["language"]
-                    except Exception:
-                        pass
                 elif hasattr(base_query, "_facts"):
-                    try:
+                    with suppress(Exception):
                         files = base_query._facts.files
                         if files:
                             language = files[0].language
-                    except Exception:
-                        pass
 
             language = language or "python"
             context.language = language
@@ -1435,7 +1435,7 @@ class Pipeline:
                             request.repository, file_path, head_sha
                         )
                         return file_path, content
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001 -- stage-level fallback keeps the pipeline running
                         print(f"[pipeline] File {file_path} not found at head: {exc}")
                         return file_path, None
 
@@ -1500,7 +1500,7 @@ class Pipeline:
                         head_indexer._symbol_fqn_map[SymbolId(sym_id)] = fqn
                         if sym_id >= head_indexer._next_symbol_id:
                             head_indexer._next_symbol_id = sym_id + 1
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 -- stage-level fallback keeps the pipeline running
                     print(f"[pipeline] Warning: Failed to populate head_indexer from base_query: {e}")
 
             files_to_index = {
@@ -1607,63 +1607,6 @@ class Pipeline:
     ) -> None:
         """Deprecated alias that delegates to _compile_facts_and_view."""
         await self._compile_facts_and_view(context, request)
-
-        changed_fetch_str = f"{changed_fetch_time:.1f}s"
-        pipeline_logger.log_pipeline(
-            f"  ✓ Fetch changed files ({changed_fetch_str})", to_terminal=True
-        )
-
-        changed_compile_str = f"{changed_compile_time:.1f}s"
-        pipeline_logger.log_pipeline(
-            f"  ✓ Compile changed files ({changed_compile_str})", to_terminal=True
-        )
-
-        patch_duration_str = f"{patch_duration:.1f}s"
-        pipeline_logger.log_pipeline(
-            f"  ✓ Patch repository graph ({patch_duration_str})", to_terminal=True
-        )
-
-        export_duration_str = f"{head_export_duration:.1f}s"
-        pipeline_logger.log_pipeline(
-            f"  ✓ Export RepositoryModel ({export_duration_str})", to_terminal=True
-        )
-
-        # Telemetry detail logging
-        changed_files_compiled = metrics.get("changed_files_compiled", 0)
-        files_skipped = metrics.get("files_skipped", len(base_graph.files))
-        symbols_replaced = metrics.get("symbols_replaced", 0)
-        symbols_inserted = metrics.get("symbols_inserted", 0)
-        symbols_removed = metrics.get("symbols_removed", 0)
-        edges_updated = metrics.get("edges_updated", 0)
-
-        pipeline_logger.log_pipeline("", to_terminal=True)
-        pipeline_logger.log_pipeline(
-            f"  Base files compiled: {base_files_compiled}", to_terminal=True
-        )
-        pipeline_logger.log_pipeline(
-            f"  Changed files compiled: {changed_files_compiled}", to_terminal=True
-        )
-        pipeline_logger.log_pipeline(
-            f"  Files skipped: {files_skipped}", to_terminal=True
-        )
-        pipeline_logger.log_pipeline(
-            f"  Symbols replaced: {symbols_replaced}", to_terminal=True
-        )
-        pipeline_logger.log_pipeline(
-            f"  Symbols inserted: {symbols_inserted}", to_terminal=True
-        )
-        pipeline_logger.log_pipeline(
-            f"  Symbols removed: {symbols_removed}", to_terminal=True
-        )
-        pipeline_logger.log_pipeline(
-            f"  Edges updated: {edges_updated}", to_terminal=True
-        )
-        pipeline_logger.log_pipeline(
-            f"  Patch duration: {patch_duration:.3f}s", to_terminal=True
-        )
-        pipeline_logger.log_pipeline(
-            f"  Export duration: {head_export_duration:.3f}s", to_terminal=True
-        )
 
     async def _fetch_diff(
         self, context: PipelineContext, request: AnalysisRequest
@@ -1821,7 +1764,8 @@ class Pipeline:
         base_query = context.base_query
         if base_query is not None:
             if hasattr(base_query, "conn"):
-                try:
+                # Language detection is best-effort; defaults are applied below
+                with suppress(Exception):
                     cur = base_query.conn.cursor()
                     repo_id, version_id = base_query._get_context()
                     cur.execute(
@@ -1830,14 +1774,10 @@ class Pipeline:
                     )
                     for row in cur.fetchall():
                         detected_languages.add(row["language"])
-                except Exception:
-                    pass
             elif hasattr(base_query, "_facts"):
-                try:
+                with suppress(Exception):
                     for f in base_query._facts.files:
                         detected_languages.add(f.language)
-                except Exception:
-                    pass
 
         # 3. Fallback to context.language if nothing detected yet
         if not detected_languages and context.language:
@@ -1859,13 +1799,12 @@ class Pipeline:
             "tests": False,
         }
         for lang in detected_languages:
-            try:
+            # Unknown languages are skipped; remaining languages still merge
+            with suppress(Exception):
                 spec = self.language_registry.get(lang).spec
                 for key in merged:
                     if getattr(spec.capabilities, key, False):
                         merged[key] = True
-            except Exception:
-                pass
 
         from engine.language.base.capabilities import LanguageCapabilities
         return LanguageCapabilities(**merged)
@@ -2481,7 +2420,7 @@ class Pipeline:
             # Resolve DB-backed symbol IDs to full names using RepositoryQuery
             db = context.repository_view or context.base_query
             if db is not None:
-                from engine.repository.facts import SymbolId, FileId
+                from engine.repository.facts import SymbolId
 
                 # Identify pure numeric strings as candidate symbol IDs
                 candidate_ids = []
@@ -2615,7 +2554,7 @@ class Pipeline:
                 result["disc"].append([kind_id, facts])
 
             return result
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- stage-level fallback keeps the pipeline running
             print(f"[pipeline] LLMContext serialization failed: {exc}")
             import traceback
             traceback.print_exc()
@@ -2649,7 +2588,7 @@ class Pipeline:
             # Also calculate the total token count of the entire serialized context
             token_counts["total"] = len(encoding.encode(json.dumps(serialized_context)))
             return token_counts
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- stage-level fallback keeps the pipeline running
             print(f"[pipeline] Token count calculation failed: {exc}")
             return None
 
@@ -3093,7 +3032,7 @@ If any answer is NO, select a different discovery or return the empty result.
                 "llm_raw_output": raw_output,
             }
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- stage-level fallback keeps the pipeline running
             print(f"[pipeline] LLM comment generation failed: {exc}")
             return {
                 "generated": False,
@@ -3159,7 +3098,7 @@ If any answer is NO, select a different discovery or return the empty result.
                             request.repository, file_path, head_sha
                         )
                         return file_path, content
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001 -- stage-level fallback keeps the pipeline running
                         print(f"[pipeline] File {file_path} not found at head: {exc}")
                         return file_path, None
 

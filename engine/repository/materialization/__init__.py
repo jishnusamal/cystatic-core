@@ -12,22 +12,22 @@ from .materializer import MaterializationResult, RepositoryMaterializer, normali
 from .request import MaterializationRequest
 
 __all__ = [
-    # Phase 11 resolution budget types
-    "ResolutionBudget",
-    "ResolutionUsage",
     "BudgetDecision",
     "BudgetExceededReason",
+    "FallbackResult",
+    "FullIndexFallback",
     # Legacy alias
     "MaterializationBudget",
     "MaterializationBudgetExceeded",
+    "MaterializationRequest",
     # Materialization
     "MaterializationResult",
-    "MaterializationRequest",
     "RepositoryMaterializer",
-    "normalize_path",
+    # Phase 11 resolution budget types
+    "ResolutionBudget",
     # Phase 12 fallback
     "ResolutionConfig",
-    "FullIndexFallback",
-    "FallbackResult",
+    "ResolutionUsage",
+    "normalize_path",
 ]
 

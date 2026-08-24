@@ -37,7 +37,9 @@ async def memory_logging_middleware(request: Request, call_next) -> Any:
     import os
     import time
     import uuid
+
     import psutil
+
     from core.logging import pipeline_logger
 
     path = request.url.path
@@ -86,7 +88,7 @@ async def memory_logging_middleware(request: Request, call_next) -> Any:
             f"Duration={duration:.2f}s",
             to_terminal=True,
         )
-        raise e
+        raise
 
 
 # Include routers

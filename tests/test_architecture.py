@@ -19,7 +19,7 @@ def find_violations_in_file(
     try:
         content = file_path.read_text(encoding="utf-8")
         tree = ast.parse(content, filename=str(file_path))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- unparsable files are skipped in architecture scan
         return [f"Failed to parse {file_path}: {e}"]
 
     for node in ast.walk(tree):
@@ -38,19 +38,18 @@ def find_violations_in_file(
                         f"{file_path}:{node.lineno}: Prohibited import of '{name}' (standard ast library)"
                     )
 
-        elif isinstance(node, ast.ImportFrom):
-            if node.module:
-                # Resolve relative imports if needed, but in this engine imports are absolute
-                module_name = node.module
-                for prefix in forbidden_prefixes:
-                    if module_name == prefix or module_name.startswith(prefix + "."):
-                        violations.append(
-                            f"{file_path}:{node.lineno}: Prohibited import from '{module_name}'"
-                        )
-                if check_ast_import and (module_name == "ast" or module_name.startswith("ast.")):
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            # Resolve relative imports if needed, but in this engine imports are absolute
+            module_name = node.module
+            for prefix in forbidden_prefixes:
+                if module_name == prefix or module_name.startswith(prefix + "."):
                     violations.append(
-                        f"{file_path}:{node.lineno}: Prohibited import from '{module_name}' (standard ast library)"
+                        f"{file_path}:{node.lineno}: Prohibited import from '{module_name}'"
                     )
+            if check_ast_import and (module_name == "ast" or module_name.startswith("ast.")):
+                violations.append(
+                    f"{file_path}:{node.lineno}: Prohibited import from '{module_name}' (standard ast library)"
+                )
 
     return violations
 

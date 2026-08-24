@@ -1,23 +1,21 @@
-import gc
-import pytest
 from unittest.mock import MagicMock
 
-from engine.repository.facts import File, FileId
-from engine.repository.store import SQLiteRepositoryStore
-from engine.repository.store.sink import PersistentFactSink
-from engine.repository.indexing.indexer import RepositoryIndexer
-from engine.repository.metrics import RepositoryMaterializationMetrics
-from integrations.base import RepositoryProvider, RepositoryBlob
+import pytest
 
+from engine.repository.indexing.indexer import RepositoryIndexer
 from engine.repository.materialization.budget import (
     MaterializationBudget,
     MaterializationBudgetExceeded,
 )
-from engine.repository.materialization.request import MaterializationRequest
 from engine.repository.materialization.materializer import (
     RepositoryMaterializer,
     normalize_path,
 )
+from engine.repository.materialization.request import MaterializationRequest
+from engine.repository.metrics import RepositoryMaterializationMetrics
+from engine.repository.store import SQLiteRepositoryStore
+from engine.repository.store.sink import PersistentFactSink
+from integrations.base import RepositoryBlob, RepositoryProvider
 
 
 class MockRepositoryProvider(RepositoryProvider):

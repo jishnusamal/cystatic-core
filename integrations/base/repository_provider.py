@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Literal, Sequence
+from typing import Any, Literal
 
 from models.core import DiffSnapshot, RepositoryReference, RepositorySnapshot
 

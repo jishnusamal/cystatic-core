@@ -14,7 +14,6 @@ Tests cover:
 import pytest
 
 from engine.repository.materialization.budget import (
-    BudgetDecision,
     BudgetExceededReason,
     MaterializationBudget,  # alias
     MaterializationBudgetExceeded,
@@ -23,7 +22,6 @@ from engine.repository.materialization.budget import (
 )
 from engine.repository.resolver.context import ResolutionContext
 from engine.repository.resolver.outcome import ResolutionOutcome
-
 
 # ---------------------------------------------------------------------------
 # ResolutionBudget
@@ -55,7 +53,7 @@ class TestResolutionBudget:
 
     def test_immutable(self):
         b = ResolutionBudget()
-        with pytest.raises(Exception):
+        with pytest.raises((AttributeError, TypeError)):
             b.max_files = 999  # type: ignore[misc]
 
     def test_backward_compat_alias(self):
