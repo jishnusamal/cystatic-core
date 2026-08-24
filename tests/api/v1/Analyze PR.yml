@@ -12,9 +12,9 @@ http:
   body:
     type: json
     data: |-
-      {
-          "pr_url": "https://github.com/PostHog/posthog/pull/72474"
-      }
+      // {
+      //     "pr_url": "https://github.com/PostHog/posthog/pull/72474"
+      // }
       // {
       //    "pr_url": "https://github.com/PostHog/posthog/pull/72893"
       // }
@@ -25,12 +25,13 @@ http:
       //     "repo": "usefactorapp/cystatic-demo-python-app",
       //     "pr_number": 3
       // }
-      // {
-      //     "pr_url": "https://github.com/polarsource/polar/pull/13808"
-      // }
+      {
+          "pr_url": "https://github.com/firecrawl/firecrawl/pull/4367"
+      }
 
 settings:
   encodeUrl: true
   timeout: 0
   followRedirects: true
   maxRedirects: 5
+  forwardAuthorizationHeader: true
